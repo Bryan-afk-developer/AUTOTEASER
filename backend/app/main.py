@@ -132,9 +132,15 @@ async def process_document(doc_id: str):
         raise HTTPException(400, f"No hay parser implementado para el banco: {bank}")
 
     try:
+        # Pass pdf_path as kwarg (HSBC needs it for Gemini OCR rendering)
+        parse_kwargs = {}
+        if bank == "hsbc":
+            parse_kwargs["pdf_path"] = doc["file_path"]
+        
         parsed_data = parser.parse(
             doc["extraction"]["full_text"],
             doc["extraction"]["pages"],
+            **parse_kwargs,
         )
         doc["parsed_data"] = parsed_data
         doc["status"] = "processed"

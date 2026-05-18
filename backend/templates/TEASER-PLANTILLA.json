@@ -1,0 +1,312 @@
+{
+    "Bancos": {
+        "Banco 1": {
+            "nombre": "BANAMEX 2093",
+            "base": "B2",
+            "depositos": {
+                "sep": "C4",
+                "oct": "C5",
+                "nov": "C6",
+                "dic": "C7",
+                "ene": "C8",
+                "feb": "C9",
+                "mar": "C10"
+            },
+            "saldo_promedio": {
+                "sep": "D4",
+                "oct": "D5",
+                "nov": "D6",
+                "dic": "D7",
+                "ene": "D8",
+                "feb": "D9",
+                "mar": "D10"
+            }
+        },
+        "Banco 2": {
+            "nombre": "BANAMEX 2987",
+            "base": "G2",
+            "depositos": {
+                "sep": "H4",
+                "oct": "H5",
+                "nov": "H6",
+                "dic": "H7",
+                "ene": "H8",
+                "feb": "H9",
+                "mar": "H10"
+            },
+            "saldo_promedio": {
+                "sep": "I4",
+                "oct": "I5",
+                "nov": "I6",
+                "dic": "I7",
+                "ene": "I8",
+                "feb": "I9",
+                "mar": "I10"
+            }
+        },
+        "Banco 3": {
+            "nombre": "BANAMEX 4448",
+            "base": "L2",
+            "depositos": {
+                "sep": "M4",
+                "oct": "M5",
+                "nov": "M6",
+                "dic": "M7",
+                "ene": "M8",
+                "feb": "M9",
+                "mar": "M10"
+            },
+            "saldo_promedio": {
+                "sep": "N4",
+                "oct": "N5",
+                "nov": "N6",
+                "dic": "N7",
+                "ene": "N8",
+                "feb": "N9",
+                "mar": "N10"
+            }
+        },
+        "Banco 4": {
+            "nombre": "BANORTE 2471",
+            "base": "Q2",
+            "depositos": {
+                "sep": "R4",
+                "oct": "R5",
+                "nov": "R6",
+                "dic": "R7",
+                "ene": "R8",
+                "feb": "R9",
+                "mar": "R10"
+            },
+            "saldo_promedio": {
+                "sep": "S4",
+                "oct": "S5",
+                "nov": "S6",
+                "dic": "S7",
+                "ene": "S8",
+                "feb": "S9",
+                "mar": "S10"
+            }
+        },
+        "Banco 5": {
+            "nombre": "BANORTE 2503",
+            "base": "U2",
+            "depositos": {
+                "sep": "V4",
+                "oct": "V5",
+                "nov": "V6",
+                "dic": "V7",
+                "ene": "V8",
+                "feb": "V9",
+                "mar": "V10"
+            },
+            "saldo_promedio": {
+                "sep": "W4",
+                "oct": "W5",
+                "nov": "W6",
+                "dic": "W7",
+                "ene": "W8",
+                "feb": "W9",
+                "mar": "W10"
+            }
+        },
+        "Banco 6": {
+            "nombre": "BBVA 0757",
+            "base": "Z2",
+            "depositos": {
+                "sep": "AA4",
+                "oct": "AA5",
+                "nov": "AA6",
+                "dic": "AA7",
+                "ene": "AA8",
+                "feb": "AA9",
+                "mar": "AA10"
+            },
+            "saldo_promedio": {
+                "sep": "AB4",
+                "oct": "AB5",
+                "nov": "AB6",
+                "dic": "AB7",
+                "ene": "AB8",
+                "feb": "AB9",
+                "mar": "AB10"
+            }
+        },
+        "Banco 7": {
+            "nombre": "BBVA 3589",
+            "base": "AE2",
+            "depositos": {
+                "sep": "AF4",
+                "oct": "AF5",
+                "nov": "AF6",
+                "dic": "AF7",
+                "ene": "AF8",
+                "feb": "AF9",
+                "mar": "AF10"
+            },
+            "saldo_promedio": {
+                "sep": "AG4",
+                "oct": "AG5",
+                "nov": "AG6",
+                "dic": "AG7",
+                "ene": "AG8",
+                "feb": "AG9",
+                "mar": "AG10"
+            }
+        },
+        "Banco 8": {
+            "nombre": "BBVA 6221",
+            "base": "AJ2",
+            "depositos": {
+                "sep": "AK4",
+                "oct": "AK5",
+                "nov": "AK6",
+                "dic": "AK7",
+                "ene": "AK8",
+                "feb": "AK9",
+                "mar": "AK10"
+            },
+            "saldo_promedio": {
+                "sep": "AL4",
+                "oct": "AL5",
+                "nov": "AL6",
+                "dic": "AL7",
+                "ene": "AL8",
+                "feb": "AL9",
+                "mar": "AL10"
+            }
+        },
+        "Banco 9": {
+            "nombre": "SABADELL 7801",
+            "base": "AO2",
+            "depositos": {
+                "sep": "AP4",
+                "oct": "AP5",
+                "nov": "AP6",
+                "dic": "AP7",
+                "ene": "AP8",
+                "feb": "AP9",
+                "mar": "AP10"
+            },
+            "saldo_promedio": {
+                "sep": "AQ4",
+                "oct": "AQ5",
+                "nov": "AQ6",
+                "dic": "AQ7",
+                "ene": "AQ8",
+                "feb": "AQ9",
+                "mar": "AQ10"
+            }
+        },
+        "Banco 10": {
+            "nombre": "SABADELL 7802",
+            "base": "AT2",
+            "depositos": {
+                "sep": "AU4",
+                "oct": "AU5",
+                "nov": "AU6",
+                "dic": "AU7",
+                "ene": "AU8",
+                "feb": "AU9",
+                "mar": "AU10"
+            },
+            "saldo_promedio": {
+                "sep": "AV4",
+                "oct": "AV5",
+                "nov": "AV6",
+                "dic": "AV7",
+                "ene": "AV8",
+                "feb": "AV9",
+                "mar": "AV10"
+            }
+        },
+        "Banco 11": {
+            "nombre": "SABADELL 7803",
+            "base": "AY2",
+            "depositos": {
+                "sep": "AZ4",
+                "oct": "AZ5",
+                "nov": "AZ6",
+                "dic": "AZ7",
+                "ene": "AZ8",
+                "feb": "AZ9",
+                "mar": "AZ10"
+            },
+            "saldo_promedio": {
+                "sep": "BA4",
+                "oct": "BA5",
+                "nov": "BA6",
+                "dic": "BA7",
+                "ene": "BA8",
+                "feb": "BA9",
+                "mar": "BA10"
+            }
+        },
+        "Banco 12": {
+            "nombre": "SANTANDER 1517-6",
+            "base": "BD2",
+            "depositos": {
+                "sep": "BE4",
+                "oct": "BE5",
+                "nov": "BE6",
+                "dic": "BE7",
+                "ene": "BE8",
+                "feb": "BE9",
+                "mar": "BE10"
+            },
+            "saldo_promedio": {
+                "sep": "BF4",
+                "oct": "BF5",
+                "nov": "BF6",
+                "dic": "BF7",
+                "ene": "BF8",
+                "feb": "BF9",
+                "mar": "BF10"
+            }
+        },
+        "Banco 13": {
+            "nombre": "SANTANDER 1722-3",
+            "base": "BI2",
+            "depositos": {
+                "sep": "BJ4",
+                "oct": "BJ5",
+                "nov": "BJ6",
+                "dic": "BJ7",
+                "ene": "BJ8",
+                "feb": "BJ9",
+                "mar": "BJ10"
+            },
+            "saldo_promedio": {
+                "sep": "BK4",
+                "oct": "BK5",
+                "nov": "BK6",
+                "dic": "BK7",
+                "ene": "BK8",
+                "feb": "BK9",
+                "mar": "BK10"
+            }
+        },
+        "Banco 14": {
+            "nombre": "SANTANDER 3771-8",
+            "base": "BN2",
+            "depositos": {
+                "sep": "BO4",
+                "oct": "BO5",
+                "nov": "BO6",
+                "dic": "BO7",
+                "ene": "BO8",
+                "feb": "BO9",
+                "mar": "BO10"
+            },
+            "saldo_promedio": {
+                "sep": "BP4",
+                "oct": "BP5",
+                "nov": "BP6",
+                "dic": "BP7",
+                "ene": "BP8",
+                "feb": "BP9",
+                "mar": "BP10"
+            }
+        }
+    }
+}
