@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2 } from 'lucide-react'
 
-const API_BASE = 'http://localhost:8001'
+// Use environment variable if available (e.g. Render), otherwise default to localhost:8000 where backend is running
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
   const [isOnline, setIsOnline] = useState(false)
