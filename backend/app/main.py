@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.config import UPLOAD_DIR, OUTPUT_DIR, TEMPLATES_DIR, MAX_FILE_SIZE
 from app.pdf_extractor import extract_text
@@ -42,6 +43,12 @@ app.add_middleware(
 
 # In-memory store
 documents = {}
+
+
+# Pydantic models
+class BatchFillRequest(BaseModel):
+    doc_ids: list[str]
+    template_name: str
 
 
 # ── Routes ──────────────────────────────────────────────────────────────
@@ -162,7 +169,7 @@ async def process_document(doc_id: str):
 @app.post("/api/fill-template/{doc_id}")
 async def fill_template_endpoint(doc_id: str, template_name: str | None = None):
     """
-    Fill an Excel template with parsed data.
+    Fill an Excel template with parsed data from a single document.
     """
     if doc_id not in documents:
         raise HTTPException(404, f"Documento {doc_id} no encontrado")
@@ -194,7 +201,7 @@ async def fill_template_endpoint(doc_id: str, template_name: str | None = None):
         fill_template(
             template_path=str(template_path),
             output_path=str(output_path),
-            data=doc["parsed_data"],
+            data_list=[doc["parsed_data"]],
             mapping=mapping,
         )
     except Exception as e:
@@ -209,6 +216,69 @@ async def fill_template_endpoint(doc_id: str, template_name: str | None = None):
         "status": "completed",
         "output_file": output_name,
         "download_url": f"/api/download/{doc_id}",
+    }
+
+
+@app.post("/api/fill-template-batch")
+async def fill_template_batch_endpoint(req: BatchFillRequest):
+    """
+    Fill an Excel template with parsed data from multiple documents (batch).
+    """
+    if not req.doc_ids:
+        raise HTTPException(400, "No se especificaron documentos (doc_ids)")
+
+    data_list = []
+    for doc_id in req.doc_ids:
+        if doc_id not in documents:
+            raise HTTPException(404, f"Documento {doc_id} no encontrado")
+        doc = documents[doc_id]
+        if not doc.get("parsed_data"):
+            raise HTTPException(400, f"El documento {doc['file_name']} no ha sido procesado.")
+        data_list.append(doc["parsed_data"])
+
+    template_path = TEMPLATES_DIR / req.template_name
+    if not template_path.exists():
+        raise HTTPException(404, f"Plantilla {req.template_name} no encontrada")
+
+    # Load mapping if exists
+    import json
+    mapping = None
+    map_path = TEMPLATES_DIR / f"{Path(req.template_name).stem}.json"
+    if map_path.exists():
+        with open(map_path, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+
+    output_name = f"batch_filled_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    output_path = OUTPUT_DIR / output_name
+
+    try:
+        fill_template(
+            template_path=str(template_path),
+            output_path=str(output_path),
+            data_list=data_list,
+            mapping=mapping,
+        )
+    except Exception as e:
+        logger.error(f"Batch template fill failed: {e}")
+        raise HTTPException(500, f"Error al llenar plantilla en lote: {str(e)}")
+
+    batch_id = f"batch_{str(uuid.uuid4())[:4]}"
+    documents[batch_id] = {
+        "id": batch_id,
+        "file_name": output_name,
+        "detected_bank": "LOTE",
+        "status": "completed",
+        "uploaded_at": datetime.now().isoformat(),
+        "extraction": {"page_count": 0, "full_text": ""},
+        "parsed_data": None,
+        "output_file": str(output_path),
+    }
+
+    return {
+        "id": batch_id,
+        "status": "completed",
+        "output_file": output_name,
+        "download_url": f"/api/download/{batch_id}",
     }
 
 
