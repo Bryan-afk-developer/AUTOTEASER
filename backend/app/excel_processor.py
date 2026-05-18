@@ -24,9 +24,16 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
     shutil.copy2(template_path, output_path)
     
     wb = load_workbook(output_path)
-    ws = wb.active # Default to active sheet
     
     if mapping and "Bancos" in mapping:
+        # Check if the template has a sheet named 'Bancos' (or similar)
+        if "Bancos" in wb.sheetnames:
+            ws = wb["Bancos"]
+        elif "BANCOS" in wb.sheetnames:
+            ws = wb["BANCOS"]
+        else:
+            ws = wb.active
+            
         for data in data_list:
             account_name = data.get("account_name")
             month = data.get("month", "").lower()
@@ -36,7 +43,7 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
             if not account_name:
                 continue
 
-            # Find which bank block matches our account_name, OR find the first empty block
+            # Find which bank block matches our account_name, OR find the first available block
             target_bank_info = None
             empty_bank_info = None
             
@@ -45,18 +52,27 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
                 if not base_cell: continue
                 
                 current_val = ws[base_cell].value
-                # If cell already has this account name
+                expected_nombre = b_info.get("nombre")
+                
+                # Match 1: If cell already has this exact account name
                 if current_val == account_name:
                     target_bank_info = b_info
                     break
-                # If cell is empty (or we can assume it's empty if it's None)
-                elif current_val is None or str(current_val).strip() == "":
+                # Match 2: If JSON mapping expected this exact account name
+                elif expected_nombre == account_name:
+                    target_bank_info = b_info
+                    break
+                # Match 3: If cell is available (None, empty, or placeholder like 'BANCO 1')
+                elif current_val is None or str(current_val).strip() == "" or str(current_val).upper().startswith("BANCO"):
                     if empty_bank_info is None:
                         empty_bank_info = b_info
 
-            # If we didn't find an existing block for this bank, use the first empty one
+            # If no direct match, use the first available block
             if not target_bank_info and empty_bank_info:
                 target_bank_info = empty_bank_info
+
+            if target_bank_info:
+                # Always write the account name to the base cell so it's clearly identified
                 ws[target_bank_info["base"]] = account_name
 
             if target_bank_info:

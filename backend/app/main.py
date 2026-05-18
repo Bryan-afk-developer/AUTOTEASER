@@ -166,6 +166,25 @@ async def process_document(doc_id: str):
     }
 
 
+def _load_mapping(template_name: str) -> dict | None:
+    import json
+    stem = Path(template_name).stem
+    possible_names = [
+        f"{stem}.json",
+        f"{stem.replace(' - ', '-')}.json",
+        f"{stem.replace(' ', '')}.json",
+        "TEASER-PLANTILLA.json"  # Ultimate fallback for the main template
+    ]
+    for name in possible_names:
+        map_path = TEMPLATES_DIR / name
+        if map_path.exists():
+            logger.info(f"Loaded mapping file: {map_path.name}")
+            with open(map_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    logger.warning(f"No mapping JSON found for template {template_name}")
+    return None
+
+
 @app.post("/api/fill-template/{doc_id}")
 async def fill_template_endpoint(doc_id: str, template_name: str | None = None):
     """
@@ -186,13 +205,7 @@ async def fill_template_endpoint(doc_id: str, template_name: str | None = None):
     if not template_path.exists():
         raise HTTPException(404, f"Plantilla {template_name} no encontrada")
 
-    # Load mapping if exists
-    import json
-    mapping = None
-    map_path = TEMPLATES_DIR / f"{Path(template_name).stem}.json"
-    if map_path.exists():
-        with open(map_path, "r", encoding="utf-8") as f:
-            mapping = json.load(f)
+    mapping = _load_mapping(template_name)
 
     output_name = f"{doc_id}_filled_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     output_path = OUTPUT_DIR / output_name
@@ -240,13 +253,7 @@ async def fill_template_batch_endpoint(req: BatchFillRequest):
     if not template_path.exists():
         raise HTTPException(404, f"Plantilla {req.template_name} no encontrada")
 
-    # Load mapping if exists
-    import json
-    mapping = None
-    map_path = TEMPLATES_DIR / f"{Path(req.template_name).stem}.json"
-    if map_path.exists():
-        with open(map_path, "r", encoding="utf-8") as f:
-            mapping = json.load(f)
+    mapping = _load_mapping(req.template_name)
 
     output_name = f"batch_filled_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     output_path = OUTPUT_DIR / output_name
