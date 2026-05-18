@@ -32,11 +32,11 @@ Responde EXACTAMENTE en este formato (una línea por dato):
 CUENTA: [número de cuenta, solo dígitos, ejemplo: 4071361352]
 PERIODO: [mes en español y año, ejemplo: septiembre 2025]
 DEPOSITOS: [monto total de depósitos, ejemplo: 1234567.89]
-SALDO_PROMEDIO: [saldo promedio del periodo, ejemplo: 987654.32]
+SALDO_PROMEDIO: [saldo promedio en el mes, ejemplo: 987654.32]
 
 REGLAS:
-- Para DEPOSITOS busca "Total de depósitos" o "Depósitos" en el resumen
-- Para SALDO_PROMEDIO busca "Saldo Promedio" en el resumen
+- Para DEPOSITOS busca "Total de depósitos" o "Depósitos" en el resumen del periodo
+- Para SALDO_PROMEDIO busca "SALDO PROMEDIO EN EL MES" o "Saldo Promedio" en el resumen
 - Los montos deben ser números sin signo de pesos ($) y sin comas
 - El mes debe estar en español completo (enero, febrero, etc.)
 """
@@ -61,15 +61,18 @@ def _render_pages_as_images(pdf_path: str | Path, page_indices: list[int] = None
 def _extract_with_gemini(pdf_path: str | Path) -> dict | None:
     """
     Use Gemini Vision to OCR the HSBC statement and extract financial data.
+    Tries multiple models in case of quota exhaustion.
     Returns a dict with raw extracted values or None on failure.
     """
     if not GEMINI_API_KEY:
         logger.error("HSBC parser requires GEMINI_API_KEY but none is configured")
         return None
 
+    # Model fallback chain: try each until one works
+    MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
 
         # Render first 2 pages (summary is usually on page 1)
         images = _render_pages_as_images(pdf_path, [0, 1])
@@ -85,11 +88,26 @@ def _extract_with_gemini(pdf_path: str | Path) -> dict | None:
                 "data": img_bytes,
             })
 
-        response = model.generate_content(content_parts)
-        raw_text = response.text.strip()
-        logger.info(f"HSBC Gemini OCR response:\n{raw_text}")
+        # Try each model
+        for model_name in MODELS:
+            try:
+                logger.info(f"HSBC: trying model {model_name}...")
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(content_parts)
+                raw_text = response.text.strip()
+                logger.info(f"HSBC Gemini OCR response ({model_name}):\n{raw_text}")
+                return _parse_gemini_response(raw_text)
+            except Exception as model_err:
+                err_str = str(model_err).lower()
+                if "quota" in err_str or "resource_exhausted" in err_str or "429" in err_str:
+                    logger.warning(f"HSBC: {model_name} quota exhausted, trying next model...")
+                    continue
+                else:
+                    logger.error(f"HSBC: {model_name} failed with non-quota error: {model_err}")
+                    raise
 
-        return _parse_gemini_response(raw_text)
+        logger.error("HSBC: all Gemini models exhausted quota")
+        return None
 
     except Exception as e:
         logger.error(f"HSBC Gemini OCR failed: {e}", exc_info=True)
