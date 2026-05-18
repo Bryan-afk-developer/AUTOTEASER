@@ -33,8 +33,14 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
             ws = wb["BANCOS"]
         else:
             ws = wb.active
-            
-        for data in data_list:
+        # Create a set of all expected account names from the JSON mapping
+        expected_names = {b_info.get("nombre") for b_info in mapping["Bancos"].values() if b_info.get("nombre")}
+        
+        # Sort data_list so that items whose account_name is in expected_names come FIRST.
+        # This ensures reserved blocks (like BBVA) are claimed before unmapped accounts (like Scotiabank) claim available blocks.
+        sorted_data_list = sorted(data_list, key=lambda d: 0 if d.get("account_name") in expected_names else 1)
+        
+        for data in sorted_data_list:
             account_name = data.get("account_name")
             month = data.get("month", "").lower()
             deposits = data.get("deposits")
