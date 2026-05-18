@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2 } from 'lucide-react'
+import { UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2, AlertTriangle } from 'lucide-react'
 
 // Use environment variable if available (e.g. Render), otherwise default to localhost:8000 where backend is running
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -70,6 +70,10 @@ function App() {
       const res = await axios.post(`${API_BASE}/api/upload-pdf`, formData)
       setDocument(res.data)
       showToast(`Banco detectado: ${res.data.detected_bank || 'ninguno'}`)
+      
+      if (res.data.detected_bank?.toLowerCase() === 'hsbc') {
+        alert('Contiene Documentos HSBC, necesita revisión humana')
+      }
     } catch (err) {
       showToast(err.response?.data?.detail || 'Error al subir', true)
     }
@@ -158,6 +162,19 @@ function App() {
         {document && (
           <div className="animate-fade-in space-y-6">
             
+            {/* HSBC Warning Banner */}
+            {document.detected_bank?.toLowerCase() === 'hsbc' && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3 text-amber-200 shadow-glow animate-fade-in">
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-300">Atención: Documento HSBC detectado</h3>
+                  <p className="text-xs text-amber-200/80 mt-1">
+                    Los estados de cuenta de HSBC cuentan con protección avanzada y utilizan IA (OCR) para su lectura. Por favor, realiza una revisión humana de los datos extraídos para confirmar su exactitud.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* File Info Card */}
             <div className="bg-card border border-border rounded-xl overflow-hidden hover:border-gray-800 transition-colors">
               <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-surface/50">
