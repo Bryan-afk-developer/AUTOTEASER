@@ -289,6 +289,56 @@ async def fill_template_batch_endpoint(req: BatchFillRequest):
     }
 
 
+@app.post("/api/preview-batch")
+async def preview_batch_endpoint(req: BatchFillRequest):
+    """
+    Generate a preview table of how the data would look in the Excel
+    without actually generating the file.
+    """
+    from collections import defaultdict
+
+    if not req.doc_ids:
+        raise HTTPException(400, "No se especificaron documentos (doc_ids)")
+
+    mapping = _load_mapping(req.template_name)
+    months_order = mapping.get("months_order", ["nov", "dic", "ene", "feb", "mar", "abr", "may"]) if mapping else []
+
+    # Group data by account
+    accounts = defaultdict(dict)
+    for doc_id in req.doc_ids:
+        if doc_id not in documents:
+            continue
+        doc = documents[doc_id]
+        if not doc.get("parsed_data"):
+            continue
+        data = doc["parsed_data"]
+        acct = data.get("account_name", "").strip()
+        month = data.get("month", "").lower().strip()
+        if acct and month:
+            accounts[acct][month] = {
+                "deposits": data.get("deposits", 0.0),
+                "average_balance": data.get("average_balance", 0.0),
+            }
+
+    # Build table rows
+    table = []
+    for acct_name in sorted(accounts.keys()):
+        months_data = accounts[acct_name]
+        row = {"account_name": acct_name, "months": {}}
+        for m in months_order:
+            if m in months_data:
+                row["months"][m] = months_data[m]
+            else:
+                row["months"][m] = None
+        table.append(row)
+
+    return {
+        "months_order": months_order,
+        "accounts": table,
+        "total_accounts": len(table),
+    }
+
+
 @app.get("/api/download/{doc_id}")
 async def download_file(doc_id: str):
     """Download the filled Excel."""
