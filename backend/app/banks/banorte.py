@@ -44,7 +44,7 @@ def parse(text: str, pages: list[str]) -> dict:
     match_client = re.search(r'NO\.?\s*DE\s*CLIENTE[:\s]*(\d{6,})', text, re.IGNORECASE)
     if match_client:
         num = match_client.group(1)
-        result["account_name"] = f"BANORTE {num[-4:]}"
+        result["account_name"] = f"banorte{num[-4:]}"
     else:
         # Fallback: use the 10-digit account number
         match_acc = re.search(r'ENLACE NEGOCIOS\s+\w+\s+(\d{10})', text, re.IGNORECASE)
@@ -52,7 +52,7 @@ def parse(text: str, pages: list[str]) -> dict:
             match_acc = re.search(r'(\d{10})\s+072\s+\d{3}', text)
         if match_acc:
             num = match_acc.group(1)
-            result["account_name"] = f"BANORTE {num[-4:]}"
+            result["account_name"] = f"banorte{num[-4:]}"
 
     # ── 2. Month & Year ──
     # "Periodo Del 01/Diciembre/2025 al 31/Diciembre/2025"

@@ -180,7 +180,7 @@ def parse(text: str, pages: list[str], pdf_path: str | Path = None) -> dict:
 
     # Map extracted data
     if "account_num" in ocr_data:
-        result["account_name"] = f"HSBC {ocr_data['account_num'][-4:]}"
+        result["account_name"] = f"hsbc{ocr_data['account_num'][-4:]}"
 
     if "month_raw" in ocr_data:
         result["month"] = meses_map.get(ocr_data["month_raw"], ocr_data["month_raw"][:3])

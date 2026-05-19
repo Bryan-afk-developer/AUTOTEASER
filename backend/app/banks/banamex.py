@@ -36,7 +36,7 @@ def parse(text: str, pages: list[str]) -> dict:
     match_acc = re.search(r'(?:CONTRATO|Cuenta de Cheques[^0-9]+)\s*(\d{4,})', text, re.IGNORECASE)
     if match_acc:
         num = match_acc.group(1)
-        result["account_name"] = f"BANAMEX {num[-4:]}"
+        result["account_name"] = f"banamex{num[-4:]}"
 
     # 2. Month & Year
     meses_map = {

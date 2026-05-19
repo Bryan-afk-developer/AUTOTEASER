@@ -56,12 +56,12 @@ def parse(text: str, pages: list[str]) -> dict:
             short = parts[1][-4:] + '-' + parts[2]  # "1517-6"
         else:
             short = full_num[-6:]
-        result["account_name"] = f"SANTANDER {short}"
+        result["account_name"] = f"santander{short}"
     else:
         # Fallback: any Santander-style account number
         match_acc2 = re.search(r'No\.?\s*de\s*[Cc]uenta[:\s]*(\S+)', text)
         if match_acc2:
-            result["account_name"] = f"SANTANDER {match_acc2.group(1)[-6:]}"
+            result["account_name"] = f"santander{match_acc2.group(1)[-6:]}"
 
     # ── 2. Month & Year ──
     # "PERIODO DEL 01-NOV-2025 AL 30-NOV-2025"

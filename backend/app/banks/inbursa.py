@@ -44,7 +44,7 @@ def parse(text: str, pages: list[str]) -> dict:
     match_acc = re.search(r'CUENTA\s+(\d{8,})', text, re.IGNORECASE)
     if match_acc:
         num = match_acc.group(1)
-        result["account_name"] = f"INBURSA {num[-4:]}"
+        result["account_name"] = f"inbursa{num[-4:]}"
 
     # ── 2. Month & Year ──
     # "PERIODO Del 01 Abr. 2025 al 30 Abr. 2025"

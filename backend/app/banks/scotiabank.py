@@ -51,7 +51,7 @@ def parse(text: str, pages: list[str]) -> dict:
     match_acc = re.search(r'Cuenta\s+(\d{8,})', text, re.IGNORECASE)
     if match_acc:
         num = match_acc.group(1)
-        result["account_name"] = f"SCOTIABANK {num[-4:]}"
+        result["account_name"] = f"scotiabank{num[-4:]}"
 
     # ── 2. Month & Year ──
     # "Fechadecorte 31-MAR-25" (no spaces, Scotiabank format)
