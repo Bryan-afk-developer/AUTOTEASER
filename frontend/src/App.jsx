@@ -147,16 +147,16 @@ function App() {
 
         {/* ── Drop Zone ── */}
         <div
-          className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-300
+          className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300
             ${isDragging ? 'border-primary-500 bg-primary-500/5 shadow-glow scale-[1.01]' : 'border-border hover:border-primary-500/40 bg-surface/40'}`}
           onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          <UploadCloud className={`w-10 h-10 mx-auto mb-3 ${isDragging ? 'text-primary-500' : 'text-text-muted'}`} />
-          <p className="text-base font-semibold">Arrastra PDFs de estados de cuenta aquí</p>
-          <p className="text-sm text-text-muted mt-1">o haz clic para seleccionar · múltiples archivos permitidos</p>
+          <UploadCloud className={`w-8 h-8 mx-auto mb-2 ${isDragging ? 'text-primary-500' : 'text-text-muted'}`} />
+          <p className="text-sm font-semibold">Arrastra PDFs de estados de cuenta aquí</p>
+          <p className="text-xs text-text-muted mt-0.5">o haz clic para seleccionar · múltiples archivos permitidos</p>
           <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" multiple onChange={handleFileSelect} />
         </div>
 
