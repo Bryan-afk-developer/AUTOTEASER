@@ -3,7 +3,7 @@ AutoTeaser - Bank Parsers Package
 Each file in this package handles the parsing logic for a specific bank.
 """
 
-from app.banks import hsbc, bbva, banorte, santander, scotiabank, banamex, inbursa, sabadell
+from app.banks import hsbc, bbva, banorte, santander, scotiabank, banamex, inbursa, sabadell, bxplus
 
 # Registry: bank key → parser module
 BANK_PARSERS = {
@@ -15,6 +15,7 @@ BANK_PARSERS = {
     "banamex": banamex,
     "inbursa": inbursa,
     "sabadell": sabadell,
+    "bxplus": bxplus,
 }
 
 

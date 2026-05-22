@@ -10,11 +10,48 @@ DYNAMIC BLOCK ASSIGNMENT:
 """
 import logging
 import shutil
+import re
 from collections import defaultdict
 from pathlib import Path
 from openpyxl import load_workbook
 
 logger = logging.getLogger(__name__)
+
+# Helper to normalize and sort months chronologically
+SPANISH_MONTHS = {
+    'ene': 1, 'enero': 1, 'jan': 1, 'january': 1,
+    'feb': 2, 'febrero': 2, 'february': 2,
+    'mar': 3, 'marzo': 3, 'march': 3,
+    'abr': 4, 'abril': 4, 'april': 4,
+    'may': 5, 'mayo': 5, 'may': 5,
+    'jun': 6, 'junio': 6, 'june': 6,
+    'jul': 7, 'julio': 7, 'july': 7,
+    'ago': 8, 'agosto': 8, 'august': 8, 'aug': 8,
+    'sep': 9, 'septiembre': 9, 'september': 9,
+    'oct': 10, 'octubre': 10, 'october': 10,
+    'nov': 11, 'noviembre': 11, 'november': 11,
+    'dic': 12, 'diciembre': 12, 'december': 12, 'dec': 12
+}
+
+MONTH_DISPLAY = {
+    1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
+    7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'
+}
+
+def _get_cell_row(cell_ref: str) -> int:
+    match = re.match(r"([A-Za-z]+)(\d+)", cell_ref)
+    if match:
+        return int(match.group(2))
+    return 9999
+
+def _get_sort_key(d):
+    try:
+        y = int(d.get("year", 0))
+    except Exception:
+        y = 0
+    m_str = str(d.get("month", "")).lower().strip()[:3]
+    m = SPANISH_MONTHS.get(m_str, 0)
+    return (y, m)
 
 
 def fill_template(template_path: str, output_path: str, data_list: list[dict], mapping: dict | None = None) -> str:
@@ -81,31 +118,40 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
                 ws[base_cell] = account_name
                 logger.info(f"Assigned block {block_idx + 1} ({base_cell}) → {account_name}")
             
-            # Fill each month's data for this account
-            for data in accounts[account_name]:
+            # Sort the entries chronologically by year and month index
+            sorted_entries = sorted(accounts[account_name], key=_get_sort_key)
+            
+            # Get sorted lists of cells by their row coordinates
+            sorted_dep_cells = sorted(list(block.get("depositos", {}).values()), key=_get_cell_row)
+            sorted_bal_cells = sorted(list(block.get("saldo_promedio", {}).values()), key=_get_cell_row)
+            
+            # Fill chronological data to cell slots in order
+            for data, dep_cell, bal_cell in zip(sorted_entries, sorted_dep_cells, sorted_bal_cells):
                 month = data.get("month", "").lower().strip()
                 deposits = data.get("deposits")
                 avg_balance = data.get("average_balance")
                 
-                if not month:
-                    logger.warning(f"Data for {account_name} has no month, skipping entry.")
-                    continue
+                # Format month label
+                year = data.get("year", "")
+                year_suffix = year[-2:] if len(str(year)) >= 2 else str(year)
                 
-                # Write deposits
+                month_idx = SPANISH_MONTHS.get(month[:3], 0)
+                month_display = MONTH_DISPLAY.get(month_idx, month.capitalize())
+                month_label = f"{month_display} -{year_suffix}" if year_suffix else month_display
+
+                # Write deposits and the month label
                 if deposits is not None:
-                    dep_cell = block.get("depositos", {}).get(month)
-                    if dep_cell:
-                        ws[dep_cell] = deposits
-                    else:
-                        logger.warning(f"No deposit cell for month '{month}' in block {block_idx + 1}")
+                    ws[dep_cell] = deposits
+                    
+                    # Write the month label one column to the left
+                    cell_obj = ws[dep_cell]
+                    label_col = cell_obj.column - 1
+                    if label_col > 0:
+                        ws.cell(row=cell_obj.row, column=label_col, value=month_label)
                 
                 # Write average balance
                 if avg_balance is not None:
-                    bal_cell = block.get("saldo_promedio", {}).get(month)
-                    if bal_cell:
-                        ws[bal_cell] = avg_balance
-                    else:
-                        logger.warning(f"No balance cell for month '{month}' in block {block_idx + 1}")
+                    ws[bal_cell] = avg_balance
     
     # Legacy support: old "Bancos" dict format (backwards compatible)
     elif mapping and "Bancos" in mapping:

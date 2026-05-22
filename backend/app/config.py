@@ -23,3 +23,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # Gemini API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+
+# Tesseract path (for scanned PDFs)
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+

@@ -1,0 +1,83 @@
+{
+    "Balance": {
+        "2023": {
+            "caja": "B9", "bancos": "B10", "clientes": "B11", "cuentas_por_cobrar": "B12",
+            "deudores_diversos": "B13", "isr_diferido": "B14", "impuestos_a_favor": "B15",
+            "inventarios": "B16", "pagos_anticipados": "B17", "anticipo_proveedores": "B18",
+            "edificios": "B24", "maquinaria_equipo": "B25", "equipo_transporte": "B26",
+            "mobiliario_equipo": "B27", "equipo_computo": "B28", "otros_activos_fijos": "B29",
+            "terrenos": "B30", "depreciacion_acumulada": "B31", "gastos_instalacion": "B37",
+            "depositos_garantia": "B38", "otros_activos_largo_plazo": "B39", "proveedores": "B52",
+            "prestamos_bancarios_cp": "B53", "acreedores_diversos": "B54", "otros_pasivos_cp": "B55",
+            "impuestos_acumulados": "B56", "anticipo_clientes": "B57", "prestamos_bancarios_lp": "B64",
+            "otras_cuentas_lp": "B65", "capital_social": "B74", "reserva_legal": "B75",
+            "aportaciones_futuros_aumentos": "B76", "resultados_ejercicios_anteriores": "B77",
+            "utilidad_ejercicio": "B78"
+        },
+        "2024": { 
+            "caja": "D9", "bancos": "D10", "clientes": "D11", "cuentas_por_cobrar": "D12", 
+            "deudores_diversos": "D13", "isr_diferido": "D14", "impuestos_a_favor": "D15", 
+            "inventarios": "D16", "pagos_anticipados": "D17", "anticipo_proveedores": "D18", 
+            "edificios": "D24", "maquinaria_equipo": "D25", "equipo_transporte": "D26", 
+            "mobiliario_equipo": "D27", "equipo_computo": "D28", "otros_activos_fijos": "D29", 
+            "terrenos": "D30", "depreciacion_acumulada": "D31", "gastos_instalacion": "D37", 
+            "depositos_garantia": "D38", "otros_activos_largo_plazo": "D39", "proveedores": "D52", 
+            "prestamos_bancarios_cp": "D53", "acreedores_diversos": "D54", "otros_pasivos_cp": "D55", 
+            "impuestos_acumulados": "D56", "anticipo_clientes": "D57", "prestamos_bancarios_lp": "D64", 
+            "otras_cuentas_lp": "D65", "capital_social": "D74", "reserva_legal": "D75", 
+            "aportaciones_futuros_aumentos": "D76", "resultados_ejercicios_anteriores": "D77", 
+            "utilidad_ejercicio": "D78" 
+        },
+        "2025": { 
+            "caja": "F9", "bancos": "F10", "clientes": "F11", "cuentas_por_cobrar": "F12", 
+            "deudores_diversos": "F13", "isr_diferido": "F14", "impuestos_a_favor": "F15", 
+            "inventarios": "F16", "pagos_anticipados": "F17", "anticipo_proveedores": "F18", 
+            "edificios": "F24", "maquinaria_equipo": "F25", "equipo_transporte": "F26", 
+            "mobiliario_equipo": "F27", "equipo_computo": "F28", "otros_activos_fijos": "F29", 
+            "terrenos": "F30", "depreciacion_acumulada": "F31", "gastos_instalacion": "F37", 
+            "depositos_garantia": "F38", "otros_activos_largo_plazo": "F39", "proveedores": "F52", 
+            "prestamos_bancarios_cp": "F53", "acreedores_diversos": "F54", "otros_pasivos_cp": "F55", 
+            "impuestos_acumulados": "F56", "anticipo_clientes": "F57", "prestamos_bancarios_lp": "F64", 
+            "otras_cuentas_lp": "F65", "capital_social": "F74", "reserva_legal": "F75", 
+            "aportaciones_futuros_aumentos": "F76", "resultados_ejercicios_anteriores": "F77", 
+            "utilidad_ejercicio": "F78" 
+        },
+        "2026": { 
+            "caja": "H9", "bancos": "H10", "clientes": "H11", "cuentas_por_cobrar": "H12", 
+            "deudores_diversos": "H13", "isr_diferido": "H14", "impuestos_a_favor": "H15", 
+            "inventarios": "H16", "pagos_anticipados": "H17", "anticipo_proveedores": "H18", 
+            "edificios": "H24", "maquinaria_equipo": "H25", "equipo_transporte": "H26", 
+            "mobiliario_equipo": "H27", "equipo_computo": "H28", "otros_activos_fijos": "H29", 
+            "terrenos": "H30", "depreciacion_acumulada": "H31", "gastos_instalacion": "H37", 
+            "depositos_garantia": "H38", "otros_activos_largo_plazo": "H39", "proveedores": "H52", 
+            "prestamos_bancarios_cp": "H53", "acreedores_diversos": "H54", "otros_pasivos_cp": "H55", 
+            "impuestos_acumulados": "H56", "anticipo_clientes": "H57", "prestamos_bancarios_lp": "H64", 
+            "otras_cuentas_lp": "H65", "capital_social": "H74", "reserva_legal": "H75", 
+            "aportaciones_futuros_aumentos": "H76", "resultados_ejercicios_anteriores": "H77", 
+            "utilidad_ejercicio": "H78" 
+        }
+    },
+    
+    "Edo de resultados": {
+        "2023": {
+            "ventas": "B7", "costo_ventas": "B8", "gastos_generales": "B10", "gastos_administracion": "B11", 
+            "gastos_financieros": "B15", "productos_financieros": "B16", "utilidad_perdida_cambiaria": "B17", 
+            "otros_gastos": "B20", "otros_ingresos": "B21", "impuestos": "B24", "depreciacion": "B29"
+        },
+        "2024": {
+            "ventas": "D7", "costo_ventas": "D8", "gastos_generales": "D10", "gastos_administracion": "D11", 
+            "gastos_financieros": "D15", "productos_financieros": "D16", "utilidad_perdida_cambiaria": "D17", 
+            "otros_gastos": "D20", "otros_ingresos": "D21", "impuestos": "D24", "depreciacion": "D29"
+        },
+        "2025": {
+            "ventas": "F7", "costo_ventas": "F8", "gastos_generales": "F10", "gastos_administracion": "F11", 
+            "gastos_financieros": "F15", "productos_financieros": "F16", "utilidad_perdida_cambiaria": "F17", 
+            "otros_gastos": "F20", "otros_ingresos": "F21", "impuestos": "F24", "depreciacion": "F29"
+        },
+        "2026": {
+            "ventas": "H7", "costo_ventas": "H8", "gastos_generales": "H10", "gastos_administracion": "H11", 
+            "gastos_financieros": "H15", "productos_financieros": "H16", "utilidad_perdida_cambiaria": "H17", 
+            "otros_gastos": "H20", "otros_ingresos": "H21", "impuestos": "H24", "depreciacion": "H29"
+        }
+    }
+}
