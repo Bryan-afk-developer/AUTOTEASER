@@ -91,15 +91,16 @@ MESES_ES = {
 }
 
 
-def calcular_estados_de_cuenta(meses: int = 6) -> list[dict]:
+def calcular_estados_de_cuenta() -> list[dict]:
     """
-    Genera los slots de estados de cuenta para los últimos N meses.
-    Excluye el mes actual (que aún no cierra).
+    Genera los slots de estados de cuenta para los últimos 7 meses
+    excluyendo el mes actual.
     """
     hoy = date.today()
+    inicio = hoy - relativedelta(months=1)
     docs = []
-    for i in range(1, meses + 1):
-        fecha = hoy - relativedelta(months=i)
+    for i in range(7):
+        fecha = inicio - relativedelta(months=i)
         mes_nombre = MESES_ES[fecha.month]
         año = fecha.year
         clave = f"estado_cuenta_{fecha.strftime('%Y_%m')}"
@@ -111,14 +112,14 @@ def calcular_estados_de_cuenta(meses: int = 6) -> list[dict]:
             "icono": "🏦",
             "mes": fecha.month,
             "año": año,
-            "grupo": "empresa"
+            "grupo": "estados_cuenta"
         })
     return docs
 
 
 def get_todos_los_documentos_requeridos() -> list[dict]:
     """Combina documentos fijos + estados de cuenta dinámicos."""
-    return DOCUMENTOS_EMPRESA + calcular_estados_de_cuenta(meses=6) + DOCUMENTOS_REPRESENTANTE
+    return DOCUMENTOS_EMPRESA + calcular_estados_de_cuenta() + DOCUMENTOS_REPRESENTANTE
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────

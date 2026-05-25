@@ -49,6 +49,7 @@ function ReviewModal({ doc, onClose, onSuccess }) {
     } finally {
       setLoading(false)
     }
+    
   }
 
   return (
@@ -57,6 +58,7 @@ function ReviewModal({ doc, onClose, onSuccess }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface/50">
           <div>
             <h3 className="text-base font-bold text-text-main">Revisar Documento</h3>
+            
             <p className="text-xs text-text-muted mt-0.5">{doc.empresa_nombre} · {doc.nombre_esperado || doc.tipo_documento}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors text-text-muted hover:text-text-main">
@@ -231,7 +233,7 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   <span className="text-xs font-semibold text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                    Ver doc. →
+                    Ver Expediente. →
                   </span>
                 </div>
               </div>
@@ -293,7 +295,7 @@ export default function AdminDashboard() {
                       <div className="font-semibold text-text-main text-[13px] leading-tight">
                         {doc.nombre_esperado || doc.tipo_documento}
                       </div>
-                      <div className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">{doc.grupo === 'representante' ? 'Rep. Legal' : 'Empresa'}</div>
+                      <div className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">{doc.grupo === 'representante' ? 'Rep. Legal' : doc.grupo === 'estados_cuenta' ? 'Edo. de Cuenta' : 'Empresa'}</div>
                     </td>
                     <td className="px-6 py-4 text-text-muted text-xs truncate max-w-[200px]" title={doc.nombre_archivo}>
                       {doc.nombre_archivo || '—'}
