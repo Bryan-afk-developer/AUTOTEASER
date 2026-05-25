@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import { 
-  UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2, 
-  AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, 
-  Layers, Plus, Calendar, Database, Sparkles, Settings 
+import PortalApp from './portal/PortalApp'
+import AdminDashboard from './portal/pages/AdminDashboard'
+import LoginPage from './portal/pages/LoginPage'
+import api from './portal/lib/api'
+import {
+  UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2,
+  AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, Menu,
+  Layers, Plus, Calendar, Database, Sparkles, Settings, ChevronLeft
 } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -16,12 +20,19 @@ function fmt(n) {
 }
 
 function App() {
-  const [activeSection, setActiveSection] = useState('teaser') // 'teaser' or 'caf'
+  // ── Portal routing: si la URL empieza con /portal, mostrar el portal ──
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
+    return <PortalApp />
+  }
+
+  const [activeSection, setActiveSection] = useState('teaser') // 'teaser' | 'caf' | 'portal'
   const [isOnline, setIsOnline] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState({ show: false, msg: '', isError: false })
-  
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [portalUser, setPortalUser] = useState(() => api.getUser())
+
   // ─── AutoTeaser States ───
   const [documents, setDocuments] = useState([])
   const [templates, setTemplates] = useState([])
@@ -44,7 +55,7 @@ function App() {
   const [cafTab, setCafTab] = useState('data') // 'data' | 'text'
   const [isCafDraggingPdf, setIsCafDraggingPdf] = useState(false)
   const [isCafDraggingTemplate, setIsCafDraggingTemplate] = useState(false)
-  
+
   const cafFileInputRef = useRef(null)
   const cafTemplateInputRef = useRef(null)
 
@@ -66,7 +77,7 @@ function App() {
         const r = await axios.get(`${API_BASE}/api/templates`)
         setTemplates(r.data.templates || [])
         if (r.data.templates?.length > 0) setSelectedTemplate(r.data.templates[0].name)
-      } catch {}
+      } catch { }
     })()
   }, [])
 
@@ -78,14 +89,14 @@ function App() {
       if (r.data.templates?.length > 0 && !selectedCafTemplate) {
         setSelectedCafTemplate(r.data.templates[0].name)
       }
-    } catch {}
+    } catch { }
   }
 
   const loadCafDocuments = async () => {
     try {
       const r = await axios.get(`${API_BASE}/api/caf/documents`)
       setCafDocuments(r.data.documents || [])
-    } catch {}
+    } catch { }
   }
 
   useEffect(() => {
@@ -155,8 +166,8 @@ function App() {
     finally { setIsLoading(false) }
   }
 
-  const handleDeleteDoc = (id) => { axios.delete(`${API_BASE}/api/documents/${id}`).catch(() => {}); setDocuments(p => p.filter(d => d.id !== id)) }
-  const handleClearAll = () => { documents.forEach(d => axios.delete(`${API_BASE}/api/documents/${d.id}`).catch(() => {})); setDocuments([]); setBatchOutput(null); setPreview(null); setShowPreview(false) }
+  const handleDeleteDoc = (id) => { axios.delete(`${API_BASE}/api/documents/${id}`).catch(() => { }); setDocuments(p => p.filter(d => d.id !== id)) }
+  const handleClearAll = () => { documents.forEach(d => axios.delete(`${API_BASE}/api/documents/${d.id}`).catch(() => { })); setDocuments([]); setBatchOutput(null); setPreview(null); setShowPreview(false) }
 
   const uploaded = documents.filter(d => d.status === 'uploaded').length
   const processed = documents.filter(d => d.parsed_data).length
@@ -242,7 +253,7 @@ function App() {
         template_name: selectedCafTemplate
       })
       showToast('¡Excel combinado generado exitosamente!')
-      
+
       const link = document.createElement('a')
       link.href = `${API_BASE}${r.data.download_url}`
       link.download = r.data.output_file
@@ -288,108 +299,164 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-text-main font-sans selection:bg-primary-500/30 flex">
-      
+    <div className="min-h-screen bg-background text-text-main font-sans selection:bg-primary-500/30 flex relative">
+
+      {/* ── Sidebar overlay (mobile) ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ── Sidebar ── */}
-      <aside className="w-64 bg-card border-r border-border shrink-0 hidden md:flex flex-col sticky top-0 h-screen z-0">
-        <div className="flex items-center gap-1 px-20  py-1 border-b border-border">
-          <img src="/Logo.webp" alt="Logo" className="h-16 w-auto object-contain drop-shadow-[0_0_12px_rgba(230,57,70,0.3)]" />
-          <h1 className="text-base font-bold tracking-tight"><span className="text-primary-500"></span></h1>
+      <aside
+        className={`fixed top-0 left-0 h-screen z-40 flex flex-col bg-card border-r border-border
+          transition-all duration-300 ease-in-out
+          ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-16 md:translate-x-0'}`}
+        style={{ overflow: sidebarOpen || window.innerWidth >= 768 ? 'visible' : 'hidden' }}
+      >
+        {/* Logo */}
+        <div className={`flex items-center border-b border-border shrink-0 transition-all duration-300
+          ${sidebarOpen ? 'px-4 py-1 justify-between' : 'px-2 py-3 justify-center'}`}>
+          {sidebarOpen && (
+            <img src="/Logo.webp" alt="Logo" className="h-50 w-auto object-contain drop-shadow-[0_0_12px_rgba(230,57,70,0.3)]" />
+          )}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 rounded-lg hover:bg-surface/60 text-text-muted hover:text-text-main transition-colors"
+            title={sidebarOpen ? 'Colapsar sidebar' : 'Expandir sidebar'}
+          >
+            {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1.5">
-          <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-3 mb-2">Herramientas</div>
-          
-          <button 
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto overflow-x-hidden">
+          {sidebarOpen && (
+            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-3 mb-2">Herramientas</div>
+          )}
+
+          {/* AutoTeaser */}
+          <button
             onClick={() => setActiveSection('teaser')}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all border
-              ${activeSection === 'teaser' 
-                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30 shadow-[0_0_12px_rgba(230,57,70,0.05)]' 
+            title="AutoTeaser"
+            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+              ${sidebarOpen ? 'justify-between' : 'justify-center'}
+              ${activeSection === 'teaser'
+                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30'
                 : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
               <span className="text-sm">⚡</span>
-              <span>AutoTeaser</span>
+              {sidebarOpen && <span>AutoTeaser</span>}
             </div>
-            {documents.length > 0 && (
+            {sidebarOpen && documents.length > 0 && (
               <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                 {documents.length}
               </span>
             )}
           </button>
 
-          <button 
+          {/* AutoCAF */}
+          <button
             onClick={() => setActiveSection('caf')}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all border
-              ${activeSection === 'caf' 
-                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30 shadow-[0_0_12px_rgba(230,57,70,0.05)]' 
+            title="AutoCAF"
+            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+              ${sidebarOpen ? 'justify-between' : 'justify-center'}
+              ${activeSection === 'caf'
+                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30'
                 : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
           >
-            <div className="flex items-center gap-2.5">
+            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
               <span className="text-sm">📊</span>
-              <span>AutoCAF</span>
+              {sidebarOpen && <span>AutoCAF</span>}
             </div>
-            {cafDocuments.length > 0 && (
+            {sidebarOpen && cafDocuments.length > 0 && (
               <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                 {cafDocuments.length}
               </span>
             )}
           </button>
+
+          {/* Divider */}
+          <div className="my-3 border-t border-border/60" />
+          {sidebarOpen && (
+            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-3 mb-2">Intranet</div>
+          )}
+
+          {/* Portal Admin */}
+          <button
+            onClick={() => setActiveSection('portal')}
+            title="Expediente Rojo"
+            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+              ${sidebarOpen ? 'justify-between' : 'justify-center'}
+              ${activeSection === 'portal'
+                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30 shadow-[0_0_12px_rgba(230,57,70,0.08)]'
+                : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
+          >
+            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
+              <span className="text-sm">🔴</span>
+              {sidebarOpen && <span>Expediente Rojo</span>}
+            </div>
+            {sidebarOpen && (
+              <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">Admin</span>
+            )}
+          </button>
         </nav>
 
-        <div className="p-4 border-t border-border flex flex-col gap-1 bg-surface/20">
+        <div className={`border-t border-border flex flex-col gap-1 bg-surface/20 transition-all
+          ${sidebarOpen ? 'p-4' : 'p-2 items-center'}`}>
           <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-rose-500'}`}></span>
-            <span className="text-xs font-semibold text-text-muted">{isOnline ? 'Servicio Activo' : 'Desconectado'}</span>
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-rose-500'}`}></span>
+            {sidebarOpen && <span className="text-xs font-semibold text-text-muted">{isOnline ? 'Servicio Activo' : 'Off'}</span>}
           </div>
-          <span className="text-[10px] text-text-muted/60 mt-1">AutoSuite v1.0.0 BETA </span>
+          {sidebarOpen && <span className="text-[10px] text-text-muted/60 mt-1">AutoSuite v1.0.0 BETA</span>}
         </div>
       </aside>
 
       {/* ── Main Content Area ── */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        
+      <div
+        className="flex-1 flex flex-col min-w-0 min-h-screen transition-all duration-300"
+        style={{ marginLeft: sidebarOpen ? '256px' : (window.innerWidth >= 768 ? '64px' : '0px') }}
+      >
+
         {/* Header */}
-        <header className="glass-header flex items-center justify-between px-6 py-4 sticky top-0 z-40">
+        <header className="glass-header flex items-center justify-between px-6 py-4 sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <span className="text-lg md:hidden">💼</span>
+            {/* Hamburger toggle (mobile) */}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-surface/60 text-text-muted"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <h1 className="text-base font-bold tracking-tight">
-              {activeSection === 'teaser' ? (
-                <>Auto<span className="text-primary-500">Teaser</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados de cuenta</span></>
-              ) : (
-                <>Auto<span className="text-primary-500">CAF</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados Financieros</span></>
-              )}
+              {activeSection === 'teaser' && (<>Auto<span className="text-primary-500">Teaser</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados de cuenta</span></>)}
+              {activeSection === 'caf' && (<>Auto<span className="text-primary-500">CAF</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados Financieros</span></>)}
+              {activeSection === 'portal' && (<>🔴 <span className="text-primary-400">Expediente Rojo</span> <span className="text-xs font-normal text-text-muted ml-2">/ Panel de Revisión</span></>)}
             </h1>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Mobile View Switcher */}
             <div className="flex md:hidden bg-surface p-1 rounded-xl border border-border">
-              <button 
-                onClick={() => setActiveSection('teaser')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'teaser' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}
-              >
-                Teaser
-              </button>
-              <button 
-                onClick={() => setActiveSection('caf')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'caf' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}
-              >
-                CAF
-              </button>
+              <button onClick={() => setActiveSection('teaser')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'teaser' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Teaser</button>
+              <button onClick={() => setActiveSection('caf')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'caf' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>CAF</button>
+              <button onClick={() => setActiveSection('portal')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'portal' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Admin</button>
             </div>
-            
+
             <div className="hidden md:flex items-center gap-1.5 bg-surface px-3 py-1 rounded-full border border-border">
               <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-rose-500'}`}></span>
               <span className="text-[11px] text-text-muted font-medium">{isOnline ? 'Online' : 'Offline'}</span>
             </div>
           </div>
         </header>
-
+        
         {/* ── Section: AutoTeaser ── */}
         {activeSection === 'teaser' && (
           <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1">
             {/* Drop Zone */}
+            <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider"> Subir Los documentos de estados financieros- Esto es una beta puede contener errores faor de revisar la veracidad de la informacion.</h2>
             <div
               className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300
                 ${isDragging ? 'border-primary-500 bg-primary-500/5 shadow-glow scale-[1.01]' : 'border-border hover:border-primary-500/40 bg-surface/40'}`}
@@ -441,13 +508,13 @@ function App() {
                         <span className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full
                           ${doc.detected_bank?.toLowerCase() === 'hsbc' ? 'bg-amber-500/15 text-amber-300' :
                             !doc.detected_bank || doc.detected_bank === 'desconocido' ? 'bg-rose-500/15 text-rose-300' :
-                            'bg-primary-500/15 text-primary-400'}`}>
+                              'bg-primary-500/15 text-primary-400'}`}>
                           {doc.detected_bank || '???'}
                         </span>
                         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full
                           ${doc.status === 'uploaded' ? 'bg-blue-500/10 text-blue-400' :
                             doc.status === 'processed' ? 'bg-green-500/10 text-green-400' :
-                            'bg-rose-500/10 text-rose-400'}`}>
+                              'bg-rose-500/10 text-rose-400'}`}>
                           {doc.status === 'uploaded' ? '● Subido' : doc.status === 'processed' ? '✓ Procesado' : '✗ Error'}
                         </span>
                       </div>
@@ -535,8 +602,8 @@ function App() {
                           <th className="sticky left-0 bg-card z-10 border-b border-border"></th>
                           {preview.months_order.map(m => (
                             <>
-                              <th key={m+'d'} className="text-right py-1.5 px-2 text-[10px] text-text-muted font-medium border-b border-border">Depósitos</th>
-                              <th key={m+'b'} className="text-right py-1.5 px-2 text-[10px] text-text-muted font-medium border-b border-border border-r border-r-white/5">Saldo Prom.</th>
+                              <th key={m + 'd'} className="text-right py-1.5 px-2 text-[10px] text-text-muted font-medium border-b border-border">Depósitos</th>
+                              <th key={m + 'b'} className="text-right py-1.5 px-2 text-[10px] text-text-muted font-medium border-b border-border border-r border-r-white/5">Saldo Prom.</th>
                             </>
                           ))}
                         </tr>
@@ -549,10 +616,10 @@ function App() {
                               const d = acct.months[m]
                               return (
                                 <>
-                                  <td key={m+'d'} className={`py-2.5 px-2 text-right font-mono text-xs border-b border-white/5 ${d ? 'text-text-main' : 'text-text-muted/30'}`}>
+                                  <td key={m + 'd'} className={`py-2.5 px-2 text-right font-mono text-xs border-b border-white/5 ${d ? 'text-text-main' : 'text-text-muted/30'}`}>
                                     {d ? fmt(d.deposits) : '—'}
                                   </td>
-                                  <td key={m+'b'} className={`py-2.5 px-2 text-right font-mono text-xs border-b border-white/5 border-r border-r-white/5 ${d ? 'text-text-main' : 'text-text-muted/30'}`}>
+                                  <td key={m + 'b'} className={`py-2.5 px-2 text-right font-mono text-xs border-b border-white/5 border-r border-r-white/5 ${d ? 'text-text-main' : 'text-text-muted/30'}`}>
                                     {d ? fmt(d.average_balance) : '—'}
                                   </td>
                                 </>
@@ -588,13 +655,20 @@ function App() {
           </main>
         )}
 
+        {/* ── Section: Portal Admin ── */}
+        {activeSection === 'portal' && (
+          <AdminDashboard />
+        )}
+
         {/* ── Section: AutoCAF ── */}
         {activeSection === 'caf' && (
           <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1 animate-fade-in">
-            
+
             {/* Upload sections grid */}
+            <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider"> Subir Los documentos de estados financieros- Esto es una beta puede contener errores faor de revisar la veracidad de la informacion.</h2>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
+
               {/* PDF Drop Zone */}
               <div
                 className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300
@@ -614,30 +688,14 @@ function App() {
                 <input type="file" ref={cafFileInputRef} className="hidden" accept=".pdf" onChange={e => { if (e.target.files?.[0]) handleCafUploadPdf(e.target.files[0]) }} />
               </div>
 
-              {/* Template Drop Zone */}
-              <div
-                className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300
-                  ${isCafDraggingTemplate ? 'border-green-500 bg-green-500/5 shadow-glow scale-[1.01]' : 'border-border hover:border-green-500/40 bg-surface/40'}`}
-                onDragOver={e => { e.preventDefault(); setIsCafDraggingTemplate(true) }}
-                onDragLeave={() => setIsCafDraggingTemplate(false)}
-                onDrop={e => { e.preventDefault(); setIsCafDraggingTemplate(false); if (e.dataTransfer.files[0]) handleCafUploadTemplate(e.dataTransfer.files[0]) }}
-                onClick={() => cafTemplateInputRef.current?.click()}
-              >
-                {cafUploadingTemplate ? (
-                  <Loader2 className="w-8 h-8 mx-auto mb-2 text-green-500 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-text-muted" />
-                )}
-                <p className="text-sm font-semibold">Subir Plantilla Excel (.xlsx)</p>
-                <p className="text-xs text-text-muted mt-0.5">Sube tus plantillas para rellenar los datos</p>
-                <input type="file" ref={cafTemplateInputRef} className="hidden" accept=".xlsx,.xls" onChange={e => { if (e.target.files?.[0]) handleCafUploadTemplate(e.target.files[0]) }} />
-              </div>
+              
 
             </div>
 
             {/* Template Selector Card */}
             {cafTemplates.length > 0 && (
               <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+
                 <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-green-500" /> Plantillas Disponibles
                 </h3>
@@ -647,8 +705,8 @@ function App() {
                       key={t.name}
                       onClick={() => setSelectedCafTemplate(t.name)}
                       className={`px-4 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2
-                        ${selectedCafTemplate === t.name 
-                          ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-[0_0_12px_rgba(34,197,94,0.05)]' 
+                        ${selectedCafTemplate === t.name
+                          ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-[0_0_12px_rgba(34,197,94,0.05)]'
                           : 'bg-surface/50 text-text-muted border-border hover:border-gray-600'}`}
                     >
                       <span>{t.name}</span>
@@ -663,7 +721,7 @@ function App() {
             <div className="space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider">Estados Financieros ({cafDocuments.length})</h2>
-                
+
                 {/* Batch Merge Action */}
                 {selectedCafDocs.length > 0 && (
                   <button
@@ -694,7 +752,7 @@ function App() {
                     const isFilling = cafFillingId === doc.id
 
                     return (
-                      <div 
+                      <div
                         key={doc.id}
                         className={`bg-card border rounded-xl p-4 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4
                           ${selectedCafDoc?.id === doc.id ? 'border-primary-500 bg-primary-500/[0.02]' : 'border-border hover:border-gray-700'}`}
@@ -702,8 +760,8 @@ function App() {
                         <div className="flex items-start gap-3 min-w-0">
                           {/* Checkbox for merging */}
                           {doc.status === 'processed' && (
-                            <input 
-                              type="checkbox" 
+                            <input
+                              type="checkbox"
                               checked={isSelected}
                               onChange={() => handleToggleSelectCaf(doc.id)}
                               className="mt-1 w-4 h-4 rounded border-border text-primary-600 focus:ring-primary-500/30 cursor-pointer"
@@ -726,16 +784,16 @@ function App() {
 
                         {/* Status Badge & Actions */}
                         <div className="flex items-center gap-3 self-end md:self-auto">
-                          
+
                           {/* Status Badge */}
                           <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase
                             ${doc.status === 'text_extracted' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
                               doc.status === 'processed' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' :
-                              doc.status === 'completed' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                              'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                                doc.status === 'completed' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                  'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
                             {doc.status === 'text_extracted' ? 'Subido' :
-                             doc.status === 'processed' ? 'Analizado' :
-                             doc.status === 'completed' ? 'Completado' : 'Error'}
+                              doc.status === 'processed' ? 'Analizado' :
+                                doc.status === 'completed' ? 'Completado' : 'Error'}
                           </span>
 
                           <div className="flex items-center gap-2">
@@ -812,7 +870,7 @@ function App() {
                       <p className="text-xs text-text-muted">Detalles del Documento</p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setSelectedCafDoc(null)}
                     className="p-1 hover:bg-surface rounded-lg transition-colors"
                   >
@@ -880,3 +938,5 @@ function App() {
 }
 
 export default App
+
+// Portal de Expedientes accesible en: http://localhost:5173/portal

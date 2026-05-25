@@ -6,3 +6,5 @@ pdfplumber==0.11.4
 python-dotenv==1.0.1
 pymupdf==1.25.3
 google-generativeai==0.8.4
+pandas>=2.0.0
+supabase==2.10.0

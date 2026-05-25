@@ -36,6 +36,15 @@ from app.excel_processor_caf import (
 )
 from app.analytics_parser import parse_analytics
 
+# Portal de Expedientes Imports
+from contextlib import asynccontextmanager
+from portal.shared.supabase_db import init_supabase
+from portal.Cliente import auth as portal_auth
+from portal.Cliente import upload as portal_upload
+from portal.Cliente import expedientes as portal_expedientes
+from portal.Admin import dashboard as portal_dashboard
+from portal.Admin import revision as portal_revision
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -43,11 +52,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Inicializa clientes externos al arrancar la aplicación."""
+    try:
+        init_supabase()
+        logger.info("Supabase clients initialized successfully")
+    except Exception as e:
+        logger.warning(f"Supabase init failed (portal features disabled): {e}")
+    yield
+
 # Create app
 app = FastAPI(
     title="AutoTeaser - Bank Statement Processor",
     description="Extract data from bank statement PDFs and fill Excel templates",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS - allow frontend
@@ -58,6 +79,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Portal de Expedientes — Routers
+app.include_router(portal_auth.router,         prefix="/api/portal/cliente", tags=["Portal Cliente"])
+app.include_router(portal_upload.router,       prefix="/api/portal/cliente", tags=["Portal Cliente"])
+app.include_router(portal_expedientes.router,  prefix="/api/portal/cliente", tags=["Portal Cliente"])
+app.include_router(portal_dashboard.router,    prefix="/api/portal/admin",   tags=["Portal Admin"])
+app.include_router(portal_revision.router,     prefix="/api/portal/admin",   tags=["Portal Admin"])
 
 # In-memory store
 documents = {}

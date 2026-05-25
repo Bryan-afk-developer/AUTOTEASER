@@ -2,3 +2,7 @@
 *.pyc
 backend/outputs/
 backend/uploads/
+backend/venv/
+backend/.env
+frontend/node_modules/
+.DS_Store
