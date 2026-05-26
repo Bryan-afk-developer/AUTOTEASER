@@ -49,7 +49,6 @@ function ReviewModal({ doc, onClose, onSuccess }) {
     } finally {
       setLoading(false)
     }
-    
   }
 
   return (
@@ -58,7 +57,6 @@ function ReviewModal({ doc, onClose, onSuccess }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface/50">
           <div>
             <h3 className="text-base font-bold text-text-main">Revisar Documento</h3>
-            
             <p className="text-xs text-text-muted mt-0.5">{doc.empresa_nombre} · {doc.nombre_esperado || doc.tipo_documento}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors text-text-muted hover:text-text-main">
