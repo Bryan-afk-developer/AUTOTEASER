@@ -129,6 +129,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [reviewDoc, setReviewDoc] = useState(null)
+  const [downloading, setDownloading] = useState(false)
 
   const loadEmpresas = useCallback(async () => {
     setLoading(true)
@@ -245,18 +246,39 @@ export default function AdminDashboard() {
   // ── Render View: Documentos de la Empresa ──
   return (
     <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1 animate-fade-in">
-      {/* Header back & title */}
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => setSelectedEmpresa(null)}
-          className="p-2 bg-surface hover:bg-surface/80 border border-border rounded-xl text-text-muted hover:text-text-main transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <h2 className="text-lg font-bold text-text-main leading-tight">{selectedEmpresa.nombre}</h2>
-          <p className="text-xs text-text-muted">{selectedEmpresa.rfc || 'Sin RFC'}</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setSelectedEmpresa(null)}
+            className="p-2 bg-surface hover:bg-surface/80 border border-border rounded-xl text-text-muted hover:text-text-main transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h2 className="text-lg font-bold text-text-main leading-tight">{selectedEmpresa.nombre}</h2>
+            <p className="text-xs text-text-muted">{selectedEmpresa.rfc || 'Sin RFC'}</p>
+          </div>
         </div>
+        <button
+          onClick={async () => {
+            setDownloading(true)
+            try {
+              await api.descargarTodosDocumentos(selectedEmpresa.id)
+              loadDocumentos(selectedEmpresa.id)
+            } catch (err) {
+              alert(`Error al descargar: ${err.message}`)
+            } finally {
+              setDownloading(false)
+            }
+          }}
+          disabled={downloading || documentos.every(d => d.estado === 'FALTANTE')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all
+            ${downloading ? 'opacity-50 cursor-not-allowed' : ''}
+            bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)]`}
+        >
+          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          {downloading ? 'Descargando...' : 'Descargar Todo (ZIP)'}
+        </button>
       </div>
 
       {loading ? (
@@ -272,71 +294,114 @@ export default function AdminDashboard() {
           <p className="font-semibold text-sm">Esta empresa aún no ha subido documentos.</p>
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-surface/50 border-b border-border text-xs uppercase text-text-muted font-bold tracking-wider">
-              <tr>
-                <th className="px-6 py-4">Documento</th>
-                <th className="px-6 py-4">Archivo</th>
-                <th className="px-6 py-4">Subido En</th>
-                <th className="px-6 py-4">Estado</th>
-                <th className="px-6 py-4 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {documentos.map(doc => {
-                const cfg = ESTADO_CONFIG[doc.estado] || ESTADO_CONFIG.FALTANTE
-                const esPendiente = doc.estado === 'PENDIENTE'
-                return (
-                  <tr key={doc.id || doc.tipo_documento} className="hover:bg-surface/20 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-text-main text-[13px] leading-tight">
-                        {doc.nombre_esperado || doc.tipo_documento}
-                      </div>
-                      <div className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">{doc.grupo === 'representante' ? 'Rep. Legal' : doc.grupo === 'estados_cuenta' ? 'Edo. de Cuenta' : 'Empresa'}</div>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted text-xs truncate max-w-[200px]" title={doc.nombre_archivo}>
-                      {doc.nombre_archivo || '—'}
-                    </td>
-                    <td className="px-6 py-4 text-text-muted text-xs">
-                      {doc.subido_en ? new Date(doc.subido_en).toLocaleDateString() : '—'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                        {cfg.icon} {cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {esPendiente ? (
-                        <button
-                          onClick={() => setReviewDoc(doc)}
-                          className="bg-primary-600 hover:bg-primary-500 text-white font-semibold text-xs py-1.5 px-4 rounded-lg transition-colors shadow-[0_0_10px_rgba(225,29,72,0.2)]"
-                        >
-                          Revisar
-                        </button>
-                      ) : (
-                        doc.estado !== 'FALTANTE' && (
-                          <div className="flex items-center justify-end gap-2">
-                            {doc.comentario_admin && (
-                              <span className="text-[11px] text-text-muted bg-surface px-2 py-1 rounded border border-border max-w-[150px] truncate" title={doc.comentario_admin}>
-                                💬 {doc.comentario_admin}
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setReviewDoc(doc)}
-                              className="text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                            >
-                              Cambiar estado
-                            </button>
-                          </div>
-                        )
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-8">
+          {(() => {
+            const docsEmpresa = documentos.filter(d => d.grupo !== 'representante')
+            const docsRep = documentos.filter(d => d.grupo === 'representante')
+
+            const renderTable = (docs, title) => {
+              if (docs.length === 0) return null;
+              return (
+                <div className="mb-6">
+                  <h3 className="text-sm font-bold text-primary-400 uppercase tracking-wider mb-4 border-b border-border pb-2">
+                    {title}
+                  </h3>
+                  <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-surface/50 border-b border-border text-xs uppercase text-text-muted font-bold tracking-wider">
+                        <tr>
+                          <th className="px-6 py-4">Documento</th>
+                          <th className="px-6 py-4">Archivo</th>
+                          <th className="px-6 py-4">Subido En</th>
+                          <th className="px-6 py-4">Estado</th>
+                          <th className="px-6 py-4">Descarga</th>
+                          <th className="px-6 py-4 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {docs.map(doc => {
+                          const cfg = ESTADO_CONFIG[doc.estado] || ESTADO_CONFIG.FALTANTE
+                          const esPendiente = doc.estado === 'PENDIENTE'
+
+                          // Lógica de descarga
+                          let estadoDescarga = null;
+                          if (doc.estado === 'FALTANTE') {
+                            estadoDescarga = { label: 'Falta subir', color: 'text-slate-600 italic' }
+                          } else if (!doc.descargado) {
+                            estadoDescarga = { label: 'Nuevo (Falta descargar)', color: 'text-emerald-400 font-bold' }
+                          } else if (doc.subido_en && doc.descargado_en && new Date(doc.subido_en) > new Date(doc.descargado_en)) {
+                            estadoDescarga = { label: 'Actualizado (Falta descargar)', color: 'text-amber-400 font-bold' }
+                          } else {
+                            estadoDescarga = { label: 'Descargado', color: 'text-slate-400' }
+                          }
+
+                          return (
+                            <tr key={doc.id || doc.tipo_documento} className="hover:bg-surface/20 transition-colors">
+                              <td className="px-6 py-4">
+                                <div className="font-semibold text-text-main text-[13px] leading-tight">
+                                  {doc.nombre_esperado || doc.tipo_documento}
+                                </div>
+                                <div className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
+                                  {doc.grupo === 'representante' ? 'Rep. Legal' : doc.grupo === 'estados_cuenta' ? 'Edo. de Cuenta' : 'Empresa'}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-text-muted text-xs truncate max-w-[180px]" title={doc.nombre_archivo}>
+                                {doc.nombre_archivo || '—'}
+                              </td>
+                              <td className="px-6 py-4 text-text-muted text-xs">
+                                {doc.subido_en ? new Date(doc.subido_en).toLocaleDateString() : '—'}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                                  {cfg.icon} {cfg.label}
+                                </span>
+                              </td>
+                              <td className={`px-6 py-4 text-[11px] ${estadoDescarga.color}`}>
+                                {estadoDescarga.label}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                {esPendiente ? (
+                                  <button
+                                    onClick={() => setReviewDoc(doc)}
+                                    className="bg-primary-600 hover:bg-primary-500 text-white font-semibold text-xs py-1.5 px-4 rounded-lg transition-colors shadow-[0_0_10px_rgba(225,29,72,0.2)]"
+                                  >
+                                    Revisar
+                                  </button>
+                                ) : (
+                                  doc.estado !== 'FALTANTE' && (
+                                    <div className="flex items-center justify-end gap-2">
+                                      {doc.comentario_admin && (
+                                        <span className="text-[11px] text-text-muted bg-surface px-2 py-1 rounded border border-border max-w-[150px] truncate" title={doc.comentario_admin}>
+                                          💬 {doc.comentario_admin}
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() => setReviewDoc(doc)}
+                                        className="text-primary-400 hover:text-primary-300 bg-primary-500/10 hover:bg-primary-500/20 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                                      >
+                                        Cambiar estado
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <>
+                {renderTable(docsEmpresa, "🏢 Documentos de la Empresa")}
+                {renderTable(docsRep, "🧑‍💼 Documentos del Representante Legal")}
+              </>
+            )
+          })()}
         </div>
       )}
 

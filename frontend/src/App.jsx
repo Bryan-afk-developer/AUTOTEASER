@@ -131,13 +131,24 @@ function App() {
     showToast(`${pdfs.length} archivo(s) subidos`)
   }
 
+  const handleSetBank = async (docId, bank) => {
+    try {
+      const r = await axios.post(`${API_BASE}/api/documents/${docId}/set-bank`, { bank })
+      setDocuments(prev => prev.map(d => d.id === docId ? { ...d, detected_bank: r.data.detected_bank } : d))
+      showToast(`Banco actualizado a ${bank.toUpperCase()}`)
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Error al cambiar el banco', true)
+    }
+  }
+
   const handleProcessAll = async () => {
     const pending = documents.filter(d => d.status === 'uploaded' && d.detected_bank)
     if (!pending.length) return showToast('Nada que procesar', true)
     setIsLoading(true); showToast(`Procesando ${pending.length} doc(s)...`)
     for (const doc of pending) {
       try {
-        const r = await axios.post(`${API_BASE}/api/process/${doc.id}`)
+        const engineParam = doc.engine || 'gemini'
+        const r = await axios.post(`${API_BASE}/api/process/${doc.id}?engine=${engineParam}`)
         setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, status: r.data.status, parsed_data: r.data.data } : d))
       } catch { setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'error' } : d)) }
     }
@@ -451,7 +462,7 @@ function App() {
             </div>
           </div>
         </header>
-        
+
         {/* ── Section: AutoTeaser ── */}
         {activeSection === 'teaser' && (
           <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1">
@@ -505,12 +516,25 @@ function App() {
                         </button>
                       </div>
                       <div className="flex items-center justify-between mt-auto">
-                        <span className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full
-                          ${doc.detected_bank?.toLowerCase() === 'hsbc' ? 'bg-amber-500/15 text-amber-300' :
-                            !doc.detected_bank || doc.detected_bank === 'desconocido' ? 'bg-rose-500/15 text-rose-300' :
-                              'bg-primary-500/15 text-primary-400'}`}>
-                          {doc.detected_bank || '???'}
-                        </span>
+                        <select
+                          value={doc.detected_bank?.toLowerCase() || ''}
+                          onChange={(e) => handleSetBank(doc.id, e.target.value)}
+                          className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full border border-transparent cursor-pointer outline-none appearance-none hover:border-gray-500/30 transition-all text-center
+                            ${doc.detected_bank?.toLowerCase() === 'hsbc' ? 'bg-amber-500/15 text-amber-300' :
+                              !doc.detected_bank || doc.detected_bank === 'desconocido' ? 'bg-rose-500/15 text-rose-300' :
+                                'bg-primary-500/15 text-primary-400'}`}
+                        >
+                          <option value="" disabled className="bg-[#1e1e2e] text-rose-300">¿BANCO?</option>
+                          <option value="hsbc" className="bg-[#1e1e2e] text-text-main">HSBC</option>
+                          <option value="bbva" className="bg-[#1e1e2e] text-text-main">BBVA</option>
+                          <option value="banorte" className="bg-[#1e1e2e] text-text-main">BANORTE</option>
+                          <option value="santander" className="bg-[#1e1e2e] text-text-main">SANTANDER</option>
+                          <option value="scotiabank" className="bg-[#1e1e2e] text-text-main">SCOTIABANK</option>
+                          <option value="banamex" className="bg-[#1e1e2e] text-text-main">BANAMEX</option>
+                          <option value="inbursa" className="bg-[#1e1e2e] text-text-main">INBURSA</option>
+                          <option value="sabadell" className="bg-[#1e1e2e] text-text-main">SABADELL</option>
+                          <option value="bxplus" className="bg-[#1e1e2e] text-text-main">BXPLUS</option>
+                        </select>
                         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full
                           ${doc.status === 'uploaded' ? 'bg-blue-500/10 text-blue-400' :
                             doc.status === 'processed' ? 'bg-green-500/10 text-green-400' :
@@ -518,6 +542,30 @@ function App() {
                           {doc.status === 'uploaded' ? '● Subido' : doc.status === 'processed' ? '✓ Procesado' : '✗ Error'}
                         </span>
                       </div>
+
+                      {doc.detected_bank?.toLowerCase() === 'hsbc' && (
+                        <div className="mt-2 flex items-center justify-between bg-surface/30 border border-border/50 rounded-lg p-1.5">
+                          <span className="text-[10px] text-text-muted font-medium">Motor:</span>
+                          <div className="flex items-center gap-1 bg-[#181825] p-0.5 rounded-md border border-border/40">
+                            <button
+                              onClick={() => {
+                                setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, engine: 'gemini' } : d))
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded transition-all font-semibold uppercase ${(!doc.engine || doc.engine === 'gemini') ? 'bg-primary-500 text-white shadow' : 'text-text-muted hover:text-text-main'}`}
+                            >
+                              Gemini
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, engine: 'documentai' } : d))
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded transition-all font-semibold uppercase ${(doc.engine === 'documentai') ? 'bg-amber-500 text-[#11111b] shadow' : 'text-text-muted hover:text-text-main'}`}
+                            >
+                              GCP DocAI
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {doc.parsed_data && (
                         <div className="text-[11px] text-text-muted bg-surface/50 rounded-lg p-2 mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                           <span>Cuenta: <b className="text-primary-400">{doc.parsed_data.account_name}</b></span>
@@ -688,7 +736,7 @@ function App() {
                 <input type="file" ref={cafFileInputRef} className="hidden" accept=".pdf" onChange={e => { if (e.target.files?.[0]) handleCafUploadPdf(e.target.files[0]) }} />
               </div>
 
-              
+
 
             </div>
 

@@ -173,8 +173,33 @@ async def upload_pdf(file: UploadFile = File(...)):
     }
 
 
+class SetBankRequest(BaseModel):
+    bank: str
+
+
+@app.post("/api/documents/{doc_id}/set-bank")
+async def set_document_bank(doc_id: str, request: SetBankRequest):
+    """
+    Asigna o cambia el banco detectado para un documento subido de forma manual.
+    """
+    if doc_id not in documents:
+        raise HTTPException(404, f"Documento {doc_id} no encontrado")
+    
+    bank = request.bank.lower().strip()
+    from app.bank_detector import VALID_BANKS
+    if bank not in VALID_BANKS and bank != "desconocido":
+        raise HTTPException(400, f"Banco no válido. Debe ser uno de: {VALID_BANKS}")
+        
+    documents[doc_id]["detected_bank"] = bank if bank != "desconocido" else None
+    return {
+        "id": doc_id,
+        "detected_bank": documents[doc_id]["detected_bank"],
+        "status": documents[doc_id]["status"]
+    }
+
+
 @app.post("/api/process/{doc_id}")
-async def process_document(doc_id: str):
+async def process_document(doc_id: str, engine: str = "gemini"):
     """
     Process the uploaded PDF with the bank-specific parser.
     """
@@ -196,6 +221,7 @@ async def process_document(doc_id: str):
         parse_kwargs = {}
         if bank == "hsbc":
             parse_kwargs["pdf_path"] = doc["file_path"]
+            parse_kwargs["engine"] = engine
         
         parsed_data = parser.parse(
             doc["extraction"]["full_text"],

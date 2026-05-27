@@ -45,9 +45,6 @@ async def subir_documento(
     sb = get_supabase_admin()
 
     # 2. Validar archivo
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
-
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
@@ -70,7 +67,7 @@ async def subir_documento(
         upload_response = sb.storage.from_(BUCKET_NAME).upload(
             path=storage_path,
             file=content,
-            file_options={"content-type": "application/pdf", "upsert": "true"},
+            file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "true"},
         )
         logger.info(f"Archivo subido a Storage: {storage_path}")
     except Exception as e:

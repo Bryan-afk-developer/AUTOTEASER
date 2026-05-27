@@ -142,14 +142,123 @@ def _parse_gemini_response(text: str) -> dict:
     return result
 
 
-def parse(text: str, pages: list[str], pdf_path: str | Path = None) -> dict:
+def _extract_with_documentai_gcp(pdf_path: str | Path) -> dict | None:
     """
-    Parse an HSBC bank statement using Gemini Vision OCR.
+    HSBC-specific: Render page 1 as PNG image, THEN send to Document AI.
+    This forces pure visual OCR, bypassing CID glyph encoding that prevents
+    Document AI from reading the RESUMEN table when processing the raw PDF.
+    """
+    try:
+        from google.api_core.client_options import ClientOptions
+        from google.cloud import documentai
+        from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
+        import re
+
+        if not GCP_PROJECT_ID or not GCP_PROCESSOR_ID_OCR:
+            logger.warning("HSBC: GCP credentials not configured")
+            return None
+
+        # 1. Render page 1 as PNG image (forces OCR instead of text layer parsing)
+        logger.info("HSBC: Rendering page 1 as image for Document AI OCR...")
+        images = _render_pages_as_images(pdf_path, [0])
+        if not images:
+            logger.error("HSBC: Could not render PDF page as image")
+            return None
+
+        # 2. Send IMAGE to Document AI (not the PDF)
+        opts = ClientOptions(api_endpoint=f"{GCP_LOCATION}-documentai.googleapis.com")
+        client = documentai.DocumentProcessorServiceClient(client_options=opts)
+        name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
+
+        raw_document = documentai.RawDocument(content=images[0], mime_type="image/png")
+        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+        logger.info("HSBC: Sending page image to Document AI Form Parser...")
+        result = client.process_document(request=request)
+        document = result.document
+
+        # 3. Build combined text from form fields AND full OCR text
+        combined_text = ""
+
+        # Extract form fields
+        for page in document.pages:
+            if getattr(page, "form_fields", None):
+                for field in page.form_fields:
+                    key = ""
+                    val = ""
+                    if getattr(field.field_name, "text_anchor", None):
+                        for seg in field.field_name.text_anchor.text_segments:
+                            key += document.text[int(seg.start_index):int(seg.end_index)]
+                    if getattr(field.field_value, "text_anchor", None):
+                        for seg in field.field_value.text_anchor.text_segments:
+                            val += document.text[int(seg.start_index):int(seg.end_index)]
+                    key = key.strip().replace('\n', ' ')
+                    val = val.strip().replace('\n', ' ')
+                    if key:
+                        combined_text += f"{key}: {val}\n"
+
+        # Also include full OCR text (catches table text that wasn't parsed as form fields)
+        if document.text:
+            combined_text += f"\n--- FULL OCR TEXT ---\n{document.text}\n"
+
+        logger.info(f"HSBC: ===== DOCUMENT AI IMAGE OCR OUTPUT =====\n{combined_text}\n=============================================")
+
+        # 4. Parse with regex
+        result = {}
+
+        # --- CUENTA ---
+        m = re.search(r'(?:cuenta|número de cuenta)[^\d]*(\d{10})', combined_text, re.IGNORECASE)
+        if m:
+            result["account_num"] = m.group(1)
+
+        # --- PERIODO ---
+        # Try date format: dd/mm/yyyy al dd/mm/yyyy
+        m = re.search(r'(\d{2}/\d{2}/\d{4})\s+al\s+(\d{2}/\d{2}/\d{4})', combined_text)
+        if m:
+            end_date = m.group(2)
+            month_num = int(end_date.split('/')[1])
+            year = end_date.split('/')[2]
+            month_names = {
+                1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+                5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+                9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre',
+            }
+            result["month_raw"] = month_names.get(month_num, '')
+            result["year"] = year
+        else:
+            m = re.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(?:de\s+)?(\d{4})', combined_text, re.IGNORECASE)
+            if m:
+                result["month_raw"] = m.group(1).lower()
+                result["year"] = m.group(2)
+
+        # --- DEPOSITOS ---
+        m = re.search(r'(?:total de depósitos|depósitos|depositos)[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
+        if m:
+            result["deposits"] = float(m.group(1).replace(',', ''))
+
+        # --- SALDO PROMEDIO ---
+        # Prioridad: "saldo promedio en el mes" > "saldo promedio" genérico
+        m = re.search(r'saldo promedio en (?:el\s+)?mes[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
+        if not m:
+            m = re.search(r'saldo promedio[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
+        if m:
+            result["average_balance"] = float(m.group(1).replace(',', ''))
+
+        return result
+
+    except Exception as e:
+        logger.error(f"HSBC Document AI extraction failed: {e}", exc_info=True)
+        return None
+
+
+def parse(text: str, pages: list[str], pdf_path: str | Path = None, engine: str = "gemini") -> dict:
+    """
+    Parse an HSBC bank statement using Gemini Vision OCR or GCP Document AI Form Parser.
     
     Args:
-        text: Full extracted text from the PDF (usually garbled CID codes for HSBC)
-        pages: List of text per page (usually garbled)
-        pdf_path: Path to the original PDF file (REQUIRED for HSBC to render images)
+        text: Full extracted text from the PDF
+        pages: List of text per page
+        pdf_path: Path to the original PDF file (REQUIRED to render images/use GCP)
+        engine: "gemini" for Gemini Vision, "documentai" for Google Cloud Document AI Form Parser
     
     Returns:
         dict with account_name, month, year, deposits, average_balance
@@ -169,13 +278,19 @@ def parse(text: str, pages: list[str], pdf_path: str | Path = None) -> dict:
     }
 
     if not pdf_path:
-        logger.error("HSBC parser requires pdf_path to render images for OCR")
+        logger.error("HSBC parser requires pdf_path to run OCR/extraction")
         return result
 
-    # Call Gemini OCR
-    ocr_data = _extract_with_gemini(pdf_path)
+    # Select processing engine
+    if engine == "documentai":
+        logger.info("HSBC: Processing using GCP Document AI engine...")
+        ocr_data = _extract_with_documentai_gcp(pdf_path)
+    else:
+        logger.info("HSBC: Processing using Gemini Vision engine...")
+        ocr_data = _extract_with_gemini(pdf_path)
+
     if not ocr_data:
-        logger.warning("HSBC: Gemini OCR returned no data")
+        logger.warning(f"HSBC: Extraction using engine '{engine}' returned no data")
         return result
 
     # Map extracted data

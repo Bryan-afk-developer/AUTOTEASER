@@ -27,3 +27,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # Tesseract path (for scanned PDFs)
 TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
+# Google Cloud Document AI
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "").strip()
+GCP_LOCATION = os.getenv("GCP_LOCATION", "us").strip()
+GCP_PROCESSOR_ID_OCR = os.getenv("GCP_PROCESSOR_ID_OCR", "").strip()
+

@@ -8,3 +8,4 @@ pymupdf==1.25.3
 google-generativeai==0.8.4
 pandas>=2.0.0
 supabase==2.10.0
+google-cloud-documentai>=2.20.0

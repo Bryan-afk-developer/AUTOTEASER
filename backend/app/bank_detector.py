@@ -140,7 +140,7 @@ def detect_bank_from_text(text: str) -> str | None:
 
 def detect_bank(pdf_path: str | Path, text: str = "") -> str | None:
     """
-    Main detection function. Tries Gemini Vision first, falls back to text patterns.
+    Main detection function. Tries filename heuristics first, then Gemini Vision, then text patterns.
     
     Args:
         pdf_path: Path to the PDF file (for Gemini Vision)
@@ -149,12 +149,24 @@ def detect_bank(pdf_path: str | Path, text: str = "") -> str | None:
     Returns:
         Bank key or None
     """
-    # 1. Try Gemini Vision (most reliable - identifies by logo)
+    # 1. Try filename heuristics (fast, free, local)
+    if pdf_path:
+        filename = Path(pdf_path).name.lower()
+        for bank_key in VALID_BANKS:
+            if bank_key == "bxplus":
+                if "bxplus" in filename or "bx+" in filename or "ve por mas" in filename or "ve por más" in filename:
+                    logger.info(f"Filename heuristic detected bank: bxplus")
+                    return "bxplus"
+            elif bank_key in filename:
+                logger.info(f"Filename heuristic detected bank: {bank_key}")
+                return bank_key
+
+    # 2. Try Gemini Vision (identifies by logo)
     bank = detect_bank_with_gemini(pdf_path)
     if bank:
         return bank
     
-    # 2. Fallback to text patterns
+    # 3. Fallback to text patterns
     logger.info("Falling back to text-based detection")
     if text:
         bank = detect_bank_from_text(text)

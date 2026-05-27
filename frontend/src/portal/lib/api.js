@@ -92,6 +92,27 @@ export const api = {
 
   revisarDocumento: (docId, estado, comentario = '') =>
     request('PATCH', `/api/portal/admin/documentos/${docId}/revisar`, { estado, comentario }),
+
+  descargarTodosDocumentos: async (empresaId) => {
+    const headers = { ...authHeaders() }
+    const res = await fetch(`${BASE_URL}/api/portal/admin/empresas/${empresaId}/descargar-todo`, { headers })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Error ${res.status}`)
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const match = disposition.match(/filename="?(.+?)"?$/)
+    const filename = match ? match[1] : `Expediente_${empresaId}.zip`
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+  },
 }
 
 export default api

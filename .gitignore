@@ -3,6 +3,10 @@
 backend/outputs/
 backend/uploads/
 backend/venv/
+backend/.venv/
 backend/.env
 frontend/node_modules/
 .DS_Store
+google-credentials.json
+backend\google-credentials.json
+backend/PROYECTO_AUTOTEASER.md

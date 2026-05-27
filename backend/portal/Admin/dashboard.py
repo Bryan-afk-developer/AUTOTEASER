@@ -7,10 +7,16 @@ Endpoint:
 - GET /api/portal/admin/empresas
   Lista todas las empresas con el resumen de su expediente.
 """
+import io
 import logging
+import zipfile
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+
 from portal.shared.supabase_db import get_supabase_admin
-from portal.Cliente.expedientes import get_todos_los_documentos_requeridos
+from portal.Cliente.expedientes import get_todos_los_documentos_requeridos, DOCUMENTOS_REPRESENTANTE
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -172,3 +178,71 @@ async def get_empresa_documentos(empresa_id: str):
         "documentos": documentos_completos,
         "total": len(documentos_completos)
     }
+
+
+CLAVES_REPRESENTANTE = {doc["clave"] for doc in DOCUMENTOS_REPRESENTANTE}
+
+
+@router.get("/empresas/{empresa_id}/descargar-todo")
+async def descargar_todos_documentos(empresa_id: str):
+    """
+    Descarga todos los documentos subidos de una empresa como un archivo ZIP.
+    Marca cada documento como descargado en la base de datos.
+    """
+    sb = get_supabase_admin()
+
+    emp_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not emp_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    empresa_nombre = emp_resp.data["nombre"]
+
+    docs_exp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
+    docs_rep = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
+    todos_docs = (docs_exp.data or []) + (docs_rep.data or [])
+
+    if not todos_docs:
+        raise HTTPException(status_code=404, detail="No hay documentos subidos para esta empresa")
+
+    zip_buffer = io.BytesIO()
+    ahora = datetime.now(timezone.utc).isoformat()
+    archivos_incluidos = 0
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for doc in todos_docs:
+            storage_path = doc.get("storage_path")
+            if not storage_path:
+                continue
+            try:
+                file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+                nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+                tipo = doc.get("tipo_documento", "doc")
+                
+                carpeta = "Representante Legal" if tipo in CLAVES_REPRESENTANTE else "Documentos de la Empresa"
+                zip_path = f"{carpeta}/{nombre_archivo}"
+                
+                zf.writestr(zip_path, file_bytes)
+                archivos_incluidos += 1
+
+                table = "documentos_representante" if tipo in CLAVES_REPRESENTANTE else "documentos_expediente"
+                sb.table(table).update({
+                    "descargado": True,
+                    "descargado_en": ahora,
+                }).eq("id", doc["id"]).execute()
+            except Exception as e:
+                logger.warning(f"No se pudo descargar {storage_path}: {e}")
+                continue
+
+    if archivos_incluidos == 0:
+        raise HTTPException(status_code=404, detail="No se pudieron descargar archivos del storage")
+
+    zip_buffer.seek(0)
+    safe_name = empresa_nombre.replace(" ", "_").replace("/", "-")
+    filename = f"Expediente_{safe_name}.zip"
+
+    logger.info(f"ZIP generado para {empresa_nombre}: {archivos_incluidos} archivos")
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

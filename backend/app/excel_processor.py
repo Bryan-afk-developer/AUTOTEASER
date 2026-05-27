@@ -44,19 +44,37 @@ def _get_cell_row(cell_ref: str) -> int:
         return int(match.group(2))
     return 9999
 
-def _get_sort_key(d):
-    try:
-        y = int(d.get("year", 0))
-    except Exception:
-        y = 0
-    m_str = str(d.get("month", "")).lower().strip()[:3]
-    m = SPANISH_MONTHS.get(m_str, 0)
-    return (y, m)
+def _compute_month_slots() -> list[dict]:
+    """
+    Compute the 7 month slots for the Teaser, desfased 2 months from today.
+    Returns list of dicts with 'month_idx', 'year', 'label' sorted oldest-first.
+    E.g. if today is May 2026 → Mar-26 backwards: Sep-25, Oct-25, Nov-25, Dec-25, Ene-26, Feb-26, Mar-26
+    """
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+
+    today = date.today()
+    start = today - relativedelta(months=2)  # 2 months back from today
+    slots = []
+    for i in range(7):
+        target = start - relativedelta(months=i)
+        yr_suffix = str(target.year)[-2:]
+        label = f"{MONTH_DISPLAY[target.month]} -{yr_suffix}"
+        slots.append({
+            "month_idx": target.month,
+            "year": target.year,
+            "label": label,
+        })
+    # Reverse so oldest is first (row 4 = oldest, row 10 = most recent)
+    slots.reverse()
+    return slots
 
 
 def fill_template(template_path: str, output_path: str, data_list: list[dict], mapping: dict | None = None) -> str:
     """
     Fill an Excel template with extracted data using dynamic block assignment.
+    Month rows are determined by the current date (desfased 2 months).
+    Each data entry is placed in the row matching its extracted month/year.
     
     Args:
         template_path: Path to the .xlsx template
@@ -85,17 +103,21 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
             ws = wb.active
             logger.warning(f"Sheet '{sheet_name}' not found, using active sheet: {ws.title}")
         
-        # 2. Group data by account_name
+        # 2. Compute the 7 dynamic month slots
+        month_slots = _compute_month_slots()
+        logger.info(f"Dynamic month slots: {[s['label'] for s in month_slots]}")
+        
+        # 3. Group data by account_name
         accounts = defaultdict(list)
         for data in data_list:
             acct = data.get("account_name", "").strip()
             if acct:
                 accounts[acct].append(data)
         
-        # 3. Sort accounts alphabetically for consistent ordering
+        # 4. Sort accounts alphabetically for consistent ordering
         sorted_accounts = sorted(accounts.keys())
         
-        # 4. Get available blocks from mapping
+        # 5. Get available blocks from mapping
         blocks = mapping["blocks"]
         
         if len(sorted_accounts) > len(blocks):
@@ -104,7 +126,7 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
                 f"Extra accounts will be skipped."
             )
         
-        # 5. Assign each unique account to the next available block
+        # 6. Assign each unique account to the next available block
         for block_idx, account_name in enumerate(sorted_accounts):
             if block_idx >= len(blocks):
                 logger.warning(f"No more blocks available for account '{account_name}', skipping.")
@@ -118,40 +140,54 @@ def fill_template(template_path: str, output_path: str, data_list: list[dict], m
                 ws[base_cell] = account_name
                 logger.info(f"Assigned block {block_idx + 1} ({base_cell}) → {account_name}")
             
-            # Sort the entries chronologically by year and month index
-            sorted_entries = sorted(accounts[account_name], key=_get_sort_key)
-            
-            # Get sorted lists of cells by their row coordinates
+            # Get sorted lists of cells by their row coordinates (row 4 = slot 0, row 10 = slot 6)
             sorted_dep_cells = sorted(list(block.get("depositos", {}).values()), key=_get_cell_row)
             sorted_bal_cells = sorted(list(block.get("saldo_promedio", {}).values()), key=_get_cell_row)
             
-            # Fill chronological data to cell slots in order
-            for data, dep_cell, bal_cell in zip(sorted_entries, sorted_dep_cells, sorted_bal_cells):
-                month = data.get("month", "").lower().strip()
+            # Write month labels for ALL 7 slots (even empty ones)
+            for slot_idx, slot in enumerate(month_slots):
+                if slot_idx < len(sorted_dep_cells):
+                    cell_obj = ws[sorted_dep_cells[slot_idx]]
+                    label_col = cell_obj.column - 1
+                    if label_col > 0:
+                        ws.cell(row=cell_obj.row, column=label_col, value=slot["label"])
+            
+            # Place each data entry in the row that matches its month/year
+            for data in accounts[account_name]:
+                month_str = str(data.get("month", "")).lower().strip()[:3]
+                data_month_idx = SPANISH_MONTHS.get(month_str, 0)
+                try:
+                    data_year = int(data.get("year", 0))
+                except (ValueError, TypeError):
+                    data_year = 0
+                
                 deposits = data.get("deposits")
                 avg_balance = data.get("average_balance")
                 
-                # Format month label
-                year = data.get("year", "")
-                year_suffix = year[-2:] if len(str(year)) >= 2 else str(year)
+                # Find which slot this data belongs to
+                target_slot = None
+                for slot_idx, slot in enumerate(month_slots):
+                    if slot["month_idx"] == data_month_idx and slot["year"] == data_year:
+                        target_slot = slot_idx
+                        break
                 
-                month_idx = SPANISH_MONTHS.get(month[:3], 0)
-                month_display = MONTH_DISPLAY.get(month_idx, month.capitalize())
-                month_label = f"{month_display} -{year_suffix}" if year_suffix else month_display
-
-                # Write deposits and the month label
+                if target_slot is None:
+                    logger.warning(
+                        f"Data for {account_name} month={month_str} year={data_year} "
+                        f"doesn't match any of the 7 expected slots, skipping."
+                    )
+                    continue
+                
+                if target_slot >= len(sorted_dep_cells):
+                    continue
+                
+                # Write deposits
                 if deposits is not None:
-                    ws[dep_cell] = deposits
-                    
-                    # Write the month label one column to the left
-                    cell_obj = ws[dep_cell]
-                    label_col = cell_obj.column - 1
-                    if label_col > 0:
-                        ws.cell(row=cell_obj.row, column=label_col, value=month_label)
+                    ws[sorted_dep_cells[target_slot]] = deposits
                 
                 # Write average balance
-                if avg_balance is not None:
-                    ws[bal_cell] = avg_balance
+                if avg_balance is not None and target_slot < len(sorted_bal_cells):
+                    ws[sorted_bal_cells[target_slot]] = avg_balance
     
     # Legacy support: old "Bancos" dict format (backwards compatible)
     elif mapping and "Bancos" in mapping:
