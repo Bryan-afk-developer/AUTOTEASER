@@ -46,6 +46,7 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
     doc = fitz.open(str(pdf_path))
     pages_text = []
     methods_used = set()
+    scanned_pages = 0
 
     for page_num in range(len(doc)):
         page = doc[page_num]
@@ -57,6 +58,7 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
             pages_text.append(text.strip())
             methods_used.add("pymupdf")
             logger.info(f"Page {page_num + 1}: PyMuPDF extraction ({len(text)} chars)")
+            scanned_pages = 0  # reset consecutive scanned count
         else:
             logger.warning(f"Page {page_num + 1}: No native text detected. Attempting OCR...")
             ocr_text = _ocr_page(page)
@@ -64,10 +66,24 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
                 pages_text.append(ocr_text.strip())
                 methods_used.add("ocr")
                 logger.info(f"Page {page_num + 1}: OCR extraction ({len(ocr_text)} chars)")
+                scanned_pages = 0
             else:
                 pages_text.append("[No text detected]")
                 methods_used.add("empty")
                 logger.warning(f"Page {page_num + 1}: OCR also failed to detect text.")
+                scanned_pages += 1
+
+                # If first 2 pages are both scanned → fully scanned PDF.
+                # No need to iterate all remaining pages; main.py only checks pages[0] and pages[1].
+                if page_num >= 1 and scanned_pages >= 2:
+                    logger.warning(
+                        f"PDF appears to be fully scanned (no text on first {page_num + 1} pages). "
+                        "Stopping early — Document AI will handle OCR."
+                    )
+                    # Fill remaining pages with placeholder so page count is preserved
+                    for _ in range(len(doc) - page_num - 1):
+                        pages_text.append("[No text detected]")
+                    break
 
     doc.close()
 
@@ -79,6 +95,7 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
         "method": ", ".join(methods_used),
         "page_count": len(pages_text),
     }
+
 
 
 def extract_tables_from_pdf(pdf_path: str | Path) -> dict:

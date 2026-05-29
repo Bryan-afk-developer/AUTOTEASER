@@ -1,46 +1,16 @@
 """
 AutoTeaser - HSBC Bank Statement Parser
-Uses Gemini Vision as OCR because HSBC PDFs have copy-protection
-(text is encoded as CID glyphs, making pdfplumber extraction useless).
-
-Strategy:
-1. Render each relevant page as an image via PyMuPDF
-2. Send the image(s) to Gemini with a strict prompt to extract ONLY:
-   - Account number
-   - Month and year
-   - Total deposits
-   - Average balance (Saldo Promedio)
-3. Parse Gemini's structured text response with regex (NO JSON to avoid truncation)
+Strictly uses Regex on native text ($0), or Document OCR Basic ($0.0015) for locked PDFs.
+No Gemini. No Form Parsers.
 """
 import re
 import logging
 from pathlib import Path
+import fitz
 
-import fitz  # PyMuPDF
-import google.generativeai as genai
-
-from app.config import GEMINI_API_KEY
+from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_BASIC_OCR, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
-
-# ── Gemini OCR prompt ──
-# Strict instructions to prevent hallucination
-OCR_PROMPT = """Analiza esta imagen de un estado de cuenta de HSBC México.
-Extrae SOLAMENTE estos 4 datos. Si no encuentras alguno, pon "NO ENCONTRADO".
-
-Responde EXACTAMENTE en este formato (una línea por dato):
-CUENTA: [número de cuenta, solo dígitos, ejemplo: 4071361352]
-PERIODO: [mes en español y año, ejemplo: septiembre 2025]
-DEPOSITOS: [monto total de depósitos, ejemplo: 1234567.89]
-SALDO_PROMEDIO: [saldo promedio en el mes, ejemplo: 987654.32]
-
-REGLAS:
-- Para DEPOSITOS busca "Total de depósitos" o "Depósitos" en el resumen del periodo
-- Para SALDO_PROMEDIO busca "SALDO PROMEDIO EN EL MES" o "Saldo Promedio" en el resumen
-- Los montos deben ser números sin signo de pesos ($) y sin comas
-- El mes debe estar en español completo (enero, febrero, etc.)
-"""
-
 
 def _render_pages_as_images(pdf_path: str | Path, page_indices: list[int] = None) -> list[bytes]:
     """Render specified PDF pages as PNG images."""
@@ -58,210 +28,176 @@ def _render_pages_as_images(pdf_path: str | Path, page_indices: list[int] = None
     return images
 
 
-def _extract_with_gemini(pdf_path: str | Path) -> dict | None:
+def _extract_with_document_ocr_basic(pdf_path: str | Path):
     """
-    Use Gemini Vision to OCR the HSBC statement and extract financial data.
-    Tries multiple models in case of quota exhaustion.
-    Returns a dict with raw extracted values or None on failure.
-    """
-    if not GEMINI_API_KEY:
-        logger.error("HSBC parser requires GEMINI_API_KEY but none is configured")
-        return None
-
-    # Model fallback chain: try each until one works
-    MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-
-        # Render first 2 pages (summary is usually on page 1)
-        images = _render_pages_as_images(pdf_path, [0, 1])
-        if not images:
-            logger.error("Could not render PDF pages")
-            return None
-
-        # Build multimodal content
-        content_parts = [OCR_PROMPT]
-        for img_bytes in images:
-            content_parts.append({
-                "mime_type": "image/png",
-                "data": img_bytes,
-            })
-
-        # Try each model
-        for model_name in MODELS:
-            try:
-                logger.info(f"HSBC: trying model {model_name}...")
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(content_parts)
-                raw_text = response.text.strip()
-                logger.info(f"HSBC Gemini OCR response ({model_name}):\n{raw_text}")
-                return _parse_gemini_response(raw_text)
-            except Exception as model_err:
-                err_str = str(model_err).lower()
-                if "quota" in err_str or "resource_exhausted" in err_str or "429" in err_str:
-                    logger.warning(f"HSBC: {model_name} quota exhausted, trying next model...")
-                    continue
-                else:
-                    logger.error(f"HSBC: {model_name} failed with non-quota error: {model_err}")
-                    raise
-
-        logger.error("HSBC: all Gemini models exhausted quota")
-        return None
-
-    except Exception as e:
-        logger.error(f"HSBC Gemini OCR failed: {e}", exc_info=True)
-        return None
-
-
-def _parse_gemini_response(text: str) -> dict:
-    """Parse Gemini's structured text response into a dict."""
-    result = {}
-
-    # CUENTA: 4071361352
-    m = re.search(r'CUENTA:\s*(\d+)', text)
-    if m:
-        result["account_num"] = m.group(1)
-
-    # PERIODO: septiembre 2025
-    m = re.search(r'PERIODO:\s*(\w+)\s+(\d{4})', text, re.IGNORECASE)
-    if m:
-        result["month_raw"] = m.group(1).lower()
-        result["year"] = m.group(2)
-
-    # DEPOSITOS: 1234567.89
-    m = re.search(r'DEPOSITOS:\s*([\d.]+)', text)
-    if m:
-        result["deposits"] = float(m.group(1))
-
-    # SALDO_PROMEDIO: 987654.32
-    m = re.search(r'SALDO_PROMEDIO:\s*([\d.]+)', text)
-    if m:
-        result["average_balance"] = float(m.group(1))
-
-    return result
-
-
-def _extract_with_documentai_gcp(pdf_path: str | Path) -> dict | None:
-    """
-    HSBC-specific: Render page 1 as PNG image, THEN send to Document AI.
-    This forces pure visual OCR, bypassing CID glyph encoding that prevents
-    Document AI from reading the RESUMEN table when processing the raw PDF.
+    Renders page 1 as an image and uses the cheap Document OCR Basic.
+    Returns the document object to access layout (Y coordinates).
     """
     try:
         from google.api_core.client_options import ClientOptions
         from google.cloud import documentai
-        from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
-        import re
 
-        if not GCP_PROJECT_ID or not GCP_PROCESSOR_ID_OCR:
-            logger.warning("HSBC: GCP credentials not configured")
+        processor_id = GCP_PROCESSOR_ID_BASIC_OCR or GCP_PROCESSOR_ID_OCR
+        if not GCP_PROJECT_ID or not processor_id:
+            logger.warning("HSBC: GCP credentials or processor ID not configured for Basic OCR")
             return None
 
-        # 1. Render page 1 as PNG image (forces OCR instead of text layer parsing)
-        logger.info("HSBC: Rendering page 1 as image for Document AI OCR...")
+        logger.info("HSBC: Rendering page 1 as image for Basic OCR...")
         images = _render_pages_as_images(pdf_path, [0])
         if not images:
             logger.error("HSBC: Could not render PDF page as image")
             return None
 
-        # 2. Send IMAGE to Document AI (not the PDF)
         opts = ClientOptions(api_endpoint=f"{GCP_LOCATION}-documentai.googleapis.com")
         client = documentai.DocumentProcessorServiceClient(client_options=opts)
-        name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
+        name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, processor_id)
 
         raw_document = documentai.RawDocument(content=images[0], mime_type="image/png")
         request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-        logger.info("HSBC: Sending page image to Document AI Form Parser...")
+        logger.info(f"HSBC: Sending page image to Document OCR Basic (Processor: {processor_id})...")
         result = client.process_document(request=request)
-        document = result.document
-
-        # 3. Build combined text from form fields AND full OCR text
-        combined_text = ""
-
-        # Extract form fields
-        for page in document.pages:
-            if getattr(page, "form_fields", None):
-                for field in page.form_fields:
-                    key = ""
-                    val = ""
-                    if getattr(field.field_name, "text_anchor", None):
-                        for seg in field.field_name.text_anchor.text_segments:
-                            key += document.text[int(seg.start_index):int(seg.end_index)]
-                    if getattr(field.field_value, "text_anchor", None):
-                        for seg in field.field_value.text_anchor.text_segments:
-                            val += document.text[int(seg.start_index):int(seg.end_index)]
-                    key = key.strip().replace('\n', ' ')
-                    val = val.strip().replace('\n', ' ')
-                    if key:
-                        combined_text += f"{key}: {val}\n"
-
-        # Also include full OCR text (catches table text that wasn't parsed as form fields)
-        if document.text:
-            combined_text += f"\n--- FULL OCR TEXT ---\n{document.text}\n"
-
-        logger.info(f"HSBC: ===== DOCUMENT AI IMAGE OCR OUTPUT =====\n{combined_text}\n=============================================")
-
-        # 4. Parse with regex
-        result = {}
-
-        # --- CUENTA ---
-        m = re.search(r'(?:cuenta|número de cuenta)[^\d]*(\d{10})', combined_text, re.IGNORECASE)
-        if m:
-            result["account_num"] = m.group(1)
-
-        # --- PERIODO ---
-        # Try date format: dd/mm/yyyy al dd/mm/yyyy
-        m = re.search(r'(\d{2}/\d{2}/\d{4})\s+al\s+(\d{2}/\d{2}/\d{4})', combined_text)
-        if m:
-            end_date = m.group(2)
-            month_num = int(end_date.split('/')[1])
-            year = end_date.split('/')[2]
-            month_names = {
-                1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
-                5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
-                9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre',
-            }
-            result["month_raw"] = month_names.get(month_num, '')
-            result["year"] = year
-        else:
-            m = re.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(?:de\s+)?(\d{4})', combined_text, re.IGNORECASE)
-            if m:
-                result["month_raw"] = m.group(1).lower()
-                result["year"] = m.group(2)
-
-        # --- DEPOSITOS ---
-        m = re.search(r'(?:total de depósitos|depósitos|depositos)[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
-        if m:
-            result["deposits"] = float(m.group(1).replace(',', ''))
-
-        # --- SALDO PROMEDIO ---
-        # Prioridad: "saldo promedio en el mes" > "saldo promedio" genérico
-        m = re.search(r'saldo promedio en (?:el\s+)?mes[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
-        if not m:
-            m = re.search(r'saldo promedio[^\d]*([\d,]+\.\d{2})', combined_text, re.IGNORECASE)
-        if m:
-            result["average_balance"] = float(m.group(1).replace(',', ''))
-
-        return result
+        
+        return result.document
 
     except Exception as e:
-        logger.error(f"HSBC Document AI extraction failed: {e}", exc_info=True)
+        logger.error(f"HSBC Document OCR Basic failed: {e}", exc_info=True)
         return None
 
 
-def parse(text: str, pages: list[str], pdf_path: str | Path = None, engine: str = "gemini") -> dict:
+def _apply_ocr_layout_extraction(document) -> dict:
+    """Uses Y-coordinates from Document AI Basic OCR to extract table values."""
+    result = {}
+    if not document:
+        return result
+
+    # 1. Extract raw text for non-table fields
+    text = document.text or ""
+    
+    # --- CUENTA ---
+    m = re.search(r'(?:cuenta|número de cuenta)[^\d]*(\d{10})', text, re.IGNORECASE)
+    if m:
+        result["account_num"] = m.group(1)
+
+    # --- PERIODO ---
+    m = re.search(r'(\d{2}/\d{2}/\d{4})\s+al\s+(\d{2}/\d{2}/\d{4})', text)
+    if m:
+        end_date = m.group(2)
+        month_num = int(end_date.split('/')[1])
+        year = end_date.split('/')[2]
+        month_names = {
+            1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+            5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+            9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre',
+        }
+        result["month_raw"] = month_names.get(month_num, '')
+        result["year"] = year
+    else:
+        m = re.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(?:de\s+)?(\d{4})', text, re.IGNORECASE)
+        if m:
+            result["month_raw"] = m.group(1).lower()
+            result["year"] = m.group(2)
+
+    # 2. Use Y-coordinates to extract table fields (Depósitos, Saldo Promedio)
+    lines_data = []
+    for page in document.pages:
+        for line in getattr(page, "lines", []):
+            if not getattr(line, "layout", None) or not getattr(line.layout, "text_anchor", None):
+                continue
+            segments = line.layout.text_anchor.text_segments
+            line_text = ""
+            for seg in segments:
+                line_text += document.text[int(seg.start_index):int(seg.end_index)]
+            
+            y_coords = [v.y for v in line.layout.bounding_poly.normalized_vertices]
+            y_center = sum(y_coords) / len(y_coords) if y_coords else 0
+            lines_data.append({"y": y_center, "text": line_text.strip()})
+
+    # Find deposits
+    for item in lines_data:
+        text_lower = item["text"].lower()
+        if "depósitos" in text_lower or "depositos" in text_lower:
+            target_y = item["y"]
+            # Look for values in the same row (Y coordinate within 0.005)
+            candidates = [x for x in lines_data if abs(x["y"] - target_y) < 0.005 and "$" in x["text"]]
+            if candidates:
+                val_str = candidates[-1]["text"]  # The value is usually the rightmost column
+                m = re.search(r'([\d,]+\.\d{2})', val_str)
+                if m:
+                    result["deposits"] = float(m.group(1).replace(',', ''))
+                    break
+
+    # Find average balance
+    for item in lines_data:
+        text_lower = item["text"].lower()
+        if "saldo promedio en el mes" in text_lower or "saldo promedio en mes" in text_lower:
+            target_y = item["y"]
+            candidates = [x for x in lines_data if abs(x["y"] - target_y) < 0.005 and "$" in x["text"]]
+            if candidates:
+                val_str = candidates[-1]["text"]
+                m = re.search(r'([\d,]+\.\d{2})', val_str)
+                if m:
+                    result["average_balance"] = float(m.group(1).replace(',', ''))
+                    break
+        elif "saldo promedio" in text_lower and "average_balance" not in result:
+            target_y = item["y"]
+            candidates = [x for x in lines_data if abs(x["y"] - target_y) < 0.005 and "$" in x["text"]]
+            if candidates:
+                val_str = candidates[-1]["text"]
+                m = re.search(r'([\d,]+\.\d{2})', val_str)
+                if m:
+                    result["average_balance"] = float(m.group(1).replace(',', ''))
+
+    return result
+
+
+def _apply_regex_extraction(text: str) -> dict:
+    """Applies naive strict regular expressions to extract the 4 required points (used for native text only)."""
+    result = {}
+    if not text.strip():
+        return result
+
+    # --- CUENTA ---
+    m = re.search(r'(?:cuenta|número de cuenta)[^\d]*(\d{10})', text, re.IGNORECASE)
+    if m:
+        result["account_num"] = m.group(1)
+
+    # --- PERIODO ---
+    m = re.search(r'(\d{2}/\d{2}/\d{4})\s+al\s+(\d{2}/\d{2}/\d{4})', text)
+    if m:
+        end_date = m.group(2)
+        month_num = int(end_date.split('/')[1])
+        year = end_date.split('/')[2]
+        month_names = {
+            1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+            5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+            9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre',
+        }
+        result["month_raw"] = month_names.get(month_num, '')
+        result["year"] = year
+    else:
+        m = re.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(?:de\s+)?(\d{4})', text, re.IGNORECASE)
+        if m:
+            result["month_raw"] = m.group(1).lower()
+            result["year"] = m.group(2)
+
+    # --- DEPOSITOS ---
+    m = re.search(r'(?:total de depósitos|depósitos|depositos)[^\d]*([\d,]+\.\d{2})', text, re.IGNORECASE)
+    if m:
+        result["deposits"] = float(m.group(1).replace(',', ''))
+
+    # --- SALDO PROMEDIO ---
+    m = re.search(r'saldo promedio en (?:el\s+)?mes[^\d]*([\d,]+\.\d{2})', text, re.IGNORECASE)
+    if not m:
+        m = re.search(r'saldo promedio[^\d]*([\d,]+\.\d{2})', text, re.IGNORECASE)
+    if m:
+        result["average_balance"] = float(m.group(1).replace(',', ''))
+
+    return result
+
+
+def parse(text: str, pages: list[str], pdf_path: str | Path = None, engine: str = "auto") -> dict:
     """
-    Parse an HSBC bank statement using Gemini Vision OCR or GCP Document AI Form Parser.
-    
-    Args:
-        text: Full extracted text from the PDF
-        pages: List of text per page
-        pdf_path: Path to the original PDF file (REQUIRED to render images/use GCP)
-        engine: "gemini" for Gemini Vision, "documentai" for Google Cloud Document AI Form Parser
-    
-    Returns:
-        dict with account_name, month, year, deposits, average_balance
+    Parse an HSBC bank statement using $0 Native text or cheap Basic OCR with Y-coordinate layout matching.
     """
     result = {
         "account_name": "",
@@ -277,36 +213,33 @@ def parse(text: str, pages: list[str], pdf_path: str | Path = None, engine: str 
         'septiembre': 'sep', 'octubre': 'oct', 'noviembre': 'nov', 'diciembre': 'dic',
     }
 
-    if not pdf_path:
-        logger.error("HSBC parser requires pdf_path to run OCR/extraction")
-        return result
-
-    # Select processing engine
-    if engine == "documentai":
-        logger.info("HSBC: Processing using GCP Document AI engine...")
-        ocr_data = _extract_with_documentai_gcp(pdf_path)
-    else:
-        logger.info("HSBC: Processing using Gemini Vision engine...")
-        ocr_data = _extract_with_gemini(pdf_path)
-
-    if not ocr_data:
-        logger.warning(f"HSBC: Extraction using engine '{engine}' returned no data")
-        return result
+    # Step 1: Try regex on native text ($0 cost)
+    extracted = _apply_regex_extraction(text)
+    
+    # Step 2: If native text is garbled/missing data, use Basic OCR
+    missing_critical = not extracted.get("account_num") or not extracted.get("deposits")
+    
+    if missing_critical and pdf_path:
+        logger.info("HSBC: Native text extraction failed/incomplete. Falling back to Basic OCR with layout matching...")
+        ocr_document = _extract_with_document_ocr_basic(pdf_path)
+        if ocr_document:
+            extracted = _apply_ocr_layout_extraction(ocr_document)
 
     # Map extracted data
-    if "account_num" in ocr_data:
-        result["account_name"] = f"hsbc{ocr_data['account_num'][-4:]}"
+    if "account_num" in extracted:
+        result["account_name"] = f"hsbc{extracted['account_num'][-4:]}"
 
-    if "month_raw" in ocr_data:
-        result["month"] = meses_map.get(ocr_data["month_raw"], ocr_data["month_raw"][:3])
+    if "month_raw" in extracted:
+        result["month"] = meses_map.get(extracted["month_raw"], extracted["month_raw"][:3])
 
-    if "year" in ocr_data:
-        result["year"] = ocr_data["year"]
+    if "year" in extracted:
+        result["year"] = extracted["year"]
 
-    if "deposits" in ocr_data:
-        result["deposits"] = ocr_data["deposits"]
+    if "deposits" in extracted:
+        result["deposits"] = extracted["deposits"]
 
-    if "average_balance" in ocr_data:
-        result["average_balance"] = ocr_data["average_balance"]
+    if "average_balance" in extracted:
+        result["average_balance"] = extracted["average_balance"]
 
     return result
+

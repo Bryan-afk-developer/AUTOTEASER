@@ -10,25 +10,25 @@ const STEP_RESULTS = 3;
 
 export default function AutoCafView() {
   const [currentStep, setCurrentStep] = useState(STEP_UPLOAD);
-  
+
   // State: Upload
   const [files, setFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  
+
   // State: Process
   const [isProcessing, setIsProcessing] = useState(false);
   const [processedDocs, setProcessedDocs] = useState([]);
   const [validationReport, setValidationReport] = useState(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [processingError, setProcessingError] = useState(null);
-  
+
   // State: Modal details
   const [selectedDocDetails, setSelectedDocDetails] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
-  
+
   // State: Results
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
@@ -53,7 +53,7 @@ export default function AutoCafView() {
 
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
-  
+
   const handleDrop = (e) => {
     e.preventDefault(); setIsDragging(false);
     if (e.dataTransfer.files) handleFilesAdded(Array.from(e.dataTransfer.files));
@@ -108,20 +108,20 @@ export default function AutoCafView() {
     if (files.length === 0) return;
     setIsUploading(true);
     setProcessedDocs([]); // Solo limpiamos processedDocs si estamos subiendo nuevos archivos
-    
+
     try {
       const fd = new FormData();
       files.forEach(f => fd.append('files', f));
-      
+
       const r = await axios.post(`${API_BASE}/api/caf/upload-batch`, fd);
       const uploadedDocs = r.data.documents || [];
-      
+
       setProcessedDocs(uploadedDocs.map(d => ({
         id: d.id,
         fileName: d.file_name,
         status: 'pending',
       })));
-      
+
       setCurrentStep(STEP_PROCESS);
       handleProcessBatch(uploadedDocs.map(d => d.id));
     } catch (err) {
@@ -136,32 +136,37 @@ export default function AutoCafView() {
     setIsProcessing(true);
     setProcessingError(null);
     setProgress({ current: 0, total: docIds.length });
-    
+
     try {
       const results = [];
       const successfulDocs = [];
-      
+
       // Process one by one for visual progress
       for (let i = 0; i < docIds.length; i++) {
         const id = docIds[i];
         setProgress({ current: i + 1, total: docIds.length });
-        
+
         try {
           setProcessedDocs(prev => prev.map(d => d.id === id ? { ...d, status: 'processing' } : d));
           const r = await axios.post(`${API_BASE}/api/caf/process/${id}`);
           const method = r.data.method || 'Gemini + Deterministic';
           const warnings = r.data.warnings || [];
-          
-          results.push({ id, status: 'success', method, warnings });
+          // searchable_pdf_path may still be null (background task in progress)
+          const hasSearchablePdf = !!r.data.searchable_pdf_path;
+          const isDocAi = method.toLowerCase().includes('document ai');
+
+          results.push({ id, status: 'success', method, warnings, hasSearchablePdf, isDocAi, pdfGenerating: isDocAi && !hasSearchablePdf });
           successfulDocs.push(id);
-          
-          setProcessedDocs(prev => prev.map(d => d.id === id ? { ...d, status: 'success', method, warnings } : d));
+
+          setProcessedDocs(prev => prev.map(d =>
+            d.id === id ? { ...d, status: 'success', method, warnings, hasSearchablePdf, isDocAi, pdfGenerating: isDocAi && !hasSearchablePdf } : d
+          ));
         } catch (err) {
           results.push({ id, status: 'error', error: err.response?.data?.detail || err.message });
           setProcessedDocs(prev => prev.map(d => d.id === id ? { ...d, status: 'error', error: err.response?.data?.detail || err.message } : d));
         }
       }
-      
+
       // Fetch validation summary
       if (successfulDocs.length > 0) {
         try {
@@ -170,6 +175,30 @@ export default function AutoCafView() {
         } catch (err) {
           console.error("Error obteniendo validación", err);
         }
+      }
+
+      // Poll for searchable PDF completion for DocAI docs (background task)
+      const docAiIds = results.filter(r => r.isDocAi && !r.hasSearchablePdf).map(r => r.id);
+      if (docAiIds.length > 0) {
+        let attempts = 0;
+        const maxAttempts = 18; // 18 × 5s = 90s max
+        const poll = setInterval(async () => {
+          attempts++;
+          let allReady = true;
+          for (const id of docAiIds) {
+            try {
+              const res = await axios.get(`${API_BASE}/api/caf/documents/${id}`);
+              if (res.data.has_searchable_pdf) {
+                setProcessedDocs(prev => prev.map(d =>
+                  d.id === id ? { ...d, hasSearchablePdf: true, pdfGenerating: false } : d
+                ));
+              } else {
+                allReady = false;
+              }
+            } catch (e) { /* ignore */ }
+          }
+          if (allReady || attempts >= maxAttempts) clearInterval(poll);
+        }, 5000);
       }
     } catch (err) {
       setProcessingError(err.message);
@@ -181,18 +210,18 @@ export default function AutoCafView() {
   // ── Step 3: Generate Consolidated Excel ──
   const handleGenerate = async () => {
     if (!selectedTemplate) return;
-    
+
     const successfulDocIds = processedDocs.filter(d => d.status === 'success').map(d => d.id);
     if (successfulDocIds.length === 0) return setGenerationError("No hay documentos válidos para consolidar.");
-    
+
     setIsGenerating(true);
     setGenerationError(null);
     setDownloadUrl(null);
-    
+
     try {
-      const r = await axios.post(`${API_BASE}/api/caf/generate-consolidated`, { 
-        doc_ids: successfulDocIds, 
-        template_name: selectedTemplate 
+      const r = await axios.post(`${API_BASE}/api/caf/generate-consolidated`, {
+        doc_ids: successfulDocIds,
+        template_name: selectedTemplate
       });
       setDownloadUrl(`${API_BASE}${r.data.download_url}`);
     } catch (err) {
@@ -210,15 +239,15 @@ export default function AutoCafView() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      
+
       let filename = 'Consolidado_CAF.xlsx';
       const disposition = response.headers['content-disposition'];
       if (disposition && disposition.indexOf('attachment') !== -1) {
-          const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-          const matches = filenameRegex.exec(disposition);
-          if (matches != null && matches[1]) { 
-            filename = matches[1].replace(/['"]/g, '');
-          }
+        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+        const matches = filenameRegex.exec(disposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '');
+        }
       }
       link.setAttribute('download', filename);
       document.body.appendChild(link);
@@ -251,35 +280,26 @@ export default function AutoCafView() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e2d] text-white">
+    <div className="flex flex-col h-full bg-background text-white">
       {/* Header */}
-      <div className="p-6 border-b border-[#2b2b40] flex justify-between items-center bg-[#151521]">
-        <div>
-          <h2 className="text-2xl font-bold text-[#b0a4ff] flex items-center gap-2">
-            <Database className="w-6 h-6" /> AutoCAF Pro
-          </h2>
-          <p className="text-sm text-gray-400 mt-1">
-            Validación y consolidación de Estados Financieros multi-año
-          </p>
-        </div>
-      </div>
+
 
       <div className="flex-1 overflow-auto p-8 max-w-5xl mx-auto w-full">
-        
+
         {/* STEPPER */}
         <div className="flex items-center justify-center mb-10">
           <StepIndicator num={1} label="Subir PDFs" active={currentStep >= 1} completed={currentStep > 1} onClick={() => setCurrentStep(1)} />
-          <div className={`w-16 h-1 mx-4 rounded ${currentStep > 1 ? 'bg-[#7c6df0]' : 'bg-gray-700'}`} />
+          <div className={`w-16 h-1 mx-4 rounded ${currentStep > 1 ? 'bg-primary-500' : 'bg-gray-700'}`} />
           <StepIndicator num={2} label="Análisis Contable" active={currentStep >= 2} completed={currentStep > 2} onClick={() => { if (currentStep > 1) setCurrentStep(2) }} />
-          <div className={`w-16 h-1 mx-4 rounded ${currentStep > 2 ? 'bg-[#7c6df0]' : 'bg-gray-700'}`} />
+          <div className={`w-16 h-1 mx-4 rounded ${currentStep > 2 ? 'bg-primary-500' : 'bg-gray-700'}`} />
           <StepIndicator num={3} label="Consolidado" active={currentStep >= 3} completed={currentStep > 3} onClick={() => { if (currentStep > 2) setCurrentStep(3) }} />
         </div>
 
         {/* --- STEP 1 --- */}
         {currentStep === STEP_UPLOAD && (
           <div className="animate-fade-in">
-            <div 
-              className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${isDragging ? 'border-[#7c6df0] bg-[#7c6df0]/10' : 'border-gray-600 hover:border-gray-500 bg-[#151521]'}`}
+            <div
+              className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${isDragging ? 'border-primary-500 bg-primary-500/10' : 'border-gray-600 hover:border-gray-500 bg-surface'}`}
               onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -293,7 +313,7 @@ export default function AutoCafView() {
               <div className="mt-6 space-y-2">
                 <h4 className="text-sm font-medium text-gray-400">Archivos seleccionados ({files.length}):</h4>
                 {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-[#151521] rounded-lg border border-gray-700">
+                  <div key={i} className="flex items-center justify-between p-3 bg-surface rounded-lg border border-gray-700">
                     <div className="flex items-center gap-3">
                       <FileText className="w-5 h-5 text-blue-400" />
                       <span className="text-sm">{f.name}</span>
@@ -303,11 +323,11 @@ export default function AutoCafView() {
                     </button>
                   </div>
                 ))}
-                
+
                 <div className="mt-8 flex justify-end">
-                  <button 
+                  <button
                     onClick={handleUploadAndProceed} disabled={isUploading}
-                    className="flex items-center gap-2 bg-[#7c6df0] hover:bg-[#6a5bdf] text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                    className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
                   >
                     {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
                     {isUploading ? 'Subiendo...' : `Analizar ${files.length} Documentos ➔`}
@@ -324,25 +344,25 @@ export default function AutoCafView() {
                 </h4>
                 <div className="space-y-2">
                   {recentDocs.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between p-3 bg-[#151521] rounded-lg border border-gray-700 hover:border-gray-600 transition-colors cursor-pointer" onClick={() => toggleRecentDoc(doc.id)}>
+                    <div key={doc.id} className="flex items-center justify-between p-3 bg-surface rounded-lg border border-gray-700 hover:border-gray-600 transition-colors cursor-pointer" onClick={() => toggleRecentDoc(doc.id)}>
                       <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${selectedRecent.includes(doc.id) ? 'bg-[#7c6df0] border-[#7c6df0]' : 'border-gray-500'}`}>
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${selectedRecent.includes(doc.id) ? 'bg-primary-500 border-primary-500' : 'border-gray-500'}`}>
                           {selectedRecent.includes(doc.id) && <CheckCircle2 className="w-4 h-4 text-white" />}
                         </div>
                         <span className="text-sm">{doc.file_name}</span>
                         <span className="text-xs px-2 py-0.5 bg-gray-800 rounded text-gray-400">{doc.uploaded_at?.split('T')[0]}</span>
                       </div>
                       <div className="flex gap-2">
-                         {doc.status === 'processed' ? <span className="text-xs text-green-400">Procesado</span> : <span className="text-xs text-yellow-400">Error</span>}
+                        {doc.status === 'processed' ? <span className="text-xs text-green-400">Procesado</span> : <span className="text-xs text-yellow-400">Error</span>}
                       </div>
                     </div>
                   ))}
                 </div>
                 {selectedRecent.length > 0 && (
                   <div className="mt-4 flex justify-end">
-                    <button 
+                    <button
                       onClick={handleUseRecentDocs}
-                      className="flex items-center gap-2 bg-[#1e1e2d] border border-[#7c6df0] text-[#b0a4ff] hover:bg-[#7c6df0]/10 px-6 py-2 rounded-lg font-medium transition-colors"
+                      className="flex items-center gap-2 bg-background border border-primary-500 text-primary-400 hover:bg-primary-500/10 px-6 py-2 rounded-lg font-medium transition-colors"
                     >
                       Continuar con {selectedRecent.length} seleccionados ➔
                     </button>
@@ -357,24 +377,24 @@ export default function AutoCafView() {
         {currentStep === STEP_PROCESS && (
           <div className="animate-fade-in space-y-6">
             <h3 className="text-xl font-semibold">Procesando y Validando...</h3>
-            
+
             {isProcessing && (
-              <div className="bg-[#151521] p-5 rounded-xl border border-gray-700">
+              <div className="bg-surface p-5 rounded-xl border border-gray-700">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-400">Extrayendo datos y validando ecuaciones...</span>
                   <span className="font-medium">{progress.current} / {progress.total}</span>
                 </div>
                 <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-blue-500 to-[#7c6df0] transition-all duration-300" 
-                       style={{ width: `${(progress.current / Math.max(progress.total, 1)) * 100}%` }} />
+                  <div className="h-full bg-gradient-to-r from-blue-500 to-primary-500 transition-all duration-300"
+                    style={{ width: `${(progress.current / Math.max(progress.total, 1)) * 100}%` }} />
                 </div>
               </div>
             )}
 
             {validationReport && (
               <div className={`p-5 rounded-xl border flex items-start gap-4 ${validationReport.overall_valid ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                {validationReport.overall_valid ? 
-                  <CheckCircle2 className="w-8 h-8 text-green-400 flex-shrink-0" /> : 
+                {validationReport.overall_valid ?
+                  <CheckCircle2 className="w-8 h-8 text-green-400 flex-shrink-0" /> :
                   <AlertTriangle className="w-8 h-8 text-red-400 flex-shrink-0" />
                 }
                 <div>
@@ -384,10 +404,10 @@ export default function AutoCafView() {
                   <p className="text-sm text-gray-300 mt-1">
                     Años procesados: {validationReport.years_processed?.join(', ')}. Balances OK: {validationReport.summary?.balance_ok}.
                   </p>
-                  
+
                   <div className="flex gap-3 mt-4 flex-wrap">
                     {Object.entries(validationReport.balance || {}).map(([year, val]) => (
-                      <div key={year} className="bg-[#1e1e2d] px-4 py-2 rounded-lg border border-gray-700">
+                      <div key={year} className="bg-background px-4 py-2 rounded-lg border border-gray-700">
                         <div className="text-xs text-gray-400 font-medium">Balance {year}</div>
                         <div className={`font-semibold ${val.valid ? 'text-green-400' : 'text-red-400'}`}>
                           {val.valid ? 'Cuadra' : `Δ ${val.diferencia.toLocaleString()}`}
@@ -401,7 +421,7 @@ export default function AutoCafView() {
 
             <div className="space-y-3">
               {processedDocs.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between p-4 bg-[#151521] rounded-xl border border-gray-700">
+                <div key={doc.id} className="flex items-center justify-between p-4 bg-surface rounded-xl border border-gray-700">
                   <div className="flex items-center gap-3">
                     {doc.status === 'success' && <CheckCircle2 className="w-5 h-5 text-green-400" />}
                     {doc.status === 'error' && <XCircle className="w-5 h-5 text-red-400" />}
@@ -420,9 +440,9 @@ export default function AutoCafView() {
                   </div>
                   <div className="flex items-center gap-2">
                     {(doc.status === 'success' || doc.status === 'error') && (
-                      <button 
+                      <button
                         onClick={() => handleViewCafDocDetails(doc.id)}
-                        className="bg-[#2b2b40] hover:bg-[#3b3b55] text-xs px-3 py-1.5 rounded transition-colors"
+                        className="bg-surface hover:bg-cardHover text-xs px-3 py-1.5 rounded transition-colors"
                       >
                         👁️ Ver Info
                       </button>
@@ -442,10 +462,10 @@ export default function AutoCafView() {
                 <button onClick={resetAll} className="px-5 py-2 rounded-lg text-gray-300 hover:bg-gray-800">
                   Cancelar
                 </button>
-                <button 
+                <button
                   onClick={() => setCurrentStep(STEP_RESULTS)}
                   disabled={processedDocs.filter(d => d.status === 'success').length === 0}
-                  className="bg-[#7c6df0] hover:bg-[#6a5bdf] disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium"
+                  className="bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium"
                 >
                   Siguiente: Consolidación ➔
                 </button>
@@ -460,18 +480,18 @@ export default function AutoCafView() {
             <div>
               <h3 className="text-xl font-semibold mb-2">Generar Excel Consolidado</h3>
               <p className="text-sm text-gray-400 mb-6">Selecciona la plantilla Excel. Los años extraídos se mapearán automáticamente a las columnas correspondientes.</p>
-              
+
               <div className="space-y-3">
                 {templates.length === 0 ? (
                   <div className="text-sm text-gray-500">No hay plantillas cargadas en el servidor.</div>
                 ) : (
                   templates.map(t => (
-                    <div 
+                    <div
                       key={t.name}
                       onClick={() => setSelectedTemplate(t.name)}
-                      className={`p-4 rounded-xl border cursor-pointer transition-colors flex items-center gap-3 ${selectedTemplate === t.name ? 'border-[#7c6df0] bg-[#7c6df0]/10' : 'border-gray-700 bg-[#151521] hover:border-gray-500'}`}
+                      className={`p-4 rounded-xl border cursor-pointer transition-colors flex items-center gap-3 ${selectedTemplate === t.name ? 'border-primary-500 bg-primary-500/10' : 'border-gray-700 bg-surface hover:border-gray-500'}`}
                     >
-                      <FileSpreadsheet className={`w-6 h-6 ${selectedTemplate === t.name ? 'text-[#7c6df0]' : 'text-gray-500'}`} />
+                      <FileSpreadsheet className={`w-6 h-6 ${selectedTemplate === t.name ? 'text-primary-500' : 'text-gray-500'}`} />
                       <div>
                         <div className="font-medium text-sm">{t.name}</div>
                         <div className="text-xs text-gray-500">{t.size}</div>
@@ -480,36 +500,68 @@ export default function AutoCafView() {
                   ))
                 )}
               </div>
-              
+
               {generationError && <div className="mt-4 text-sm text-red-400">{generationError}</div>}
             </div>
 
-            <div className="bg-[#151521] p-6 rounded-xl border border-gray-700 h-fit">
+            <div className="bg-surface p-6 rounded-xl border border-gray-700 h-fit">
               <h4 className="font-medium text-gray-300 mb-4">Años Listos para Exportar</h4>
               <div className="flex flex-wrap gap-2 mb-8">
                 {validationReport?.years_processed?.map(year => (
-                  <span key={year} className="bg-[#1e1e2d] border border-gray-700 px-3 py-1 rounded text-sm font-medium">
+                  <span key={year} className="bg-background border border-gray-700 px-3 py-1 rounded text-sm font-medium">
                     {year}
                   </span>
                 )) || <span className="text-gray-500 text-sm">Sin datos de años disponibles</span>}
               </div>
 
+              {processedDocs.filter(d => d.isDocAi || d.hasSearchablePdf).length > 0 && (
+                <div className="mb-8 border-t border-gray-700 pt-6">
+                  <h4 className="font-medium text-gray-300 mb-3">PDFs Searchables (OCR)</h4>
+                  <div className="space-y-2">
+                    {processedDocs.filter(d => d.isDocAi || d.hasSearchablePdf).map(doc => (
+                      doc.hasSearchablePdf ? (
+                        <a
+                          key={doc.id}
+                          href={`${API_BASE}/api/caf/download-pdf/${doc.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full flex items-center justify-center gap-2 bg-primary-500/10 text-primary-400 border border-primary-500/30 hover:bg-primary-500/20 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Descargar PDF Searchable ({(doc.fileName || doc.id).substring(0, 20)}...)
+                        </a>
+                      ) : (
+                        <div
+                          key={doc.id}
+                          className="w-full flex items-center justify-center gap-2 bg-gray-800/50 text-gray-500 border border-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium"
+                        >
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generando PDF Searchable... (listo en ~30s)
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+
+
+
               {!downloadUrl ? (
-                <button 
+                <button
                   onClick={handleGenerate} disabled={!selectedTemplate || isGenerating}
-                  className="w-full flex items-center justify-center gap-2 bg-[#7c6df0] hover:bg-[#6a5bdf] disabled:opacity-50 text-white px-6 py-3 rounded-xl font-medium transition-colors"
+                  className="w-full flex items-center justify-center gap-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-medium transition-colors"
                 >
                   {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
                   {isGenerating ? 'Generando...' : 'Generar Archivo Consolidado'}
                 </button>
               ) : (
                 <div className="space-y-3">
-                  <button 
+                  <button
                     onClick={handleDownload}
                     disabled={isDownloading}
                     className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-green-800 disabled:opacity-70 text-white px-6 py-3 rounded-xl font-medium transition-colors"
                   >
-                    {isDownloading ? <Loader2 className="w-5 h-5 animate-spin" /> : '⬇️'} 
+                    {isDownloading ? <Loader2 className="w-5 h-5 animate-spin" /> : '⬇️'}
                     {isDownloading ? 'Descargando...' : 'Descargar Excel Consolidado'}
                   </button>
                   <button onClick={resetAll} className="w-full py-2 text-sm text-gray-400 hover:text-white">
@@ -525,10 +577,10 @@ export default function AutoCafView() {
       {/* Details Modal */}
       {isDetailsModalOpen && selectedDocDetails && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={() => setIsDetailsModalOpen(false)}>
-          <div className="bg-[#151521] border border-gray-700 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface border border-gray-700 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-700 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-200 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#7c6df0]" />
+                <FileText className="w-5 h-5 text-primary-500" />
                 Detalles: {selectedDocDetails.file_name}
               </h2>
               <div className="flex items-center gap-3">
@@ -537,7 +589,7 @@ export default function AutoCafView() {
                     href={`http://127.0.0.1:8000/api/caf/download-pdf/${selectedDocDetails.id}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 bg-[#7c6df0]/20 text-[#7c6df0] hover:bg-[#7c6df0]/30 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                    className="flex items-center gap-1 bg-primary-500/20 text-primary-500 hover:bg-primary-500/30 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                   >
                     <FileText className="w-4 h-4" />
                     PDF con OCR
@@ -549,17 +601,17 @@ export default function AutoCafView() {
               </div>
             </div>
             <div className="p-5 overflow-y-auto custom-scrollbar flex-1 space-y-6">
-              
+
               <div>
-                <h3 className="text-sm font-semibold text-[#7c6df0] mb-3 uppercase tracking-wider">Datos Extraídos (JSON)</h3>
-                <pre className="bg-[#1e1e2d] border border-gray-700 p-4 rounded-lg text-sm text-gray-300 overflow-x-auto">
+                <h3 className="text-sm font-semibold text-primary-500 mb-3 uppercase tracking-wider">Datos Extraídos (JSON)</h3>
+                <pre className="bg-background border border-gray-700 p-4 rounded-lg text-sm text-gray-300 overflow-x-auto">
                   {JSON.stringify(selectedDocDetails.llm_result?.data || {}, null, 2)}
                 </pre>
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-[#7c6df0] mb-3 uppercase tracking-wider">Texto Crudo (OCR/PyMuPDF)</h3>
-                <pre className="bg-[#1e1e2d] border border-gray-700 p-4 rounded-lg text-sm text-gray-300 overflow-y-auto max-h-[400px] whitespace-pre-wrap">
+                <h3 className="text-sm font-semibold text-primary-500 mb-3 uppercase tracking-wider">Texto Crudo (OCR/PyMuPDF)</h3>
+                <pre className="bg-background border border-gray-700 p-4 rounded-lg text-sm text-gray-300 overflow-y-auto max-h-[400px] whitespace-pre-wrap">
                   {selectedDocDetails.extracted_text || selectedDocDetails.extraction?.full_text || "No hay texto disponible."}
                 </pre>
               </div>
@@ -574,14 +626,14 @@ export default function AutoCafView() {
 
 function StepIndicator({ num, label, active, completed, onClick }) {
   return (
-    <div 
+    <div
       className={`flex flex-col items-center ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
       onClick={onClick}
     >
       <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors
-        ${completed ? 'bg-green-500/20 text-green-400 border-2 border-green-500/50' : 
-          active ? 'bg-[#7c6df0]/20 text-[#7c6df0] border-2 border-[#7c6df0]' : 
-          'bg-gray-800 text-gray-500 border-2 border-gray-700'}`}
+        ${completed ? 'bg-green-500/20 text-green-400 border-2 border-green-500/50' :
+          active ? 'bg-primary-500/20 text-primary-500 border-2 border-primary-500' :
+            'bg-gray-800 text-gray-500 border-2 border-gray-700'}`}
       >
         {completed ? <CheckCircle2 className="w-5 h-5" /> : num}
       </div>
@@ -594,4 +646,4 @@ function StepIndicator({ num, label, active, completed, onClick }) {
 
 // Stub for missing icons if lucide-react doesn't have Sparkles or Database in this version
 function Sparkles(props) { return <span {...props}>✨</span>; }
-function Database(props) { return <span {...props}>🗄️</span>; }
+function Database(props) { return <span {...props}></span>; }

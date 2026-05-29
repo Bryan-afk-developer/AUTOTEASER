@@ -124,8 +124,7 @@ function App() {
         const r = await axios.post(`${API_BASE}/api/upload-pdf`, fd)
         setDocuments(prev => [...prev, r.data])
         const bank = r.data.detected_bank?.toLowerCase()
-        if (bank === 'hsbc') alert(`"${file.name}" es de HSBC — necesita revisión humana.`)
-        else if (!bank || bank === 'desconocido') alert(`Banco no reconocido en "${file.name}".`)
+        if (!bank || bank === 'desconocido') alert(`Banco no reconocido en "${file.name}".`)
       } catch (err) { showToast(`Error: ${err.response?.data?.detail || err.message}`, true) }
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -489,7 +488,7 @@ function App() {
                 <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-semibold text-amber-300">Documentos HSBC detectados</p>
-                  <p className="text-xs text-amber-200/70 mt-0.5">HSBC usa protección de copia. Los datos se extraen con IA y requieren verificación humana.</p>
+                  <p className="text-xs text-amber-200/70 mt-0.5">HSBC usa protección de copia. Los datos se extraen con DOCUMENT IA y requieren verificación humana.</p>
                 </div>
               </div>
             )}

@@ -31,4 +31,4 @@ TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tess
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "").strip()
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us").strip()
 GCP_PROCESSOR_ID_OCR = os.getenv("GCP_PROCESSOR_ID_OCR", "").strip()
-
+GCP_PROCESSOR_ID_BASIC_OCR = os.getenv("GCP_PROCESSOR_ID_BASIC_OCR", "").strip()

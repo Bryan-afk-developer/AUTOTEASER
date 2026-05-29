@@ -19,7 +19,7 @@ class GenerateConsolidatedRequest(BaseModel):
     doc_ids: List[str]
     template_name: str
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -626,7 +626,7 @@ async def upload_caf_template(file: UploadFile = File(...)):
 
 
 @app.post("/api/caf/process/{doc_id}")
-async def process_caf_document(doc_id: str, doc_type: str | None = None):
+async def process_caf_document(doc_id: str, background_tasks: BackgroundTasks, doc_type: str | None = None):
     """Process an uploaded PDF with the LLM/Deterministic pipeline to extract financial data."""
     if doc_id not in caf_documents:
         raise HTTPException(404, f"Documento {doc_id} no encontrado")
@@ -667,11 +667,25 @@ async def process_caf_document(doc_id: str, doc_type: str | None = None):
     # FALLBACK A DOCUMENT AI (FORM PARSER)
     if needs_doc_ai:
         try:
-            from app.doc_ai_parser import parse_pdf_with_doc_ai
+            from app.doc_ai_parser import parse_pdf_with_doc_ai, generate_searchable_pdf
             
             result = parse_pdf_with_doc_ai(str(pdf_path), year="2024")
             if not result.get("success"):
                 raise HTTPException(500, "Fallo en procesador Document AI (Fallback)")
+
+            # Schedule searchable PDF generation in background (non-blocking)
+            docai_document = result.pop("_docai_document", None)
+            relevant_pages = result.pop("_relevant_pages", [])
+            if docai_document is not None:
+                def _make_searchable(path=str(pdf_path), d=docai_document, pages=relevant_pages, d_id=doc_id):
+                    sp = generate_searchable_pdf(path, d, pages)
+                    if sp:
+                        caf_documents[d_id]["searchable_pdf_path"] = sp
+                        logger.info(f"AutoCAF: Searchable PDF ready for {d_id}")
+                background_tasks.add_task(_make_searchable)
+
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"AutoCAF: Error en fallback Document AI: {e}")
             raise HTTPException(500, f"Error Document AI: {e}")
@@ -680,8 +694,6 @@ async def process_caf_document(doc_id: str, doc_type: str | None = None):
     
     if result["success"]:
         doc["status"] = "processed"
-        if result.get("searchable_pdf_path"):
-            doc["searchable_pdf_path"] = result["searchable_pdf_path"]
     else:
         doc["status"] = "llm_error"
         logger.error(f"AutoCAF: Error devuelto por el procesador para {doc_id}: {result.get('error')}")
@@ -695,7 +707,7 @@ async def process_caf_document(doc_id: str, doc_type: str | None = None):
         "data": result.get("data"),
         "error": result.get("error"),
         "warnings": result.get("warnings", []),
-        "searchable_pdf_path": doc.get("searchable_pdf_path")
+        "searchable_pdf_path": doc.get("searchable_pdf_path")  # may be None initially, ready after background task
     }
 
 
@@ -1002,7 +1014,9 @@ async def get_caf_document(doc_id: str):
         "extracted_text": doc["extraction"]["full_text"] if doc["extraction"] else None,
         "llm_result": doc["llm_result"],
         "has_output": doc["output_file"] is not None,
-        "download_url": f"/api/caf/download/{doc_id}" if doc["output_file"] else None
+        "download_url": f"/api/caf/download/{doc_id}" if doc["output_file"] else None,
+        "has_searchable_pdf": bool(doc.get("searchable_pdf_path")),
+        "searchable_pdf_url": f"/api/caf/download-pdf/{doc_id}" if doc.get("searchable_pdf_path") else None,
     }
 
 
@@ -1163,6 +1177,22 @@ async def caf_generate_consolidated(req: GenerateConsolidatedRequest):
 
     merged_data["tipo_documento"] = "caf_brightec"
     
+    # Merge raw_text_dump from each document for the "Analíticas OCR" sheet
+    merged_raw_dump = {}
+    for doc in valid_docs:
+        raw_dump = doc["llm_result"].get("raw_text_dump")
+        if raw_dump:
+            if isinstance(raw_dump, list):
+                # Flat list: use the doc year as key
+                doc_year = list(doc["llm_result"]["data"].get("Balance", {}).keys() or
+                                doc["llm_result"]["data"].get("Edo de resultados", {}).keys() or
+                                ["OCR"])[0]
+                merged_raw_dump[doc_year] = raw_dump
+            elif isinstance(raw_dump, dict):
+                merged_raw_dump.update(raw_dump)
+    if merged_raw_dump:
+        merged_data["raw_text_dump"] = merged_raw_dump
+
     # We pass the full dictionary of analytics grouped by year to the Excel processor
     if analytics_by_year:
         merged_data["Analíticas"] = analytics_by_year

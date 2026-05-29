@@ -127,11 +127,16 @@ def fill_template(
     # --- RAW DUMP ---
     raw_dump = data.get("raw_text_dump")
     if raw_dump:
+        # Normalise: parsers may return a flat list OR a {year: [lines]} dict
+        if isinstance(raw_dump, list):
+            raw_dump = {"OCR": raw_dump}
         ws_ocr = wb.create_sheet("Analíticas OCR")
         ws_ocr.append(["Año", "Línea Original (Extraída por OCR)"])
         for year, lines in raw_dump.items():
-            for line in lines:
-                ws_ocr.append([year, line])
+            if isinstance(lines, list):
+                for line in lines:
+                    if line and str(line).strip():
+                        ws_ocr.append([year, str(line).strip()])
         # Auto-adjust column width
         ws_ocr.column_dimensions['A'].width = 15
         ws_ocr.column_dimensions['B'].width = 120

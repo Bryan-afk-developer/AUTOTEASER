@@ -574,7 +574,7 @@ def parse_financial_pdf(pdf_path: str | Path) -> dict:
             "document_type": "caf_brightec",
             "data": result_data,
             "method": "deterministic_parser_v3",
-            "raw_text_dump": all_lines,
+            "raw_text_dump": {year: all_lines},
             "raw_response": f"Parsed {len(all_lines)} lines from {pdf_path.name}",
         }
         
