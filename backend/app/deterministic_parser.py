@@ -167,18 +167,19 @@ def _normalize(text: str) -> str:
 BALANCE_MAP = {
     # Activo Circulante
     "caja": ["caja y efectivo", "caja"],
-    "bancos": ["bancos nacionales", "bancos"],
+    "bancos": ["bancos nacionales", "instituciones de credito", "efectivo y equivalentes", "bancos", "efectivo en bancos", "efectivo y bancos"],
     "clientes": ["clientes nacionales", "clientes"],
-    "cuentas_por_cobrar": ["cuentas por cobrar"],
-    "deudores_diversos": ["deudores diversos", "otros deudores"],
+    "cuentas_por_cobrar": ["cuentas por cobrar", "documentos por cobrar", "otras cuentas por cobrar", "otras cuentas", "otros deudores"],
+    "deudores_diversos": ["deudores diversos"],
     "isr_diferido": ["isr diferido"],
+    "impuestos_a_favor": ["impuestos a favor", "saldos a favor de impuestos", "saldos a favor", "impuestos acreditables", "iva acreditable", "iva a favor"],
     "inventarios": ["inventarios", "almacen"],
     "pagos_anticipados": ["pagos anticipados"],
-    "anticipo_proveedores": ["anticipo a proveedores", "anticipo proveedores"],
+    "anticipo_proveedores": ["anticipo a proveedores", "anticipos a proveedores", "anticipo proveedores"],
     
     # Activo Fijo
     "edificios": ["edificios", "inmuebles"],
-    "maquinaria_equipo": ["maquinaria y equipo", "maquinaria"],
+    "maquinaria_equipo": ["maquinaria y equipo", "maquinaria, mobiliario y equipo"],
     "equipo_transporte": ["equipo de transporte", "automoviles, autobuses", "automoviles"],
     "mobiliario_equipo": ["mobiliario y equipo", "mobiliario"],
     "equipo_computo": ["equipo de computo", "equipo computo"],
@@ -193,9 +194,10 @@ BALANCE_MAP = {
     
     # Pasivo Corto Plazo
     "proveedores": ["proveedores nacionales", "proveedores"],
-    "prestamos_bancarios_cp": ["prestamos bancarios"],
+    "prestamos_bancarios_cp": ["prestamos bancarios", "documentos por pagar"],
     "acreedores_diversos": ["acreedores diversos"],
     "otros_pasivos_cp": ["otros pasivos"],
+    "impuestos_acumulados": ["impuestos por pagar", "impuestos retenidos", "impuestos acumulados", "contribuciones por pagar", "provision de contribuciones"],
     "anticipo_clientes": ["anticipo de clientes", "anticipo clientes"],
     
     # Pasivo Largo Plazo
@@ -203,7 +205,7 @@ BALANCE_MAP = {
     "otras_cuentas_lp": ["otras cuentas largo plazo"],
     
     # Capital
-    "capital_social": ["capital social", "capital fijo"],
+    "capital_social": ["capital social", "capital fijo", "capitalsocial", "capitalfijo"],
     "reserva_legal": ["reserva legal"],
     "aportaciones_futuros_aumentos": ["aportaciones para futuros", "aportaciones futuros"],
     "resultados_ejercicios_anteriores": [
@@ -212,6 +214,11 @@ BALANCE_MAP = {
         "perdida de ejercicios anteriores",
         "utilidades acumuladas",
         "resultados acumulados",
+        "utilidades retenidas",
+        "perdidas acumuladas",
+        "deficit acumulado",
+        "superavit acumulado",
+        "resultado de años anteriores",
     ],
     "utilidad_ejercicio": [
         "utilidad o perdida del ejercicio",
@@ -219,6 +226,8 @@ BALANCE_MAP = {
         "resultado del ejercicio",
         "utilidad neta",
         "perdida neta",
+        "resultado integral del ejercicio",
+        "resultado neto del ejercicio",
     ],
 }
 
@@ -251,7 +260,7 @@ EDO_LINE_KEYWORDS = {
     # otros_gastos: Only if there's a standalone "Otros Gastos" or "Otros Egresos" section
     # NOT "otros gastos generales" (which is a sub-item of Gastos generales)
     "otros_gastos": ["otros egresos", "otros gastos no operativos"],
-    "otros_ingresos": ["otros ingresos", "otros productos"],
+    "otros_ingresos": ["otros ingresos", "otros productos", "ingresos no operativos", "ingresos diversos"],
 }
 
 # Fields that are ALWAYS 0 because they're already included in other fields
@@ -271,9 +280,10 @@ def _find_value(lines: list[str], keywords: list[str], header_mode: bool = False
     """
     for kw in keywords:
         kw_norm = _normalize(kw)
-        for line in lines:
+        for i, line in enumerate(lines):
             line_norm = _normalize(line)
-            if kw_norm not in line_norm:
+            # Use regex for word boundary matching to avoid matching 'mobiliario' in 'inmobiliarios'
+            if not re.search(r'\b' + re.escape(kw_norm) + r'\b', line_norm):
                 continue
             if header_mode:
                 stripped = line_norm.strip()
@@ -283,8 +293,16 @@ def _find_value(lines: list[str], keywords: list[str], header_mode: bool = False
                 if after and after[0].isalpha():
                     continue
             val = _get_rightmost_number(line)
-            if val is not None:
+            if val is not None and val != 0:
                 return val
+            # Check next line if the value was pushed down by OCR/PDF layout
+            if i + 1 < len(lines):
+                next_line = lines[i+1].strip()
+                next_val = _get_rightmost_number(next_line)
+                if next_val is not None and next_val != 0:
+                    # Ensure the next line is mostly just a number (few alphabetical chars)
+                    if len(re.sub(r'[\d,.\s-]', '', next_line)) < 5:
+                        return next_val
     return 0.0
 
 
@@ -318,12 +336,18 @@ def _find_year_in_text(full_text: str) -> str | None:
 
 def _find_total_pasivo_cp(lines: list[str]) -> float:
     """Find 'Total Pasivo a corto plazo'."""
-    for line in lines:
+    for i, line in enumerate(lines):
         norm = _normalize(line)
-        if "total pasiv" in norm and ("corto" in norm or "carto" in norm):
+        if "total pasiv" in norm and ("corto" in norm or "carto" in norm or "cofto" in norm):
             val = _get_rightmost_number(line)
             if val is not None and val > 0:
                 return val
+            if i + 1 < len(lines):
+                next_line = lines[i+1].strip()
+                next_val = _get_rightmost_number(next_line)
+                if next_val is not None and next_val > 0:
+                    if len(re.sub(r'[\d,.\s-]', '', next_line)) < 5:
+                        return next_val
     return 0.0
 
 
@@ -335,6 +359,8 @@ def _sum_impuestos_a_favor(lines: list[str]) -> float:
         "impuestos acreditables",
         "isr a favor",
         "subsidio al empleo",
+        "iva a favor",
+        "impuesto al valor agregado a favor",
     ]
     matched = set()
     for kw in keywords:
@@ -348,6 +374,14 @@ def _sum_impuestos_a_favor(lines: list[str]) -> float:
                     total += abs(val)
                     matched.add(i)
                     break
+                elif i + 1 < len(lines):
+                    next_line = lines[i+1].strip()
+                    next_val = _get_rightmost_number(next_line)
+                    if next_val is not None and abs(next_val) > 0:
+                        if len(re.sub(r'[\d,.\s-]', '', next_line)) < 5:
+                            total += abs(next_val)
+                            matched.add(i)
+                            break
     return total
 
 
@@ -406,7 +440,7 @@ def parse_financial_pdf(pdf_path: str | Path) -> dict:
             elif current_section == "analiticas":
                 analiticas_lines.extend(pages_lines[i])
         
-        year = _find_year_in_text("\n".join(all_lines[:20])) or "2024"
+        year = _find_year_in_text("\n".join(all_lines[:20])) or _find_year_in_text(pdf_path.name) or "2024"
         logger.info(f"Parser v3: year={year}, pages={len(pages_lines)}, "
                      f"balance={len(balance_lines)}, edo={len(edo_lines)}, "
                      f"analiticas={len(analiticas_lines)}")
@@ -469,6 +503,28 @@ def parse_financial_pdf(pdf_path: str | Path) -> dict:
         )
         balance_data["impuestos_acumulados"] = max(0, total_pasivo_cp - known_pasivo)
         
+        # ── Mathematical Validation (Activo = Pasivo + Capital) ──
+        activo_circulante = ["caja", "bancos", "clientes", "cuentas_por_cobrar", "deudores_diversos", "isr_diferido", "inventarios", "pagos_anticipados", "anticipo_proveedores", "impuestos_a_favor"]
+        activo_fijo = ["edificios", "maquinaria_equipo", "equipo_transporte", "mobiliario_equipo", "equipo_computo", "otros_activos_fijos", "terrenos"]
+        activo_diferido = ["gastos_instalacion", "depositos_garantia", "otros_activos_largo_plazo"]
+        
+        total_activo = sum(balance_data.get(k, 0) for k in activo_circulante + activo_fijo + activo_diferido) - balance_data.get("depreciacion_acumulada", 0)
+        
+        pasivo_cp = ["proveedores", "prestamos_bancarios_cp", "acreedores_diversos", "otros_pasivos_cp", "anticipo_clientes", "impuestos_acumulados"]
+        pasivo_lp = ["prestamos_bancarios_lp", "otras_cuentas_lp"]
+        total_pasivo = sum(balance_data.get(k, 0) for k in pasivo_cp + pasivo_lp)
+        
+        capital_fields = ["capital_social", "reserva_legal", "aportaciones_futuros_aumentos", "utilidad_ejercicio"]
+        total_capital_sin_ea = sum(balance_data.get(k, 0) for k in capital_fields)
+        
+        current_ejercicios_anteriores = balance_data.get("resultados_ejercicios_anteriores", 0)
+        diff = total_activo - (total_pasivo + total_capital_sin_ea + current_ejercicios_anteriores)
+        
+        if abs(diff) > 1.0 and total_activo > 0:
+            logger.warning(f"Discrepancia detectada. Activo ({total_activo}) != Pasivo ({total_pasivo}) + Capital ({total_capital_sin_ea + current_ejercicios_anteriores}). Diferencia: {diff}")
+            # Ya no forzamos el cuadre matemático:
+            # balance_data["resultados_ejercicios_anteriores"] = current_ejercicios_anteriores + diff
+        
         # ══════════════════════════════════════════════════════
         # EXTRACT ESTADO DE RESULTADOS
         # ══════════════════════════════════════════════════════
@@ -518,6 +574,7 @@ def parse_financial_pdf(pdf_path: str | Path) -> dict:
             "document_type": "caf_brightec",
             "data": result_data,
             "method": "deterministic_parser_v3",
+            "raw_text_dump": all_lines,
             "raw_response": f"Parsed {len(all_lines)} lines from {pdf_path.name}",
         }
         

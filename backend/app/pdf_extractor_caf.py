@@ -58,16 +58,16 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
             methods_used.add("pymupdf")
             logger.info(f"Page {page_num + 1}: PyMuPDF extraction ({len(text)} chars)")
         else:
-            # Fall back to OCR
+            logger.warning(f"Page {page_num + 1}: No native text detected. Attempting OCR...")
             ocr_text = _ocr_page(page)
-            if ocr_text and len(ocr_text.strip()) > 10:
+            if ocr_text and len(ocr_text.strip()) > 20:
                 pages_text.append(ocr_text.strip())
                 methods_used.add("ocr")
                 logger.info(f"Page {page_num + 1}: OCR extraction ({len(ocr_text)} chars)")
             else:
-                pages_text.append(text.strip() if text else "[No text detected]")
+                pages_text.append("[No text detected]")
                 methods_used.add("empty")
-                logger.warning(f"Page {page_num + 1}: No text detected")
+                logger.warning(f"Page {page_num + 1}: OCR also failed to detect text.")
 
     doc.close()
 

@@ -123,6 +123,18 @@ def fill_template(
     else:
         # Auto-fill based on template structure
         _auto_fill(wb, data)
+        
+    # --- RAW DUMP ---
+    raw_dump = data.get("raw_text_dump")
+    if raw_dump:
+        ws_ocr = wb.create_sheet("Analíticas OCR")
+        ws_ocr.append(["Año", "Línea Original (Extraída por OCR)"])
+        for year, lines in raw_dump.items():
+            for line in lines:
+                ws_ocr.append([year, line])
+        # Auto-adjust column width
+        ws_ocr.column_dimensions['A'].width = 15
+        ws_ocr.column_dimensions['B'].width = 120
     
     wb.save(str(output_path))
     wb.close()
@@ -555,21 +567,164 @@ def fill_analytics_sheet(
 
     wb = load_workbook(str(workbook_path))
 
-    # Remove existing sheet if present
+    # Normalize input: we want a dict { year: analytics_data }
+    if not isinstance(analytics_data, dict):
+        analytics_dict = {"2024": analytics_data} if analytics_data else {}
+    elif "success" in analytics_data and "groups" in analytics_data:
+        year = analytics_data.get("year", "2024")
+        analytics_dict = {year: analytics_data}
+    else:
+        analytics_dict = analytics_data
+
+    # Clean up old default sheets
     for name_candidate in ["Analíticas", "Analiticas"]:
         if name_candidate in wb.sheetnames:
             del wb[name_candidate]
 
-    ws = wb.create_sheet(title="Analiticas")
+    for year, data in analytics_dict.items():
+        if not data or not data.get("groups"):
+            continue
+            
+        sheet_name = f"Analíticas {year}"
+        if sheet_name in wb.sheetnames:
+            del wb[sheet_name]
+            
+        ws = wb.create_sheet(title=sheet_name)
+        groups = data.get("groups", [])
+        
+        # ── Styles ──
+        header_font = Font(name='Calibri', size=12, bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='2F5496', end_color='2F5496', fill_type='solid')
 
-    groups = analytics_data.get("groups", [])
-    year = analytics_data.get("year", "2024")
+        parent_font = Font(name='Calibri', size=10, bold=True, color='1F3864')
+        parent_fill = PatternFill(start_color='D6E4F0', end_color='D6E4F0', fill_type='solid')
 
-    if not groups:
-        ws["A1"] = "No se encontraron datos de analiticas en el PDF."
-        wb.save(str(output_path))
-        wb.close()
-        return str(output_path)
+        child_font = Font(name='Calibri', size=10, color='333333')
+
+        verify_ok_font = Font(name='Calibri', size=10, bold=True, color='006100')
+        verify_ok_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+
+        verify_fail_font = Font(name='Calibri', size=10, bold=True, color='9C0006')
+        verify_fail_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+
+        amount_align = Alignment(horizontal='right')
+        num_fmt = '#,##0.00'
+
+        # ── Column widths ──
+        ws.column_dimensions['A'].width = 55
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 12
+
+        # ── Header row ──
+        row = 1
+        for col, val in [(1, "Concepto"), (2, f"Monto ({year})"), (3, "Estado")]:
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center') if col == 3 else (amount_align if col == 2 else Alignment(horizontal='left'))
+
+        row = 3  # Skip a blank row
+
+        # ── Write each group ──
+        verified_total = 0
+        failed_total = 0
+
+        for group in groups:
+            parent_concept = group['parent_concept']
+            parent_total = group['parent_total']
+            children = group['children']
+            verified = group['verified']
+            children_sum = group['children_sum']
+
+            # Parent row
+            cell_a = ws.cell(row=row, column=1, value=parent_concept)
+            cell_a.font = parent_font
+            cell_a.fill = parent_fill
+
+            cell_b = ws.cell(row=row, column=2, value=parent_total)
+            cell_b.font = parent_font
+            cell_b.fill = parent_fill
+            cell_b.alignment = amount_align
+            cell_b.number_format = num_fmt
+            row += 1
+
+            # Children rows
+            first_child_row = row
+            for child in children:
+                child_label = f"  - {child['concept']}"
+
+                cell_a = ws.cell(row=row, column=1, value=child_label)
+                cell_a.font = child_font
+
+                cell_b = ws.cell(row=row, column=2, value=child['amount'])
+                cell_b.font = child_font
+                cell_b.alignment = amount_align
+                cell_b.number_format = num_fmt
+                row += 1
+            last_child_row = row - 1
+
+            # Verification row
+            if children:
+                if verified:
+                    label = f"  = SUMA VERIFICADA"
+                    v_font = verify_ok_font
+                    v_fill = verify_ok_fill
+                    status = "OK"
+                    verified_total += 1
+                else:
+                    diff = group.get('diff', 0)
+                    label = f"  = SUMA (dif: {diff:,.2f})"
+                    v_font = verify_fail_font
+                    v_fill = verify_fail_fill
+                    status = "ERROR"
+                    failed_total += 1
+
+                cell_a = ws.cell(row=row, column=1, value=label)
+                cell_a.font = v_font
+                cell_a.fill = v_fill
+
+                # Use Excel Formula for the sum
+                formula = f"=SUM(B{first_child_row}:B{last_child_row})"
+                cell_b = ws.cell(row=row, column=2, value=formula)
+                cell_b.font = v_font
+                cell_b.fill = v_fill
+                cell_b.alignment = amount_align
+                cell_b.number_format = num_fmt
+
+                cell_c = ws.cell(row=row, column=3, value=status)
+                cell_c.font = v_font
+                cell_c.fill = v_fill
+                cell_c.alignment = Alignment(horizontal='center')
+                row += 1
+
+            row += 1  # Blank row between groups
+
+        # ── Summary footer ──
+        row += 1
+        for col, val in [(1, "Resumen de Verificacion"), (2, "Grupos"), (3, "Estado")]:
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center') if col > 1 else Alignment(horizontal='left')
+        row += 1
+
+        ws.cell(row=row, column=1, value="Verificados correctamente").font = verify_ok_font
+        ws.cell(row=row, column=2, value=verified_total).font = verify_ok_font
+        ws.cell(row=row, column=2).alignment = Alignment(horizontal='center')
+        ws.cell(row=row, column=3, value="OK").font = verify_ok_font
+        ws.cell(row=row, column=3).alignment = Alignment(horizontal='center')
+        row += 1
+
+        ws.cell(row=row, column=1, value="Con diferencia").font = verify_fail_font
+        ws.cell(row=row, column=2, value=failed_total).font = verify_fail_font
+        ws.cell(row=row, column=2).alignment = Alignment(horizontal='center')
+        ws.cell(row=row, column=3, value="ERROR" if failed_total > 0 else "-").font = verify_fail_font
+        ws.cell(row=row, column=3).alignment = Alignment(horizontal='center')
+
+    wb.save(str(output_path))
+    wb.close()
+    return str(output_path)
+
 
     # ── Styles ──
     header_font = Font(name='Calibri', size=12, bold=True, color='FFFFFF')

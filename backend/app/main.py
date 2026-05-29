@@ -7,6 +7,18 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+
+from app.validation import generate_validation_report, validate_balance, validate_edo_resultados
+from pydantic import BaseModel
+from typing import List, Optional
+
+class DocIdsRequest(BaseModel):
+    doc_ids: List[str]
+
+class GenerateConsolidatedRequest(BaseModel):
+    doc_ids: List[str]
+    template_name: str
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -624,84 +636,52 @@ async def process_caf_document(doc_id: str, doc_type: str | None = None):
         raise HTTPException(400, "El documento tuvo errores de extracción anteriores")
     
     text = doc["extraction"]["full_text"]
-    if not text or len(text.strip()) < 50:
-        raise HTTPException(400, "Texto extraído insuficiente para procesar")
-    
+    pages = doc["extraction"].get("pages", [])
     result = None
     pdf_path = Path(doc["file_path"])
-    gemini_quota_error = False
-    quota_error_msg = ""
-
-    def is_quota_error(exc) -> bool:
-        msg = str(exc).lower()
-        return any(k in msg for k in ["quota", "resource_exhausted", "429", "limit exceeded", "tokens"])
     
-    # 1. HYBRID: pdfplumber extracts exact text + Gemini reasons over it
-    try:
-        from app.hybrid_processor import process_hybrid
-        logger.info(f"AutoCAF: Intentando procesador HÍBRIDO para: {doc_id}")
-        result = process_hybrid(pdf_path, GEMINI_API_KEY)
-        
-        if result["success"]:
-            logger.info(f"AutoCAF: Híbrido exitoso para {doc_id}")
-        else:
-            err_msg = result.get("error", "")
-            if is_quota_error(err_msg):
-                gemini_quota_error = True
-                quota_error_msg = err_msg
-            logger.warning(f"AutoCAF: Híbrido falló, intentando determinista...")
-            result = None
-    except Exception as e:
-        if is_quota_error(e):
-            gemini_quota_error = True
-            quota_error_msg = str(e)
-        logger.warning(f"AutoCAF: Error en Híbrido: {e}, intentando determinista...")
-        result = None
+    needs_doc_ai = False
     
-    # 2. DETERMINISTIC FALLBACK: pdfplumber only (offline, free)
-    if result is None or not result.get("success"):
+    page1_text = pages[0] if len(pages) > 0 else ""
+    page2_text = pages[1] if len(pages) > 1 else ""
+    
+    if "[No text detected]" in page1_text or "[No text detected]" in page2_text or len(page1_text) < 50 or len(page2_text) < 50:
+        logger.info(f"AutoCAF: Página 1 o 2 sin texto nativo. Es un PDF escaneado. Activando DocAI para {doc_id}")
+        needs_doc_ai = True
+    else:
+        # 100% DETERMINISTIC PARSER (No AI)
         try:
             from app.deterministic_parser import parse_financial_pdf
-            logger.info(f"AutoCAF: Intentando parser DETERMINISTA para: {doc_id}")
+            logger.info(f"AutoCAF: Intentando parser DETERMINISTA PURO para: {doc_id}")
             result = parse_financial_pdf(pdf_path)
             
-            if result["success"]:
+            if result and result.get("success"):
                 logger.info(f"AutoCAF: Determinista exitoso para {doc_id}")
             else:
-                result = None
+                logger.warning(f"AutoCAF: Determinista falló en la extracción: {result.get('error')}. Activando DocAI.")
+                needs_doc_ai = True
         except Exception as e:
-            logger.warning(f"AutoCAF: Determinista falló: {e}")
-            result = None
-    
-    # 3. LAST RESORT: Pure Gemini on raw text
-    if result is None or not result.get("success"):
-        if gemini_quota_error:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Se agotaron los tokens en la API de Gemini (Límite de cuota excedido) y el analizador determinista local no pudo interpretar el formato de este PDF contable. Detalles: {quota_error_msg}"
-            )
+            logger.error(f"AutoCAF: Error en procesador determinista: {e}. Activando DocAI.")
+            needs_doc_ai = True
             
+    # FALLBACK A DOCUMENT AI (FORM PARSER)
+    if needs_doc_ai:
         try:
-            logger.info(f"AutoCAF: Intentando GEMINI PURO para: {doc_id}")
-            result = analyze_document_caf(text, doc_type)
-            if not result.get("success") and is_quota_error(result.get("error", "")):
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Se agotaron los tokens de la API de Gemini. Detalles: {result.get('error')}"
-                )
+            from app.doc_ai_parser import parse_pdf_with_doc_ai
+            
+            result = parse_pdf_with_doc_ai(str(pdf_path), year="2024")
+            if not result.get("success"):
+                raise HTTPException(500, "Fallo en procesador Document AI (Fallback)")
         except Exception as e:
-            if is_quota_error(e):
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Se agotaron los tokens de la API de Gemini (Límite de cuota excedido). Detalles: {str(e)}"
-                )
-            logger.error(f"AutoCAF: Todos los procesadores fallaron: {e}")
-            raise HTTPException(500, f"Todos los procesadores fallaron: {str(e)}")
+            logger.error(f"AutoCAF: Error en fallback Document AI: {e}")
+            raise HTTPException(500, f"Error Document AI: {e}")
     
     doc["llm_result"] = result
     
     if result["success"]:
         doc["status"] = "processed"
+        if result.get("searchable_pdf_path"):
+            doc["searchable_pdf_path"] = result["searchable_pdf_path"]
     else:
         doc["status"] = "llm_error"
         logger.error(f"AutoCAF: Error devuelto por el procesador para {doc_id}: {result.get('error')}")
@@ -711,8 +691,11 @@ async def process_caf_document(doc_id: str, doc_type: str | None = None):
         "status": doc["status"],
         "document_type": result.get("document_type"),
         "success": result["success"],
+        "method": result.get("method", "Gemini + Deterministic"),
         "data": result.get("data"),
-        "error": result.get("error")
+        "error": result.get("error"),
+        "warnings": result.get("warnings", []),
+        "searchable_pdf_path": doc.get("searchable_pdf_path")
     }
 
 
@@ -875,6 +858,19 @@ async def fill_multiple_caf_templates_endpoint(request: MergeTemplatesRequest):
                     merged_data[category] = {}
                 merged_data[category].update(data[category])
                 
+        # Include raw_text_dump in merged_data per year
+        raw_dump = llm_result.get("raw_text_dump")
+        if raw_dump:
+            if "raw_text_dump" not in merged_data:
+                merged_data["raw_text_dump"] = {}
+            # Try to get the year from Balance or Edo de resultados
+            year = "Unknown"
+            if "Balance" in data and data["Balance"]:
+                year = list(data["Balance"].keys())[0]
+            elif "Edo de resultados" in data and data["Edo de resultados"]:
+                year = list(data["Edo de resultados"].keys())[0]
+            merged_data["raw_text_dump"][year] = raw_dump
+                
     if not merged_data.get("Balance") and not merged_data.get("Edo de resultados"):
         raise HTTPException(400, "Ninguno de los documentos seleccionados tiene datos procesados válidos")
         
@@ -946,6 +942,27 @@ async def download_caf_file(doc_id: str):
         path=str(file_path),
         filename=f"AutoCAF_{doc['file_name'].replace('.pdf', '')}.xlsx",
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
+@app.get("/api/caf/download-pdf/{doc_id}")
+async def download_caf_pdf(doc_id: str):
+    """Download the searchable PDF with invisible OCR text."""
+    if doc_id not in caf_documents:
+        raise HTTPException(404, "Documento no encontrado")
+        
+    doc = caf_documents[doc_id]
+    if not doc.get("searchable_pdf_path"):
+        raise HTTPException(400, "Este documento no tiene versión PDF seleccionable (OCR no fue necesario o falló)")
+        
+    file_path = Path(doc["searchable_pdf_path"])
+    if not file_path.exists():
+        raise HTTPException(404, "El archivo PDF no existe en el disco")
+        
+    return FileResponse(
+        path=str(file_path),
+        filename=f"OCR_{doc['file_name']}",
+        media_type='application/pdf'
     )
 
 
@@ -1046,3 +1063,156 @@ async def list_caf_templates():
                 })
     return {"templates": templates}
 
+
+
+@app.post("/api/caf/upload-batch")
+async def upload_caf_batch(files: List[UploadFile] = File(...)):
+    """Upload multiple PDFs for AutoCAF."""
+    results = []
+    for file in files:
+        if not file.filename.lower().endswith('.pdf'):
+            continue
+        try:
+            content = await file.read()
+            if len(content) > 50 * 1024 * 1024:
+                continue
+            
+            doc_id = f"caf_{str(uuid.uuid4())[:8]}"
+            file_path = UPLOAD_DIR / f"{doc_id}_{file.filename}"
+            with open(file_path, "wb") as f:
+                f.write(content)
+            
+            extracted = extract_full_caf(str(file_path))
+            
+            caf_documents[doc_id] = {
+                "id": doc_id,
+                "file_name": file.filename,
+                "file_path": str(file_path),
+                "detected_type": "caf_brightec",
+                "status": "text_extracted",
+                "uploaded_at": datetime.now().isoformat(),
+                "extraction": extracted,
+                "metadata": {},
+                "llm_result": None,
+                "output_file": None
+            }
+            results.append(caf_documents[doc_id])
+        except Exception as e:
+            logger.error(f"AutoCAF: Error uploading {file.filename}: {e}")
+    return {"status": "success", "documents": results}
+
+@app.post("/api/caf/validation-summary")
+async def caf_validation_summary(req: DocIdsRequest):
+    """Generate validation report for a batch of processed documents."""
+    docs_to_validate = []
+    for doc_id in req.doc_ids:
+        if doc_id in caf_documents and caf_documents[doc_id]["status"] in ("processed", "completed") and caf_documents[doc_id]["llm_result"] and caf_documents[doc_id]["llm_result"]["success"]:
+            docs_to_validate.append(caf_documents[doc_id])
+    
+    if not docs_to_validate:
+        return {"validation": None}
+        
+    report = generate_validation_report(docs_to_validate)
+    return {"validation": report}
+
+@app.post("/api/caf/generate-consolidated")
+async def caf_generate_consolidated(req: GenerateConsolidatedRequest):
+    """Merge multiple processed docs into one Excel."""
+    valid_docs = []
+    for doc_id in req.doc_ids:
+        doc = caf_documents.get(doc_id)
+        if doc and doc["llm_result"] and doc["llm_result"]["success"]:
+            valid_docs.append(doc)
+            
+    if not valid_docs:
+        raise HTTPException(400, "No valid documents provided")
+        
+    template_path = TEMPLATES_DIR / req.template_name
+    if not template_path.exists():
+        raise HTTPException(404, "Plantilla no encontrada")
+        
+    merged_data = {"Balance": {}, "Edo de resultados": {}}
+    analytics_by_year = {}
+    
+    for doc in valid_docs:
+        doc_data = doc["llm_result"]["data"]
+        
+        # Determine year for this document from the balance data
+        doc_year = None
+        if "Balance" in doc_data:
+            for year, data in doc_data["Balance"].items():
+                merged_data["Balance"][year] = data
+                doc_year = year
+                
+        if "Edo de resultados" in doc_data:
+            for year, data in doc_data["Edo de resultados"].items():
+                merged_data["Edo de resultados"][year] = data
+                if not doc_year:
+                    doc_year = year
+                    
+        # Extract analytics for this specific document
+        try:
+            from app.analytics_parser import parse_analytics
+            from pathlib import Path
+            analytics_result = parse_analytics(Path(doc["file_path"]))
+            if analytics_result and analytics_result.get("success"):
+                actual_year = analytics_result.get("year") or doc_year or "2024"
+                analytics_by_year[actual_year] = analytics_result
+        except Exception as e:
+            logger.warning(f"AutoCAF: Failed to extract analytics for {doc['id']}: {e}")
+
+    merged_data["tipo_documento"] = "caf_brightec"
+    
+    # We pass the full dictionary of analytics grouped by year to the Excel processor
+    if analytics_by_year:
+        merged_data["Analíticas"] = analytics_by_year
+
+    output_name = f"Consolidado_CAF_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    output_path = OUTPUT_DIR / output_name
+    
+    try:
+        from app.excel_processor_caf import fill_template
+        import json
+        mapping = None
+        mapa_file = TEMPLATES_DIR / "mapa.json"
+        if mapa_file.exists():
+            mapping = json.loads(mapa_file.read_text(encoding='utf-8'))
+            
+        fill_template(
+            template_path=str(template_path),
+            output_path=str(output_path),
+            data=merged_data,
+            mapping=mapping
+        )
+        
+        # Inject the "Analíticas" sheets if we extracted them
+        if analytics_by_year:
+            from app.excel_processor_caf import fill_analytics_sheet
+            fill_analytics_sheet(
+                workbook_path=str(output_path),
+                output_path=str(output_path),
+                analytics_data=analytics_by_year
+            )
+            
+    except Exception as e:
+        logger.error(f"AutoCAF: Consolidate failed: {e}")
+        raise HTTPException(500, f"Error al generar consolidado: {e}")
+        
+    batch_id = f"caf_cons_{str(uuid.uuid4())[:4]}"
+    caf_documents[batch_id] = {
+        "id": batch_id,
+        "file_name": output_name,
+        "detected_type": "caf_brightec",
+        "status": "completed",
+        "uploaded_at": datetime.now().isoformat(),
+        "extraction": {"page_count": 0, "full_text": ""},
+        "metadata": {},
+        "llm_result": {"success": True, "data": merged_data},
+        "output_file": str(output_path)
+    }
+    
+    return {
+        "status": "success",
+        "output_file": output_name,
+        "download_url": f"/api/caf/download/{batch_id}"
+    }

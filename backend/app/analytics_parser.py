@@ -419,9 +419,9 @@ def _find_analytics_pages(pdf_path: Path) -> list[int]:
     return list(range(total_pages))
 
 
-def _detect_year(pdf_path: Path, page_indices: list[int]) -> str:
+def _detect_year(pdf_path: Path, page_indices: list[int]) -> str | None:
     """Detect the fiscal year from all available pages."""
-    year = "2024"
+    year = None
     doc = fitz.open(str(pdf_path))
     # Search all candidate pages, not just the first
     for idx in page_indices:
