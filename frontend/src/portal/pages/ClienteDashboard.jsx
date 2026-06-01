@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import api from '../lib/api'
+import BancosView from './BancosView'
 
 const ESTADO_CONFIG = {
-  APROBADO:  { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  icon: '✅', label: 'Aprobado' },
+  APROBADO: { color: '#22c55e', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', icon: '✅', label: 'Aprobado' },
   PENDIENTE: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', icon: '⏳', label: 'En Revisión' },
-  RECHAZADO: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.3)',  icon: '❌', label: 'Rechazado' },
-  FALTANTE:  { color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)', icon: '📭', label: 'Faltante' },
+  RECHAZADO: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', icon: '❌', label: 'Rechazado' },
+  FALTANTE: { color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)', icon: '📭', label: 'Faltante' },
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -155,22 +156,22 @@ function DocumentCard({ doc, onUpload }) {
       )}
 
       <button
-          id={`btn-subir-${doc.clave}`}
-          onClick={() => onUpload(doc)}
-          style={{
-            ...cardStyles.uploadBtn,
-            background: doc.estado === 'RECHAZADO'
-              ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-              : doc.estado === 'FALTANTE'
-                ? 'linear-gradient(135deg, #e11d48, #be123c)'
-                : 'rgba(255,255,255,0.1)',
-            border: (doc.estado !== 'FALTANTE' && doc.estado !== 'RECHAZADO') ? '1px solid rgba(255,255,255,0.2)' : 'none',
-          }}
-        >
-          {doc.estado === 'RECHAZADO' ? '🔄 Volver a Subir'
-            : doc.estado === 'FALTANTE' ? '⬆️ Subir Documento'
+        id={`btn-subir-${doc.clave}`}
+        onClick={() => onUpload(doc)}
+        style={{
+          ...cardStyles.uploadBtn,
+          background: doc.estado === 'RECHAZADO'
+            ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+            : doc.estado === 'FALTANTE'
+              ? 'linear-gradient(135deg, #e11d48, #be123c)'
+              : 'rgba(255,255,255,0.1)',
+          border: (doc.estado !== 'FALTANTE' && doc.estado !== 'RECHAZADO') ? '1px solid rgba(255,255,255,0.2)' : 'none',
+        }}
+      >
+        {doc.estado === 'RECHAZADO' ? '🔄 Volver a Subir'
+          : doc.estado === 'FALTANTE' ? '⬆️ Subir Documento'
             : '🔄 Reemplazar Archivo'}
-        </button>
+      </button>
     </div>
   )
 }
@@ -300,7 +301,7 @@ function GroupedModal({ title, icon, description, docs, onClose, onUpload }) {
                   >
                     {doc.estado === 'RECHAZADO' ? '🔄 Resubir'
                       : doc.estado === 'FALTANTE' ? '⬆️ Subir'
-                      : '🔄 Reemplazar'}
+                        : '🔄 Reemplazar'}
                   </button>
                 </div>
               </div>
@@ -321,9 +322,9 @@ export default function ClienteDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [uploadDoc, setUploadDoc] = useState(null)
+  const [activeView, setActiveView] = useState('dashboard') // 'dashboard' | 'bancos'
 
   // Modal visibility states
-  const [showEdosModal, setShowEdosModal] = useState(false)
   const [showFinancierosModal, setShowFinancierosModal] = useState(false)
   const [showDeclaracionesModal, setShowDeclaracionesModal] = useState(false)
 
@@ -358,10 +359,42 @@ export default function ClienteDashboard({ user, onLogout }) {
     docsFinancieros.length > 0 || docsDeclaraciones.length > 0 || docsVigentes.length > 0
 
   const handleUploadFromModal = (doc) => {
-    setShowEdosModal(false)
     setShowFinancierosModal(false)
     setShowDeclaracionesModal(false)
     setUploadDoc(doc)
+  }
+
+  if (activeView === 'bancos') {
+    return (
+      <div style={dashStyles.page}>
+        <header style={dashStyles.header}>
+          <div style={dashStyles.headerLeft}>
+            <img src="/Logo.webp" alt="Logo" style={dashStyles.headerIcon} />
+            <div>
+              <h1 style={dashStyles.headerTitle}>Expediente Rojo</h1>
+              <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+        </header>
+        <main style={dashStyles.main}>
+          <BancosView
+            bancos={expediente?.bancos || []}
+            allDocs={expediente?.documentos || []}
+            onSuccess={fetchExpediente}
+            onBack={() => setActiveView('dashboard')}
+            onUpload={setUploadDoc}
+          />
+        </main>
+        {uploadDoc && (
+          <UploadModal
+            doc={uploadDoc}
+            onClose={() => setUploadDoc(null)}
+            onSuccess={fetchExpediente}
+          />
+        )}
+      </div>
+    )
   }
 
   return (
@@ -435,16 +468,32 @@ export default function ClienteDashboard({ user, onLogout }) {
                 <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
               ))}
 
-              {/* Estados de cuenta — tarjeta agrupada */}
-              {docsEdos.length > 0 && (
-                <GroupedCard
-                  title="Estados de Cuenta"
-                  icon="🏦"
-                  description="Últimos 7 meses de estados de cuenta bancarios"
-                  docs={docsEdos}
-                  onOpenModal={() => setShowEdosModal(true)}
-                />
-              )}
+              {/* Carpetas de Banco (Estados de cuenta dinámicos) */}
+              <div style={{
+                ...cardStyles.card,
+                background: 'linear-gradient(135deg, rgba(30,30,36,0.9) 0%, rgba(15,23,42,0.9) 100%)',
+                borderColor: 'rgba(255,255,255,0.1)'
+              }}>
+                <div style={cardStyles.topRow}>
+                  <div style={cardStyles.iconWrap}><span style={{ fontSize: '22px' }}>🏦</span></div>
+                  <span style={{ ...cardStyles.badge, background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}>
+                    {expediente.bancos?.length || 0} cuentas
+                  </span>
+                </div>
+                <h4 style={cardStyles.docName}>Estados de Cuenta Bancarios</h4>
+                <p style={cardStyles.docDesc}>Administra tus cuentas bancarias y sube los últimos 7 meses de estados de cuenta.</p>
+
+                <button
+                  onClick={() => setActiveView('bancos')}
+                  style={{
+                    ...cardStyles.uploadBtn,
+                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                    marginTop: 'auto',
+                  }}
+                >
+                  Ir a Cuentas Bancarias ➔
+                </button>
+              </div>
 
               {/* Estados financieros — tarjeta agrupada */}
               {docsFinancieros.length > 0 && (
@@ -492,17 +541,6 @@ export default function ClienteDashboard({ user, onLogout }) {
       </main>
 
       {/* ── MODALS ── */}
-
-      {showEdosModal && (
-        <GroupedModal
-          title="Estados de Cuenta"
-          icon="🏦"
-          description="Últimos 7 meses de estados bancarios"
-          docs={docsEdos}
-          onClose={() => setShowEdosModal(false)}
-          onUpload={handleUploadFromModal}
-        />
-      )}
 
       {showFinancierosModal && (
         <GroupedModal

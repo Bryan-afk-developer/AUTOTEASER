@@ -135,7 +135,12 @@ async def get_empresa_documentos(empresa_id: str):
     docs_subidos = docs_empresa + docs_representante
     
     docs_subidos_dict = {d["tipo_documento"]: d for d in docs_subidos}
-    documentos_requeridos = get_todos_los_documentos_requeridos()
+    
+    # Obtener bancos para esta empresa
+    bancos_resp = sb.table("cuentas_bancarias").select("*").eq("empresa_id", empresa_id).execute()
+    bancos = bancos_resp.data or []
+    
+    documentos_requeridos = get_todos_los_documentos_requeridos(bancos)
     
     documentos_completos = []
     
@@ -149,6 +154,13 @@ async def get_empresa_documentos(empresa_id: str):
             doc_subido["empresa_rfc"] = empresa_info.get("rfc")
             doc_subido["nombre_esperado"] = doc_req["nombre"]
             doc_subido["grupo"] = doc_req.get("grupo", "empresa")
+            
+            # Update legacy database records with current folder info
+            if doc_req.get("nombre_carpeta"):
+                doc_subido["nombre_carpeta"] = doc_req["nombre_carpeta"]
+            if doc_req.get("cuenta_bancaria_id"):
+                doc_subido["cuenta_bancaria_id"] = doc_req["cuenta_bancaria_id"]
+                
             documentos_completos.append(doc_subido)
         else:
             documentos_completos.append({
@@ -160,6 +172,8 @@ async def get_empresa_documentos(empresa_id: str):
                 "estado": "FALTANTE",
                 "empresa_nombre": empresa_info.get("nombre"),
                 "empresa_rfc": empresa_info.get("rfc"),
+                "nombre_carpeta": doc_req.get("nombre_carpeta"),
+                "cuenta_bancaria_id": doc_req.get("cuenta_bancaria_id"),
             })
             
     # Also include any documents uploaded that might not be in the current required list 
@@ -167,10 +181,16 @@ async def get_empresa_documentos(empresa_id: str):
     req_claves = {d["clave"] for d in documentos_requeridos}
     for doc_subido in docs_subidos:
         if doc_subido["tipo_documento"] not in req_claves:
+            # Skip old legacy states of account that don't match the new slot logic (1 to 7)
+            if doc_subido["tipo_documento"].startswith("ec_"):
+                continue
+                
             doc_subido["empresa_nombre"] = empresa_info.get("nombre")
             doc_subido["empresa_rfc"] = empresa_info.get("rfc")
             doc_subido["nombre_esperado"] = doc_subido["tipo_documento"]
-            doc_subido["grupo"] = "empresa" # default
+            doc_subido["grupo"] = "empresa"
+            
+
             documentos_completos.append(doc_subido)
         
     return {
@@ -187,14 +207,14 @@ CLAVES_REPRESENTANTE = {doc["clave"] for doc in DOCUMENTOS_REPRESENTANTE}
 async def descargar_todos_documentos(empresa_id: str):
     """
     Descarga todos los documentos subidos de una empresa como un archivo ZIP.
-    Marca cada documento como descargado en la base de datos.
+    Estructura estricta para grupos corporativos.
     """
     sb = get_supabase_admin()
 
     emp_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
     if not emp_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    empresa_nombre = emp_resp.data["nombre"]
+    empresa_nombre = emp_resp.data["nombre"].strip()
 
     docs_exp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
     docs_rep = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
@@ -202,23 +222,110 @@ async def descargar_todos_documentos(empresa_id: str):
 
     if not todos_docs:
         raise HTTPException(status_code=404, detail="No hay documentos subidos para esta empresa")
+        
+    # Obtener bancos (para saber el nombre de la carpeta bancaria de cada doc)
+    bancos_resp = sb.table("cuentas_bancarias").select("id, nombre_banco").eq("empresa_id", empresa_id).execute()
+    bancos_dict = {b["id"]: b["nombre_banco"] for b in bancos_resp.data or []}
 
     zip_buffer = io.BytesIO()
     ahora = datetime.now(timezone.utc).isoformat()
     archivos_incluidos = 0
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        
+        # 1. GENERAR ESTRUCTURA VACÍA BASE
+        carpetas_base = [
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/1. INE/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/2. CONSTANCIA SITUACION FISCAL/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/3. COMPROBANTE DOMICILIO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/4. ACTA NACIMIENTO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/5. ACTA MATRIMONIO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/PREVIOS/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/0. PRE ANALISIS/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/ACTA CONSTITUTIVA/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/ACTAS DE ASAMBLEA/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/REGISTRO PUBLICO/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/2. ESTADOS FINANCIEROS/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/3. ESTADOS DE CUENTA/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/4. BURO DE CREDITO/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/5. DECLARACIONES/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/1. CONSTANCIA SITUACION FISCAL/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/2. COMPROBANTE DOMICILIO/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/3. OPINION DE CUMPLIMIENTO/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/4. FIEL/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/PREVIOS/",
+        ]
+        # Crear carpetas de banco vacías
+        for b_name in bancos_dict.values():
+            carpetas_base.append(f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/3. ESTADOS DE CUENTA/{b_name}/")
+            
+        for c in carpetas_base:
+            zf.writestr(zipfile.ZipInfo(c), b'')
+
+        rutas_agregadas = set()
+
         for doc in todos_docs:
             storage_path = doc.get("storage_path")
             if not storage_path:
                 continue
+                
             try:
-                file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
                 nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
                 tipo = doc.get("tipo_documento", "doc")
                 
-                carpeta = "Representante Legal" if tipo in CLAVES_REPRESENTANTE else "Documentos de la Empresa"
-                zip_path = f"{carpeta}/{nombre_archivo}"
+                # ==== LÓGICA DE MAPEO DE CARPETAS ====
+                # Directorio Raíz: GRUPO
+                ruta_base = f"{empresa_nombre}/"
+                ruta_final = ""
+                
+                if tipo in CLAVES_REPRESENTANTE:
+                    rep_folder = "1. REPRESENTANTES LEGALES/1. GENERALES"
+                    if tipo == "ine_representante":
+                        ruta_final = f"{rep_folder}/1. INE/{nombre_archivo}"
+                    elif tipo == "csf_representante":
+                        ruta_final = f"{rep_folder}/2. CONSTANCIA SITUACION FISCAL/{nombre_archivo}"
+                    elif tipo == "comprobante_domicilio_representante":
+                        ruta_final = f"{rep_folder}/3. COMPROBANTE DOMICILIO/{nombre_archivo}"
+                    elif tipo == "acta_matrimonio":
+                        ruta_final = f"{rep_folder}/5. ACTA MATRIMONIO/{nombre_archivo}"
+                    else:
+                        ruta_final = f"{rep_folder}/PREVIOS/{nombre_archivo}"
+                else:
+                    emp_folder = "2. EMPRESAS DEL GRUPO"
+                    if tipo == "curriculum_empresa":
+                        ruta_final = f"{emp_folder}/0. PRE ANALISIS/{nombre_archivo}"
+                    elif tipo == "acta_constitutiva":
+                        ruta_final = f"{emp_folder}/1. ACTAS/ACTA CONSTITUTIVA/{nombre_archivo}"
+                    elif tipo.startswith("financiero_eeff_"):
+                        ruta_final = f"{emp_folder}/2. ESTADOS FINANCIEROS/{nombre_archivo}"
+                    elif tipo.startswith("ec_"):
+                        banco_id = doc.get("cuenta_bancaria_id")
+                        nombre_banco = bancos_dict.get(banco_id, "BANCO DESCONOCIDO")
+                        ruta_final = f"{emp_folder}/3. ESTADOS DE CUENTA/{nombre_banco}/{nombre_archivo}"
+                    elif tipo == "buro_credito":
+                        ruta_final = f"{emp_folder}/4. BURO DE CREDITO/{nombre_archivo}"
+                    elif tipo.startswith("declaracion_"):
+                        partes = tipo.split("_")
+                        anio = partes[-1] if len(partes) > 0 and partes[-1].isdigit() else "AÑO DESCONOCIDO"
+                        ruta_final = f"{emp_folder}/5. DECLARACIONES/{anio}/{nombre_archivo}"
+                    elif tipo == "csf_empresa":
+                        ruta_final = f"{emp_folder}/6. GENERALES/1. CONSTANCIA SITUACION FISCAL/{nombre_archivo}"
+                    elif tipo == "comprobante_domicilio_empresa":
+                        ruta_final = f"{emp_folder}/6. GENERALES/2. COMPROBANTE DOMICILIO/{nombre_archivo}"
+                    elif tipo == "opinion_cumplimiento":
+                        ruta_final = f"{emp_folder}/6. GENERALES/3. OPINION DE CUMPLIMIENTO/{nombre_archivo}"
+                    else:
+                        ruta_final = f"{emp_folder}/6. GENERALES/PREVIOS/{nombre_archivo}"
+                
+                zip_path = ruta_base + ruta_final
+                
+                # DEDUPLICAR
+                if zip_path in rutas_agregadas:
+                    continue
+                rutas_agregadas.add(zip_path)
+                
+                # Descargar SOLO si no es duplicado (ahorra tiempo y ancho de banda)
+                file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
                 
                 zf.writestr(zip_path, file_bytes)
                 archivos_incluidos += 1
@@ -232,9 +339,7 @@ async def descargar_todos_documentos(empresa_id: str):
                 logger.warning(f"No se pudo descargar {storage_path}: {e}")
                 continue
 
-    if archivos_incluidos == 0:
-        raise HTTPException(status_code=404, detail="No se pudieron descargar archivos del storage")
-
+    # Siempre permitimos descargar el ZIP aunque solo tenga las carpetas vacías (archivos_incluidos puede ser 0)
     zip_buffer.seek(0)
     safe_name = empresa_nombre.replace(" ", "_").replace("/", "-")
     filename = f"Expediente_{safe_name}.zip"
@@ -245,4 +350,46 @@ async def descargar_todos_documentos(empresa_id: str):
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+import mimetypes
+
+@router.get("/empresas/{empresa_id}/documentos/{doc_id}/descargar")
+async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: bool = False):
+    """
+    Descarga un archivo individual, marcándolo como descargado.
+    """
+    sb = get_supabase_admin()
+    table = "documentos_representante" if is_rep else "documentos_expediente"
+    
+    doc_resp = sb.table(table).select("*").eq("id", doc_id).single().execute()
+    if not doc_resp.data:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+    doc = doc_resp.data
+    storage_path = doc.get("storage_path")
+    if not storage_path:
+        raise HTTPException(status_code=400, detail="El documento no tiene un archivo asociado")
+        
+    try:
+        file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+    except Exception as e:
+        logger.error(f"Error descargando {storage_path}: {e}")
+        raise HTTPException(status_code=500, detail="Error descargando de Storage")
+        
+    ahora = datetime.now(timezone.utc).isoformat()
+    sb.table(table).update({
+        "descargado": True,
+        "descargado_en": ahora,
+    }).eq("id", doc_id).execute()
+    
+    nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+    mime_type, _ = mimetypes.guess_type(nombre_archivo)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+        
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
     )

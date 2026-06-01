@@ -11,10 +11,11 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
+from typing import List
 
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
-from portal.Cliente.expedientes import DOCUMENTOS_REPRESENTANTE
+from portal.Cliente.expedientes import DOCUMENTOS_REPRESENTANTE, calcular_estados_de_cuenta
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,9 +59,23 @@ async def subir_documento(
         raise HTTPException(status_code=404, detail="Empresa no encontrada para este usuario")
     empresa_id = empresa_resp.data["id"]
 
-    # 4. Construir ruta en Storage: empresas/{empresa_id}/{tipo_documento}/{uuid}.pdf
+    # 4. Determinar si es de banco y su path
+    nombre_carpeta = None
+    cuenta_bancaria_id = None
+    
+    if tipo_documento.startswith("ec_"):
+        partes = tipo_documento.split("_")
+        if len(partes) >= 4:
+            cuenta_bancaria_id = partes[1]
+            banco_resp = sb.table("cuentas_bancarias").select("nombre_banco").eq("id", cuenta_bancaria_id).single().execute()
+            if banco_resp.data:
+                nombre_carpeta = banco_resp.data["nombre_banco"]
+    
     file_id = str(uuid.uuid4())[:8]
-    storage_path = f"empresas/{empresa_id}/{tipo_documento}/{file_id}_{file.filename}"
+    if nombre_carpeta:
+        storage_path = f"empresas/{empresa_id}/estados_cuenta/{nombre_carpeta}/{file_id}_{file.filename}"
+    else:
+        storage_path = f"empresas/{empresa_id}/{tipo_documento}/{file_id}_{file.filename}"
 
     # 5. Subir a Supabase Storage
     try:
@@ -99,6 +114,11 @@ async def subir_documento(
         "subido_en": ahora,
         "revisado_en": None,
     }
+    
+    if cuenta_bancaria_id:
+        doc_data["cuenta_bancaria_id"] = cuenta_bancaria_id
+    if nombre_carpeta:
+        doc_data["nombre_carpeta"] = nombre_carpeta
 
     if existing.data:
         # Actualizar registro existente
@@ -162,3 +182,99 @@ async def eliminar_documento(
     sb.table(table_name).delete().eq("id", doc["id"]).execute()
 
     return {"message": f"Documento {tipo_documento} eliminado"}
+
+@router.post("/subir-documentos-banco")
+async def subir_documentos_banco(
+    cuenta_bancaria_id: str = Form(...),
+    files: List[UploadFile] = File(...),
+    authorization: str = Header(None),
+):
+    """
+    Sube múltiples PDFs a la vez para una cuenta bancaria.
+    Busca los slots faltantes o rechazados y asigna los archivos en orden.
+    """
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+
+    # 1. Validar empresa
+    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    empresa_id = empresa_resp.data["id"]
+
+    # 2. Validar banco
+    banco_resp = sb.table("cuentas_bancarias").select("*").eq("id", cuenta_bancaria_id).eq("empresa_id", empresa_id).single().execute()
+    if not banco_resp.data:
+        raise HTTPException(status_code=404, detail="Cuenta bancaria no encontrada")
+    banco = banco_resp.data
+    nombre_carpeta = banco["nombre_banco"]
+
+    # 3. Calcular slots requeridos y ver cuáles faltan/pueden ser reemplazados
+    slots_requeridos = calcular_estados_de_cuenta(banco)
+    
+    # Obtener documentos actuales para este banco
+    docs_actuales_resp = sb.table("documentos_expediente").select("*").eq("cuenta_bancaria_id", cuenta_bancaria_id).execute()
+    docs_actuales = {d["tipo_documento"]: d for d in docs_actuales_resp.data or []}
+
+    slots_disponibles = []
+    for slot in slots_requeridos:
+        doc = docs_actuales.get(slot["clave"])
+        if not doc or doc["estado"] in ["FALTANTE", "RECHAZADO"]:
+            slots_disponibles.append(slot["clave"])
+
+    if not slots_disponibles:
+        raise HTTPException(status_code=400, detail="No hay meses pendientes de subir para esta cuenta")
+
+    if len(files) > len(slots_disponibles):
+        raise HTTPException(status_code=400, detail=f"Enviaste {len(files)} archivos, pero solo faltan {len(slots_disponibles)} meses")
+
+    ahora = datetime.now(timezone.utc).isoformat()
+    resultados = []
+
+    # 4. Procesar archivos asignándolos a los slots disponibles
+    for i, file in enumerate(files):
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            continue # Saltar archivos gigantes
+            
+        tipo_documento = slots_disponibles[i]
+        file_id = str(uuid.uuid4())[:8]
+        storage_path = f"empresas/{empresa_id}/estados_cuenta/{nombre_carpeta}/{file_id}_{file.filename}"
+
+        # Subir a storage
+        try:
+            sb.storage.from_(BUCKET_NAME).upload(
+                path=storage_path,
+                file=content,
+                file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "true"},
+            )
+        except Exception as e:
+            logger.error(f"Error subiendo a Storage: {e}")
+            continue
+
+        doc_data = {
+            "empresa_id": empresa_id,
+            "tipo_documento": tipo_documento,
+            "nombre_archivo": file.filename,
+            "storage_path": storage_path,
+            "estado": "PENDIENTE",
+            "comentario_admin": None,
+            "subido_en": ahora,
+            "revisado_en": None,
+            "cuenta_bancaria_id": cuenta_bancaria_id,
+            "nombre_carpeta": nombre_carpeta
+        }
+
+        # Guardar en BD
+        existing = docs_actuales.get(tipo_documento)
+        if existing:
+            sb.table("documentos_expediente").update(doc_data).eq("id", existing["id"]).execute()
+        else:
+            sb.table("documentos_expediente").insert(doc_data).execute()
+            
+        resultados.append(file.filename)
+
+    return {
+        "message": f"Se subieron {len(resultados)} archivos exitosamente",
+        "archivos": resultados
+    }

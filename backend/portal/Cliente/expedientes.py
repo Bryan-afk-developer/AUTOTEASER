@@ -131,29 +131,31 @@ MESES_ES = {
 # GENERADORES DINÁMICOS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def calcular_estados_de_cuenta() -> list[dict]:
+def calcular_estados_de_cuenta(banco: dict = None) -> list[dict]:
     """
-    Genera los slots de estados de cuenta para los últimos 7 meses
-    empezando 2 meses antes del mes actual.
-    Ej: si estamos en Mayo 2026, empieza desde Marzo 2026 hacia atrás.
+    Genera 7 slots genéricos para estados de cuenta de la cuenta bancaria.
     """
-    hoy = date.today()
-    inicio = hoy - relativedelta(months=2)
     docs = []
-    for i in range(7):
-        fecha = inicio - relativedelta(months=i)
-        mes_nombre = MESES_ES[fecha.month]
-        año = fecha.year
-        clave = f"estado_cuenta_{fecha.strftime('%Y_%m')}"
+    
+    # Si no hay banco, no devolvemos slots genéricos
+    if not banco:
+        return docs
+        
+    nombre_banco = banco["nombre_banco"]
+    cuenta_id = banco["id"]
+    
+    for i in range(1, 8):
+        clave = f"ec_{cuenta_id}_{i}"
         docs.append({
             "clave": clave,
-            "nombre": f"Estado de Cuenta – {mes_nombre} {año}",
-            "descripcion": f"Estado de cuenta bancario del mes de {mes_nombre} {año}",
+            "nombre": f"Estado de Cuenta {i}",
+            "descripcion": f"Documento de estado de cuenta #{i}",
             "categoria": "bancario",
             "icono": "🏦",
-            "mes": fecha.month,
-            "año": año,
             "grupo": "estados_cuenta",
+            "cuenta_bancaria_id": cuenta_id,
+            "nombre_carpeta": nombre_banco,
+            "orden": i
         })
     return docs
 
@@ -263,11 +265,16 @@ def calcular_declaraciones() -> list[dict]:
 # COMBINADOR
 # ══════════════════════════════════════════════════════════════════════════════
 
-def get_todos_los_documentos_requeridos() -> list[dict]:
+def get_todos_los_documentos_requeridos(bancos: list[dict] = None) -> list[dict]:
     """Combina todos los grupos de documentos en el orden de presentación."""
+    docs_bancos = []
+    if bancos:
+        for banco in bancos:
+            docs_bancos.extend(calcular_estados_de_cuenta(banco))
+
     return (
         DOCUMENTOS_LEGALES
-        + calcular_estados_de_cuenta()
+        + docs_bancos
         + calcular_financieros()
         + calcular_declaraciones()
         + DOCUMENTOS_VIGENTES
@@ -282,10 +289,7 @@ def get_todos_los_documentos_requeridos() -> list[dict]:
 @router.get("/expediente")
 async def get_expediente(authorization: str = Header(None)):
     """
-    Devuelve el expediente completo del cliente:
-    - Lista de todos los documentos requeridos
-    - Estado actual de cada documento (FALTANTE, PENDIENTE, APROBADO, RECHAZADO)
-    - Progreso general (% completado)
+    Devuelve el expediente completo del cliente.
     """
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
@@ -302,6 +306,10 @@ async def get_expediente(authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa = empresa_resp.data
     empresa_id = empresa["id"]
+
+    # Obtener bancos
+    bancos_resp = sb.table("cuentas_bancarias").select("*").eq("empresa_id", empresa_id).execute()
+    bancos = bancos_resp.data or []
 
     # Obtener documentos ya subidos de la BD (de ambas tablas)
     docs_resp = (
@@ -326,7 +334,7 @@ async def get_expediente(authorization: str = Header(None)):
     docs_subidos = {d["tipo_documento"]: d for d in todos_subidos}
 
     # Construir respuesta combinando requeridos con los subidos
-    documentos_requeridos = get_todos_los_documentos_requeridos()
+    documentos_requeridos = get_todos_los_documentos_requeridos(bancos)
     resultado = []
     aprobados = 0
 
@@ -368,6 +376,7 @@ async def get_expediente(authorization: str = Header(None)):
     return {
         "empresa_id": empresa_id,
         "nombre_empresa": empresa["nombre"],
+        "bancos": bancos,
         "documentos": resultado,
         "resumen": {
             "total": total,
@@ -378,3 +387,50 @@ async def get_expediente(authorization: str = Header(None)):
             "progreso_porcentaje": progreso,
         },
     }
+
+@router.post("/carpetas-banco")
+async def crear_carpeta_banco(
+    nombre_banco: str,
+    authorization: str = Header(None)
+):
+    """Crea una nueva carpeta de banco para la empresa."""
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+
+    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    empresa_id = empresa_resp.data["id"]
+
+    try:
+        result = sb.table("cuentas_bancarias").insert({
+            "empresa_id": empresa_id,
+            "nombre_banco": nombre_banco
+        }).execute()
+        return result.data[0]
+    except Exception as e:
+        logger.error(f"Error creando cuenta bancaria: {e}")
+        raise HTTPException(status_code=400, detail="La cuenta bancaria ya existe o hubo un error")
+
+@router.delete("/carpetas-banco/{cuenta_id}")
+async def eliminar_carpeta_banco(
+    cuenta_id: str,
+    authorization: str = Header(None)
+):
+    """Elimina una cuenta bancaria y sus documentos si no están aprobados."""
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+
+    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    empresa_id = empresa_resp.data["id"]
+
+    # Verificar si hay documentos aprobados
+    docs_resp = sb.table("documentos_expediente").select("estado").eq("cuenta_bancaria_id", cuenta_id).execute()
+    if docs_resp.data:
+        if any(d["estado"] == "APROBADO" for d in docs_resp.data):
+            raise HTTPException(status_code=400, detail="No puedes eliminar un banco con documentos aprobados")
+
+    sb.table("cuentas_bancarias").delete().eq("id", cuenta_id).eq("empresa_id", empresa_id).execute()
+    return {"message": "Cuenta bancaria eliminada"}

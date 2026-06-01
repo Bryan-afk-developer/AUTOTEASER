@@ -75,8 +75,23 @@ export const api = {
     return request('POST', '/api/portal/cliente/subir-documento', formData, true)
   },
 
+  subirDocumentosBanco: (cuentaId, files) => {
+    const formData = new FormData()
+    formData.append('cuenta_bancaria_id', cuentaId)
+    // files is a FileList or Array of Files
+    Array.from(files).forEach(f => formData.append('files', f))
+    return request('POST', '/api/portal/cliente/subir-documentos-banco', formData, true)
+  },
+
   eliminarDocumento: (tipoDocumento) =>
     request('DELETE', `/api/portal/cliente/eliminar-documento/${tipoDocumento}`),
+
+  // Cliente - Bancos
+  crearCarpetaBanco: (nombreBanco) =>
+    request('POST', `/api/portal/cliente/carpetas-banco?nombre_banco=${encodeURIComponent(nombreBanco)}`),
+
+  eliminarCarpetaBanco: (cuentaId) =>
+    request('DELETE', `/api/portal/cliente/carpetas-banco/${cuentaId}`),
 
   // Admin - Dashboard
   getPendientes: (estado = 'PENDIENTE') =>
@@ -104,6 +119,27 @@ export const api = {
     const disposition = res.headers.get('Content-Disposition') || ''
     const match = disposition.match(/filename="?(.+?)"?$/)
     const filename = match ? match[1] : `Expediente_${empresaId}.zip`
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+  },
+
+  descargarDocumentoIndividual: async (empresaId, docId, isRep = false) => {
+    const headers = { ...authHeaders() }
+    const res = await fetch(`${BASE_URL}/api/portal/admin/empresas/${empresaId}/documentos/${docId}/descargar?is_rep=${isRep}`, { headers })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Error ${res.status}`)
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const match = disposition.match(/filename="?(.+?)"?$/)
+    const filename = match ? match[1] : `documento_${docId}.pdf`
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

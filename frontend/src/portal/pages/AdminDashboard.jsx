@@ -296,7 +296,11 @@ export default function AdminDashboard() {
       ) : (
         <div className="space-y-8">
           {(() => {
-            const docsEmpresa = documentos.filter(d => d.grupo !== 'representante')
+            const docsLegales = documentos.filter(d => d.grupo === 'legal')
+            const docsEdosCuenta = documentos.filter(d => d.grupo === 'estados_cuenta')
+            const docsFinancieros = documentos.filter(d => d.grupo === 'financieros')
+            const docsDeclaraciones = documentos.filter(d => d.grupo === 'declaraciones')
+            const docsVigentes = documentos.filter(d => d.grupo === 'vigentes')
             const docsRep = documentos.filter(d => d.grupo === 'representante')
 
             const renderTable = (docs, title) => {
@@ -341,9 +345,11 @@ export default function AdminDashboard() {
                                 <div className="font-semibold text-text-main text-[13px] leading-tight">
                                   {doc.nombre_esperado || doc.tipo_documento}
                                 </div>
-                                <div className="text-[10px] text-text-muted mt-1 uppercase tracking-widest">
-                                  {doc.grupo === 'representante' ? 'Rep. Legal' : doc.grupo === 'estados_cuenta' ? 'Edo. de Cuenta' : 'Empresa'}
-                                </div>
+                                {doc.nombre_carpeta && (
+                                  <div className="text-[10px] text-primary-400 font-bold mt-1 uppercase tracking-widest bg-primary-500/10 border border-primary-500/20 px-2 py-0.5 rounded inline-block">
+                                    📁 {doc.nombre_carpeta}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-6 py-4 text-text-muted text-xs truncate max-w-[180px]" title={doc.nombre_archivo}>
                                 {doc.nombre_archivo || '—'}
@@ -356,8 +362,35 @@ export default function AdminDashboard() {
                                   {cfg.icon} {cfg.label}
                                 </span>
                               </td>
-                              <td className={`px-6 py-4 text-[11px] ${estadoDescarga.color}`}>
-                                {estadoDescarga.label}
+                              <td className="px-6 py-4 text-[11px]">
+                                <div className="flex items-center gap-2">
+                                  <span className={estadoDescarga.color}>
+                                    {estadoDescarga.label}
+                                  </span>
+                                  {doc.estado !== 'FALTANTE' && doc.id && (
+                                    <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const btn = e.currentTarget;
+                                        btn.disabled = true;
+                                        btn.style.opacity = '0.5';
+                                        try {
+                                          await api.descargarDocumentoIndividual(selectedEmpresa.id, doc.id, doc.grupo === 'representante');
+                                          loadDocumentos(selectedEmpresa.id);
+                                        } catch(err) {
+                                          alert('Error al descargar: ' + err.message);
+                                        } finally {
+                                          btn.disabled = false;
+                                          btn.style.opacity = '1';
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-primary-500/20 text-primary-400 rounded transition-colors flex-shrink-0"
+                                      title="Descargar documento"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 {esPendiente ? (
@@ -395,12 +428,27 @@ export default function AdminDashboard() {
               )
             }
 
-            return (
-              <>
-                {renderTable(docsEmpresa, "🏢 Documentos de la Empresa")}
-                {renderTable(docsRep, "🧑‍💼 Documentos del Representante Legal")}
-              </>
-            )
+              const banks = {};
+              docsEdosCuenta.forEach(d => {
+                const b = d.nombre_carpeta || 'Otros / General';
+                if (!banks[b]) banks[b] = [];
+                banks[b].push(d);
+              });
+
+              return (
+                <>
+                  {renderTable(docsRep, "🧑‍💼 1. Representante Legal")}
+                  {renderTable(docsLegales, "🏢 2.1. Actas / Legales")}
+                  {renderTable(docsFinancieros, "📊 2.2. Estados Financieros")}
+                  {Object.entries(banks).map(([bank, items]) => 
+                    <div key={bank}>
+                      {renderTable(items, `🏦 2.3. Estados de Cuenta${bank !== 'Otros / General' ? ` — ${bank}` : ''}`)}
+                    </div>
+                  )}
+                  {renderTable(docsDeclaraciones, "📋 2.5. Declaraciones")}
+                  {renderTable(docsVigentes, "✅ 2.6. Generales / Vigentes")}
+                </>
+              )
           })()}
         </div>
       )}
