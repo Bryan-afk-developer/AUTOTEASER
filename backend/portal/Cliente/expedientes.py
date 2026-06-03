@@ -445,10 +445,10 @@ async def get_expediente(authorization: str = Header(None)):
         storage_path = doc_subido.get("storage_path")
         url_documento = signed_urls_map.get(storage_path) if storage_path else None
 
-        # Parse tipo: declaracion_{subtipo}_{year} or declaracion_sinclasificar_{uuid}
-        parts = tipo.split("_", 2)  # ['declaracion', subtipo_or_sin, rest]
+        # Parse tipo: declaracion_{subtipo}_{year}_{uid} or declaracion_sinclasificar_{uuid}
+        parts = tipo.split("_")  # ['declaracion', subtipo_or_sin, year, uid] or ['declaracion', 'sinclasificar', uid]
         subtipo = parts[1] if len(parts) > 1 else None
-        year_str = parts[2] if len(parts) > 2 else None
+        year_str = parts[2] if (len(parts) > 2 and subtipo != "sinclasificar") else None
 
         if subtipo == "sinclasificar":
             label = "Sin clasificar"

@@ -667,8 +667,11 @@ async def subir_declaraciones_auto(
 
             # Build clave: declaracion_acuse_2025, declaracion_declaracion_2025
             # Or with comp: declaracion_acusecomp_2025
+            # Build clave: declaracion_acuse_2025_uuid, declaracion_declaracion_2025_uuid
+            # Or with comp: declaracion_acusecomp_2025_uuid
+            uid = str(uuid.uuid4())[:8]
             tipo_clave_mid = f"{tipo}comp" if is_complementaria else tipo
-            tipo_clave = f"declaracion_{tipo_clave_mid}_{year}"
+            tipo_clave = f"declaracion_{tipo_clave_mid}_{year}_{uid}"
             
             if tipo == "acuse":
                 tipo_display = "ACUSE_COMPLEMENTARIA" if is_complementaria else "ACUSE"
@@ -709,16 +712,8 @@ async def subir_declaraciones_auto(
             "revisado_en": None,
         }
 
-        # For classified docs: upsert (same year+type = same record)
-        # For unclassified: always insert (each is a new unique record)
-        if clasificado:
-            existing = sb.table("documentos_expediente").select("id").eq("empresa_id", empresa_id).eq("tipo_documento", tipo_clave).execute()
-            if existing.data:
-                sb.table("documentos_expediente").update(doc_data).eq("id", existing.data[0]["id"]).execute()
-            else:
-                sb.table("documentos_expediente").insert(doc_data).execute()
-        else:
-            sb.table("documentos_expediente").insert(doc_data).execute()
+        # Para declaraciones no hay límite, siempre se inserta como nuevo registro
+        sb.table("documentos_expediente").insert(doc_data).execute()
 
         if clasificado:
             detectados.append({
