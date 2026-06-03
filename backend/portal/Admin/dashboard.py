@@ -327,7 +327,7 @@ async def descargar_todos_documentos(empresa_id: str):
                         ruta_final = f"{emp_folder}/4. BURO DE CREDITO/{nombre_archivo}"
                     elif tipo.startswith("declaracion_"):
                         partes = tipo.split("_")
-                        anio = partes[-1] if len(partes) > 0 and partes[-1].isdigit() else "AÑO DESCONOCIDO"
+                        anio = partes[2] if len(partes) > 2 and partes[2].isdigit() else "AÑO DESCONOCIDO"
                         ruta_final = f"{emp_folder}/5. DECLARACIONES/{anio}/{nombre_archivo}"
                     elif tipo == "csf_empresa":
                         ruta_final = f"{emp_folder}/6. GENERALES/1. CONSTANCIA SITUACION FISCAL/{nombre_archivo}"
