@@ -675,10 +675,12 @@ async def subir_declaraciones_auto(
             
             if tipo == "acuse":
                 tipo_display = "ACUSE_COMPLEMENTARIA" if is_complementaria else "ACUSE"
+                nombre_base = "ACUSE_COMPLEMENTARIA" if is_complementaria else "ACUSE"
             else:
                 tipo_display = "DECLARACION_COMPLEMENTARIA" if is_complementaria else "DECLARACION"
+                nombre_base = "DECLARACIÓN_COMPLEMENTARIA" if is_complementaria else "DECLARACIÓN"
                 
-            nuevo_nombre = f"{tipo_display}_{year}_{file.filename}"
+            nuevo_nombre = f"{nombre_base} {year}.pdf"
             safe_filename = sanitize_filename(file.filename)
             storage_path = f"empresas/{empresa_id}/declaraciones/{year}/{tipo_display}/{str(uuid.uuid4())[:8]}_{safe_filename}"
         else:
