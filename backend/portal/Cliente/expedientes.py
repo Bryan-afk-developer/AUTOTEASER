@@ -273,7 +273,9 @@ def calcular_declaraciones() -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def get_todos_los_documentos_requeridos(bancos: list[dict] = None) -> list[dict]:
-    """Combina todos los grupos de documentos en el orden de presentación."""
+    """Combina todos los grupos de documentos en el orden de presentación.
+    Las declaraciones SAT se calculan aparte (lista dinámica de lo subido).
+    """
     docs_bancos = []
     if bancos:
         for banco in bancos:
@@ -283,7 +285,6 @@ def get_todos_los_documentos_requeridos(bancos: list[dict] = None) -> list[dict]
         DOCUMENTOS_LEGALES
         + docs_bancos
         + calcular_financieros()
-        + calcular_declaraciones()
         + DOCUMENTOS_VIGENTES
         + DOCUMENTOS_REPRESENTANTE
     )
@@ -399,7 +400,11 @@ async def get_expediente(authorization: str = Header(None)):
     # Agregar documentos "Otros" que no están en la lista de requeridos
     req_claves = {d["clave"] for d in documentos_requeridos}
     for doc_subido in todos_subidos:
-        if doc_subido["tipo_documento"] not in req_claves and doc_subido["tipo_documento"].startswith("otros_"):
+        # Skip declaraciones (handled separately) and skip estados_cuenta slots not required
+        tipo = doc_subido["tipo_documento"]
+        if tipo.startswith("declaracion_"):
+            continue
+        if tipo not in req_claves and tipo.startswith("otros_"):
             estado = doc_subido["estado"]
             url_documento = None
             storage_path = doc_subido.get("storage_path")
@@ -407,7 +412,7 @@ async def get_expediente(authorization: str = Header(None)):
                 url_documento = signed_urls_map.get(storage_path)
 
             entry = {
-                "clave": doc_subido["tipo_documento"],
+                "clave": tipo,
                 "nombre": doc_subido.get("nombre_archivo", "Otro Documento"),
                 "descripcion": "Documento adicional subido por el cliente",
                 "categoria": "otros",
@@ -426,6 +431,75 @@ async def get_expediente(authorization: str = Header(None)):
                 aprobados += 1
             resultado.append(entry)
 
+    # ── Declaraciones SAT — lista dinámica de lo que realmente subió el cliente ──
+    from datetime import date as _date
+    hoy_d = _date.today()
+    año_min_requerido = 2023  # desde 2023 en adelante se pide al menos 2 archivos
+    año_mas_reciente = hoy_d.year - 1 if hoy_d.month >= 4 else hoy_d.year - 2
+
+    declaraciones_sat = []
+    for doc_subido in docs_empresa:
+        tipo = doc_subido["tipo_documento"]
+        if not tipo.startswith("declaracion_"):
+            continue
+        storage_path = doc_subido.get("storage_path")
+        url_documento = signed_urls_map.get(storage_path) if storage_path else None
+
+        # Parse tipo: declaracion_{subtipo}_{year} or declaracion_sinclasificar_{uuid}
+        parts = tipo.split("_", 2)  # ['declaracion', subtipo_or_sin, rest]
+        subtipo = parts[1] if len(parts) > 1 else None
+        year_str = parts[2] if len(parts) > 2 else None
+
+        if subtipo == "sinclasificar":
+            label = "Sin clasificar"
+            icono = "📁"
+            año_val = None
+            clasificado = False
+        elif subtipo == "acuse" and year_str and year_str.isdigit():
+            label = f"Acuse de Recibo – {year_str}"
+            icono = "📋"
+            año_val = int(year_str)
+            clasificado = True
+        elif subtipo == "declaracion" and year_str and year_str.isdigit():
+            label = f"Declaración del Ejercicio – {year_str}"
+            icono = "📄"
+            año_val = int(year_str)
+            clasificado = True
+        else:
+            label = doc_subido.get("nombre_archivo", tipo)
+            icono = "📁"
+            año_val = None
+            clasificado = False
+
+        declaraciones_sat.append({
+            "clave": tipo,
+            "nombre": label,
+            "icono": icono,
+            "año": año_val,
+            "clasificado": clasificado,
+            "estado": doc_subido["estado"],
+            "documento_id": doc_subido["id"],
+            "nombre_archivo": doc_subido.get("nombre_archivo"),
+            "subido_en": doc_subido.get("subido_en"),
+            "revisado_en": doc_subido.get("revisado_en"),
+            "comentario_admin": doc_subido.get("comentario_admin"),
+            "storage_path": storage_path,
+            "url_documento": url_documento,
+        })
+
+    # Sort: clasificados primero (por año desc), sin clasificar al final
+    declaraciones_sat.sort(key=lambda d: (
+        0 if d["clasificado"] else 1,
+        -(d["año"] or 0),
+    ))
+
+    # Evaluate completeness: need >= 2 files from año_min_requerido onwards
+    archivos_validos = [
+        d for d in declaraciones_sat
+        if d["año"] is not None and d["año"] >= año_min_requerido
+    ]
+    declaraciones_completo = len(archivos_validos) >= 2
+
     total = len(resultado)
     progreso = round((aprobados / total) * 100) if total > 0 else 0
 
@@ -434,6 +508,8 @@ async def get_expediente(authorization: str = Header(None)):
         "nombre_empresa": empresa["nombre"],
         "bancos": bancos,
         "documentos": resultado,
+        "declaraciones_sat": declaraciones_sat,
+        "declaraciones_completo": declaraciones_completo,
         "resumen": {
             "total": total,
             "aprobados": aprobados,

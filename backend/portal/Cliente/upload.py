@@ -653,34 +653,30 @@ async def subir_declaraciones_auto(
             except Exception as e:
                 logger.warning(f"Error extracting text from {file.filename}: {e}")
 
-        if not text:
-            no_detectados.append({"nombre": file.filename, "razon": "No se pudo leer el PDF"})
-            continue
-
-        # Detect SAT document type
-        sat_result = detect_sat_document(text) if SAT_DETECTION_AVAILABLE else {"tipo": None, "year": None}
+        # Detect SAT document type (may fail if not readable or not SAT doc)
+        sat_result = detect_sat_document(text) if (text and SAT_DETECTION_AVAILABLE) else {"tipo": None, "year": None}
 
         tipo = sat_result.get("tipo")  # "acuse" | "declaracion" | None
         year = sat_result.get("year")
+        clasificado = bool(tipo and year)
 
-        if not tipo or not year:
-            no_detectados.append({"nombre": file.filename, "razon": "No se identificó como Acuse o Declaración del SAT"})
-            continue
+        if clasificado:
+            if year not in años_validos:
+                logger.warning(f"Año {year} fuera de los 3 años esperados, se sube de todas formas")
 
-        if year not in años_validos:
-            # Still allow it – the company might be newer, just warn
-            logger.warning(f"Ño {year} fuera de los 3 años esperados, se sube de todas formas")
-
-        # Build clave: declaracion_acuse_2025 or declaracion_declaracion_2025
-        tipo_clave = f"declaracion_{tipo}_{year}"
-
-        # Build a nice filename
-        tipo_display = "ACUSE" if tipo == "acuse" else "DECLARACION"
-        nuevo_nombre = f"{tipo_display}_{year}_{file.filename}"
-
-        # ASCII-safe storage path (no accented chars)
-        safe_filename = sanitize_filename(file.filename)
-        storage_path = f"empresas/{empresa_id}/declaraciones/{year}/{tipo_display}/{str(uuid.uuid4())[:8]}_{safe_filename}"
+            # Build clave: declaracion_acuse_2025 or declaracion_declaracion_2025
+            tipo_clave = f"declaracion_{tipo}_{year}"
+            tipo_display = "ACUSE" if tipo == "acuse" else "DECLARACION"
+            nuevo_nombre = f"{tipo_display}_{year}_{file.filename}"
+            safe_filename = sanitize_filename(file.filename)
+            storage_path = f"empresas/{empresa_id}/declaraciones/{year}/{tipo_display}/{str(uuid.uuid4())[:8]}_{safe_filename}"
+        else:
+            # No se pudo clasificar → sube como "sin clasificar" para revisión del admin
+            uid = str(uuid.uuid4())[:8]
+            tipo_clave = f"declaracion_sinclasificar_{uid}"
+            nuevo_nombre = file.filename
+            safe_filename = sanitize_filename(file.filename)
+            storage_path = f"empresas/{empresa_id}/declaraciones/sin_clasificar/{uid}_{safe_filename}"
 
         # Upload to storage
         try:
@@ -705,19 +701,30 @@ async def subir_declaraciones_auto(
             "revisado_en": None,
         }
 
-        # Upsert
-        existing = sb.table("documentos_expediente").select("id").eq("empresa_id", empresa_id).eq("tipo_documento", tipo_clave).execute()
-        if existing.data:
-            sb.table("documentos_expediente").update(doc_data).eq("id", existing.data[0]["id"]).execute()
+        # For classified docs: upsert (same year+type = same record)
+        # For unclassified: always insert (each is a new unique record)
+        if clasificado:
+            existing = sb.table("documentos_expediente").select("id").eq("empresa_id", empresa_id).eq("tipo_documento", tipo_clave).execute()
+            if existing.data:
+                sb.table("documentos_expediente").update(doc_data).eq("id", existing.data[0]["id"]).execute()
+            else:
+                sb.table("documentos_expediente").insert(doc_data).execute()
         else:
             sb.table("documentos_expediente").insert(doc_data).execute()
 
-        detectados.append({
-            "nombre": file.filename,
-            "tipo": tipo_display,
-            "year": year,
-            "clave": tipo_clave,
-        })
+        if clasificado:
+            detectados.append({
+                "nombre": file.filename,
+                "tipo": tipo_display,
+                "year": year,
+                "clave": tipo_clave,
+            })
+        else:
+            no_detectados.append({
+                "nombre": file.filename,
+                "razon": "No se identificó automáticamente — guardado para revisión",
+                "guardado": True,
+            })
 
     return {
         "message": f"Procesados {len(files)} archivos SAT",
