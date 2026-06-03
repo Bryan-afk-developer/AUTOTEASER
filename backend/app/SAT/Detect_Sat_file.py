@@ -42,7 +42,7 @@ def detect_sat_document(text: str) -> dict:
           - tipo: "acuse", "declaracion", or None
           - year: "2025", "2024", etc. or None
     """
-    result = {"tipo": None, "year": None}
+    result = {"tipo": None, "year": None, "is_complementaria": False}
 
     if not text or not SAT_AVAILABLE:
         return result
@@ -52,6 +52,7 @@ def detect_sat_document(text: str) -> dict:
         parsed = Acuse.parse(text)
         result["tipo"] = "acuse"
         result["year"] = parsed.get("year")
+        result["is_complementaria"] = parsed.get("is_complementaria", False)
         logger.info(f"SAT document detected: ACUSE - Año {result['year']}")
         return result
 
@@ -60,6 +61,7 @@ def detect_sat_document(text: str) -> dict:
         parsed = Declaracion.parse(text)
         result["tipo"] = "declaracion"
         result["year"] = parsed.get("year")
+        result["is_complementaria"] = parsed.get("is_complementaria", False)
         logger.info(f"SAT document detected: DECLARACIÓN - Año {result['year']}")
         return result
 

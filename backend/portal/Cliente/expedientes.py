@@ -460,8 +460,18 @@ async def get_expediente(authorization: str = Header(None)):
             icono = "📋"
             año_val = int(year_str)
             clasificado = True
+        elif subtipo == "acusecomp" and year_str and year_str.isdigit():
+            label = f"Acuse de Recibo (Complementaria) – {year_str}"
+            icono = "📋"
+            año_val = int(year_str)
+            clasificado = True
         elif subtipo == "declaracion" and year_str and year_str.isdigit():
             label = f"Declaración del Ejercicio – {year_str}"
+            icono = "📄"
+            año_val = int(year_str)
+            clasificado = True
+        elif subtipo == "declaracioncomp" and year_str and year_str.isdigit():
+            label = f"Declaración del Ejercicio (Complementaria) – {year_str}"
             icono = "📄"
             año_val = int(year_str)
             clasificado = True

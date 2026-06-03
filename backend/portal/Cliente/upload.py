@@ -659,14 +659,22 @@ async def subir_declaraciones_auto(
         tipo = sat_result.get("tipo")  # "acuse" | "declaracion" | None
         year = sat_result.get("year")
         clasificado = bool(tipo and year)
+        is_complementaria = sat_result.get("is_complementaria", False)
 
         if clasificado:
             if year not in años_validos:
                 logger.warning(f"Año {year} fuera de los 3 años esperados, se sube de todas formas")
 
-            # Build clave: declaracion_acuse_2025 or declaracion_declaracion_2025
-            tipo_clave = f"declaracion_{tipo}_{year}"
-            tipo_display = "ACUSE" if tipo == "acuse" else "DECLARACION"
+            # Build clave: declaracion_acuse_2025, declaracion_declaracion_2025
+            # Or with comp: declaracion_acusecomp_2025
+            tipo_clave_mid = f"{tipo}comp" if is_complementaria else tipo
+            tipo_clave = f"declaracion_{tipo_clave_mid}_{year}"
+            
+            if tipo == "acuse":
+                tipo_display = "ACUSE_COMPLEMENTARIA" if is_complementaria else "ACUSE"
+            else:
+                tipo_display = "DECLARACION_COMPLEMENTARIA" if is_complementaria else "DECLARACION"
+                
             nuevo_nombre = f"{tipo_display}_{year}_{file.filename}"
             safe_filename = sanitize_filename(file.filename)
             storage_path = f"empresas/{empresa_id}/declaraciones/{year}/{tipo_display}/{str(uuid.uuid4())[:8]}_{safe_filename}"

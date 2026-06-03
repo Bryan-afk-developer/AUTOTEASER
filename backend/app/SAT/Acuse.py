@@ -36,7 +36,11 @@ def parse(text: str) -> dict:
     result = {
         "tipo": "acuse",
         "year": None,
+        "is_complementaria": False,
     }
+
+    if "TIPO DE DECLARACIÓN: COMPLEMENTARIA" in text.upper():
+        result["is_complementaria"] = True
 
     # Look for "Ejercicio: 2025" or "Ejercicio Ejercicio: 2025"
     match = re.search(r'Ejercicio[:\s]+(\d{4})', text, re.IGNORECASE)
