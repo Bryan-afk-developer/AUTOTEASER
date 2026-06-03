@@ -507,9 +507,13 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     mime_type, _ = mimetypes.guess_type(nombre_archivo)
     if not mime_type:
         mime_type = "application/octet-stream"
+    
+    from urllib.parse import quote
+    filename_encoded = quote(nombre_archivo, safe='')
+    content_disposition = f"attachment; filename=\"{nombre_archivo}\"; filename*=UTF-8''{filename_encoded}"
         
     return StreamingResponse(
         io.BytesIO(file_bytes),
         media_type=mime_type,
-        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+        headers={"Content-Disposition": content_disposition},
     )

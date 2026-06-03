@@ -186,8 +186,14 @@ export const api = {
     }
     const blob = await res.blob()
     const disposition = res.headers.get('Content-Disposition') || ''
-    const match = disposition.match(/filename="?(.+?)"?$/)
-    const filename = match ? match[1] : `documento_${docId}.pdf`
+    // Try RFC 5987 filename* first, then plain filename
+    const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+    const matchPlain = disposition.match(/filename="?([^"]+)"?/i)
+    const filename = matchUtf8
+      ? decodeURIComponent(matchUtf8[1])
+      : matchPlain
+        ? matchPlain[1]
+        : `documento_${docId}.pdf`
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
