@@ -350,7 +350,7 @@ async def get_expediente(authorization: str = Header(None)):
         try:
             signed_urls_resp = sb.storage.from_(BUCKET_NAME).create_signed_urls(paths_to_sign, 3600)
             for item in signed_urls_resp:
-                if "error" not in item and "signedURL" in item:
+                if not item.get("error") and item.get("signedURL"):
                     signed_urls_map[item["path"]] = item["signedURL"]
         except Exception as e:
             logger.error(f"Error al generar URLs firmadas en lote: {e}")
