@@ -342,6 +342,18 @@ async def get_expediente(authorization: str = Header(None)):
 
     # Construir respuesta combinando requeridos con los subidos
     documentos_requeridos = get_todos_los_documentos_requeridos(bancos)
+    # --- Generación en lote de URLs firmadas para mayor velocidad ---
+    paths_to_sign = [d["storage_path"] for d in todos_subidos if d.get("storage_path")]
+    signed_urls_map = {}
+    if paths_to_sign:
+        try:
+            signed_urls_resp = sb.storage.from_(BUCKET_NAME).create_signed_urls(paths_to_sign, 3600)
+            for item in signed_urls_resp:
+                if "error" not in item and "signedURL" in item:
+                    signed_urls_map[item["path"]] = item["signedURL"]
+        except Exception as e:
+            logger.error(f"Error al generar URLs firmadas en lote: {e}")
+
     resultado = []
     aprobados = 0
 
@@ -354,12 +366,7 @@ async def get_expediente(authorization: str = Header(None)):
             url_documento = None
             storage_path = doc_subido.get("storage_path")
             if storage_path:
-                try:
-                    signed_resp = sb.storage.from_(BUCKET_NAME).create_signed_url(storage_path, expires_in=3600)
-                    url_documento = signed_resp.get("signedURL") if isinstance(signed_resp, dict) else signed_resp
-                except Exception as e:
-                    logger.error(f"Error al generar URL para {storage_path}: {e}")
-                    url_documento = None
+                url_documento = signed_urls_map.get(storage_path)
 
             entry = {
                 **doc_req,
@@ -397,12 +404,7 @@ async def get_expediente(authorization: str = Header(None)):
             url_documento = None
             storage_path = doc_subido.get("storage_path")
             if storage_path:
-                try:
-                    signed_resp = sb.storage.from_(BUCKET_NAME).create_signed_url(storage_path, expires_in=3600)
-                    url_documento = signed_resp.get("signedURL") if isinstance(signed_resp, dict) else signed_resp
-                except Exception as e:
-                    logger.error(f"Error al generar URL para {storage_path}: {e}")
-                    url_documento = None
+                url_documento = signed_urls_map.get(storage_path)
 
             entry = {
                 "clave": doc_subido["tipo_documento"],
