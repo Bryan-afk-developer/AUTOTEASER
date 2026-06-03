@@ -11,6 +11,9 @@ import io
 import logging
 import zipfile
 from datetime import datetime, timezone
+from typing import List
+
+from pydantic import BaseModel
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -187,8 +190,8 @@ async def get_empresa_documentos(empresa_id: str):
                 
             doc_subido["empresa_nombre"] = empresa_info.get("nombre")
             doc_subido["empresa_rfc"] = empresa_info.get("rfc")
-            doc_subido["nombre_esperado"] = doc_subido["tipo_documento"]
-            doc_subido["grupo"] = "empresa"
+            doc_subido["nombre_esperado"] = doc_subido.get("nombre_archivo", doc_subido["tipo_documento"])
+            doc_subido["grupo"] = "otros" if doc_subido["tipo_documento"].startswith("otros_") else "empresa"
             
 
             documentos_completos.append(doc_subido)
@@ -254,6 +257,7 @@ async def descargar_todos_documentos(empresa_id: str):
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/3. OPINION DE CUMPLIMIENTO/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/4. FIEL/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/6. GENERALES/PREVIOS/",
+            f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/7. OTROS/",
         ]
         # Crear carpetas de banco vacías
         for b_name in bancos_dict.values():
@@ -301,7 +305,17 @@ async def descargar_todos_documentos(empresa_id: str):
                     elif tipo.startswith("ec_"):
                         banco_id = doc.get("cuenta_bancaria_id")
                         nombre_banco = bancos_dict.get(banco_id, "BANCO DESCONOCIDO")
-                        ruta_final = f"{emp_folder}/3. ESTADOS DE CUENTA/{nombre_banco}/{nombre_archivo}"
+                        
+                        if nombre_banco == "BANCO DESCONOCIDO":
+                            continue
+                        
+                        import re
+                        year_match = re.match(r"^(\d{4})\.\d{2}\s*-", nombre_archivo)
+                        if year_match:
+                            year_folder = year_match.group(1)
+                            ruta_final = f"{emp_folder}/3. ESTADOS DE CUENTA/{nombre_banco}/{year_folder}/{nombre_archivo}"
+                        else:
+                            ruta_final = f"{emp_folder}/3. ESTADOS DE CUENTA/{nombre_banco}/{nombre_archivo}"
                     elif tipo == "buro_credito":
                         ruta_final = f"{emp_folder}/4. BURO DE CREDITO/{nombre_archivo}"
                     elif tipo.startswith("declaracion_"):
@@ -314,6 +328,8 @@ async def descargar_todos_documentos(empresa_id: str):
                         ruta_final = f"{emp_folder}/6. GENERALES/2. COMPROBANTE DOMICILIO/{nombre_archivo}"
                     elif tipo == "opinion_cumplimiento":
                         ruta_final = f"{emp_folder}/6. GENERALES/3. OPINION DE CUMPLIMIENTO/{nombre_archivo}"
+                    elif tipo.startswith("otros_"):
+                        ruta_final = f"{emp_folder}/7. OTROS/{nombre_archivo}"
                     else:
                         ruta_final = f"{emp_folder}/6. GENERALES/PREVIOS/{nombre_archivo}"
                 
@@ -345,6 +361,91 @@ async def descargar_todos_documentos(empresa_id: str):
     filename = f"Expediente_{safe_name}.zip"
 
     logger.info(f"ZIP generado para {empresa_nombre}: {archivos_incluidos} archivos")
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+class DescargarSeleccionRequest(BaseModel):
+    doc_ids: List[str]
+
+@router.post("/empresas/{empresa_id}/descargar-seleccion")
+async def descargar_seleccion_documentos(empresa_id: str, req: DescargarSeleccionRequest):
+    """
+    Descarga una selección de documentos de una empresa como un archivo ZIP.
+    Estructura estricta para grupos corporativos.
+    """
+    sb = get_supabase_admin()
+
+    emp_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not emp_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    empresa_nombre = emp_resp.data["nombre"].strip()
+
+    docs_exp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
+    docs_rep = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
+    todos_docs = (docs_exp.data or []) + (docs_rep.data or [])
+
+    if not todos_docs:
+        raise HTTPException(status_code=404, detail="No hay documentos subidos para esta empresa")
+        
+    # Obtener bancos (para saber el nombre de la carpeta bancaria de cada doc)
+    bancos_resp = sb.table("cuentas_bancarias").select("id, nombre_banco").eq("empresa_id", empresa_id).execute()
+    bancos_dict = {b["id"]: b["nombre_banco"] for b in bancos_resp.data or []}
+
+    zip_buffer = io.BytesIO()
+    ahora = datetime.now(timezone.utc).isoformat()
+    archivos_incluidos = 0
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        rutas_agregadas = set()
+
+        for doc in todos_docs:
+            if str(doc.get("id")) not in req.doc_ids:
+                continue
+
+            storage_path = doc.get("storage_path")
+            if not storage_path:
+                continue
+                
+            try:
+                nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+                tipo = doc.get("tipo_documento", "doc")
+                
+                # Al descargar una sección específica, usamos una estructura plana
+                ruta_final = nombre_archivo
+
+                if len(ruta_final) > 0:
+                    if ruta_final in rutas_agregadas:
+                        partes = ruta_final.rsplit(".", 1)
+                        if len(partes) == 2:
+                            ruta_final = f"{partes[0]}_{archivos_incluidos}.{partes[1]}"
+                        else:
+                            ruta_final = f"{ruta_final}_{archivos_incluidos}"
+                            
+                    # Agregamos la ruta final
+                    zip_path = ruta_final
+
+                    file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+                    
+                    zf.writestr(zip_path, file_bytes)
+                    rutas_agregadas.add(ruta_final)
+                    archivos_incluidos += 1
+
+            except Exception as e:
+                logger.warning(f"No se pudo descargar seleccion {storage_path}: {e}")
+                continue
+
+    if archivos_incluidos == 0:
+        raise HTTPException(status_code=404, detail="No se pudo descargar ningún archivo de Storage")
+
+    zip_buffer.seek(0)
+    safe_name = empresa_nombre.replace(" ", "_").replace("/", "-")
+    filename = f"Seleccion_{safe_name}.zip"
+
+    logger.info(f"ZIP generado para {empresa_nombre} (Selección): {archivos_incluidos} archivos")
 
     return StreamingResponse(
         zip_buffer,

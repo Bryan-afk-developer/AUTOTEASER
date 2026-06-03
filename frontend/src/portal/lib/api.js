@@ -93,6 +93,32 @@ export const api = {
   eliminarCarpetaBanco: (cuentaId) =>
     request('DELETE', `/api/portal/cliente/carpetas-banco/${cuentaId}`),
 
+  subirEstadosCuentaAuto: (files) => {
+    const formData = new FormData()
+    Array.from(files).forEach(f => formData.append('files', f))
+    return request('POST', '/api/portal/cliente/subir-estados-cuenta-auto', formData, true)
+  },
+
+  subirDeclaracionesAuto: (files) => {
+    const formData = new FormData()
+    Array.from(files).forEach(f => formData.append('files', f))
+    return request('POST', '/api/portal/cliente/subir-declaraciones-auto', formData, true)
+  },
+
+  subirDeclaracionManual: (file, tipo, year) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('tipo', tipo)
+    formData.append('year', year)
+    return request('POST', '/api/portal/cliente/subir-declaracion-manual', formData, true)
+  },
+
+  moverDocumentoBanco: (documentoId, cuentaBancariaDestinoId) =>
+    request('PATCH', '/api/portal/cliente/mover-documento-banco', {
+      documento_id: documentoId,
+      cuenta_bancaria_destino_id: cuentaBancariaDestinoId,
+    }),
+
   // Admin - Dashboard
   getPendientes: (estado = 'PENDIENTE') =>
     request('GET', `/api/portal/admin/pendientes?estado=${estado}`),
@@ -123,6 +149,28 @@ export const api = {
     const a = document.createElement('a')
     a.href = url
     a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+  },
+
+  descargarSeleccion: async (empresaId, docIds, filename) => {
+    const headers = { ...authHeaders(), 'Content-Type': 'application/json' }
+    const res = await fetch(`${BASE_URL}/api/portal/admin/empresas/${empresaId}/descargar-seleccion`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ doc_ids: docIds })
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Error ${res.status}`)
+    }
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `Seleccion_${empresaId}.zip`
     document.body.appendChild(a)
     a.click()
     a.remove()

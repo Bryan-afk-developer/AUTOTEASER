@@ -147,7 +147,24 @@ function AccountDetails({ banco, docs, onBack, onSuccess, onUpload }) {
                           : '🔄 Reemplazar'}
                     </button>
                     {doc.estado !== 'FALTANTE' && (
-                      <button
+                      <>
+                        {doc.url_documento && (
+                          <button
+                            onClick={() => window.open(doc.url_documento, '_blank')}
+                            style={{
+                              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                              color: '#fff', padding: '6px', borderRadius: '50%', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              width: '28px', height: '28px', fontSize: '14px', transition: 'transform 0.2s'
+                            }}
+                            title="Ver PDF"
+                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                          >
+                            👁️
+                          </button>
+                        )}
+                        <button
                         onClick={async () => {
                           if (window.confirm(`¿Seguro que deseas eliminar el archivo de ${doc.nombre}?`)) {
                             try {
@@ -170,6 +187,7 @@ function AccountDetails({ banco, docs, onBack, onSuccess, onUpload }) {
                       >
                         🗑️
                       </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -182,24 +200,80 @@ function AccountDetails({ banco, docs, onBack, onSuccess, onUpload }) {
   )
 }
 export default function BancosView({ bancos, allDocs, onSuccess, onBack, onUpload }) {
-  const [showAdd, setShowAdd] = useState(false)
-  const [nombreBanco, setNombreBanco] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [draggingBulk, setDraggingBulk] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState(null) // { detectados, no_detectados }
   const [activeBanco, setActiveBanco] = useState(null)
-  const handleAdd = async () => {
-    if (!nombreBanco.trim()) return
-    setLoading(true)
-    try {
-      await api.crearCarpetaBanco(nombreBanco.trim())
-      setNombreBanco('')
-      setShowAdd(false)
-      onSuccess()
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setLoading(false)
+  const [movingDoc, setMovingDoc] = useState(null) // doc to move
+  const [movingTo, setMovingTo] = useState('') // target banco id
+  const [moveLoading, setMoveLoading] = useState(false)
+  const [selectedBanks, setSelectedBanks] = useState([])
+  const [deletingBulk, setDeletingBulk] = useState(false)
+
+  const handleToggleBankSelection = (e, id) => {
+    e.stopPropagation()
+    setSelectedBanks(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id])
+  }
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`¿Seguro que deseas eliminar ${selectedBanks.length} cuenta(s) seleccionada(s)?`)) {
+      setDeletingBulk(true)
+      try {
+        for (const id of selectedBanks) {
+          await api.eliminarCarpetaBanco(id)
+        }
+        setSelectedBanks([])
+        onSuccess()
+      } catch (err) {
+        alert('Error al eliminar: ' + err.message)
+      } finally {
+        setDeletingBulk(false)
+      }
     }
   }
+
+  const handleBulkDrop = useCallback(async (e) => {
+    e.preventDefault()
+    setDraggingBulk(false)
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf')
+    if (!droppedFiles.length) return
+    await handleAutoUpload(droppedFiles)
+  }, [bancos])
+
+  const handleAutoUpload = async (files) => {
+    setUploading(true)
+    setUploadResult(null)
+    try {
+      const result = await api.subirEstadosCuentaAuto(files)
+      setUploadResult(result)
+      onSuccess()
+    } catch (err) {
+      setUploadResult({ error: err.message })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleMover = async () => {
+    if (!movingDoc || !movingTo) return
+    setMoveLoading(true)
+    try {
+      await api.moverDocumentoBanco(movingDoc.documento_id, movingTo)
+      setMovingDoc(null)
+      setMovingTo('')
+      onSuccess()
+    } catch (err) {
+      alert('Error al mover: ' + err.message)
+    } finally {
+      setMoveLoading(false)
+    }
+  }
+
+  // Separate "No Reconocidos" from real banks
+  const bancosReales = bancos.filter(b => b.nombre_banco !== 'No Reconocidos')
+  const bancoNoRec = bancos.find(b => b.nombre_banco === 'No Reconocidos')
+  const docsNoRec = bancoNoRec ? allDocs.filter(d => d.cuenta_bancaria_id === bancoNoRec.id && d.estado !== 'FALTANTE') : []
+
   if (activeBanco) {
     return (
       <AccountDetails
@@ -211,89 +285,212 @@ export default function BancosView({ bancos, allDocs, onSuccess, onBack, onUploa
       />
     )
   }
+
   return (
     <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
       <button onClick={onBack} style={styles.btnVolver}>
         ← Volver al Dashboard Principal
       </button>
-      <div style={styles.headerArea}>
+
+      <div style={{ ...styles.headerArea, marginBottom: '24px' }}>
         <div>
           <h1 style={styles.pageTitle}>Cuentas Bancarias</h1>
-          <p style={styles.pageSubtitle}>Administra las instituciones donde tienes cuentas y sube tus estados de cuenta para el Expediente Rojo.</p>
+          <p style={styles.pageSubtitle}>Arrastra todos tus estados de cuenta aquí — el sistema detectará el banco automáticamente.</p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={styles.btnPrimary}>
-          + Nueva Cuenta Bancaria
-        </button>
       </div>
-      {showAdd && (
-        <div style={styles.addCard}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#f1f5f9' }}>Agregar Institución</h3>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <input
-              type="text"
-              placeholder="Ej. HSBC, BBVA, Banorte..."
-              value={nombreBanco}
-              onChange={e => setNombreBanco(e.target.value)}
-              style={styles.input}
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            />
-            <button onClick={handleAdd} disabled={loading} style={styles.btnPrimary}>
-              {loading ? 'Guardando...' : 'Guardar Cuenta'}
-            </button>
-            <button onClick={() => setShowAdd(false)} style={styles.btnOutline}>
-              Cancelar
-            </button>
+
+      {/* ═ ZONA DE DROP MASIVA ═ */}
+      <div
+        style={{
+          ...styles.bulkDropzone,
+          ...(draggingBulk ? styles.bulkDropzoneDrag : {}),
+          ...(uploading ? { opacity: 0.7, pointerEvents: 'none' } : {})
+        }}
+        onDragOver={(e) => { e.preventDefault(); setDraggingBulk(true) }}
+        onDragLeave={() => setDraggingBulk(false)}
+        onDrop={handleBulkDrop}
+        onClick={() => !uploading && document.getElementById('bulk-auto-input').click()}
+      >
+        <input
+          id="bulk-auto-input"
+          type="file"
+          multiple
+          accept=".pdf"
+          style={{ display: 'none' }}
+          onChange={e => handleAutoUpload(Array.from(e.target.files))}
+        />
+        {uploading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+            <div style={styles.spinner} />
+            <p style={{ color: '#f1f5f9', fontSize: '18px', fontWeight: 700, margin: 0 }}>Analizando y clasificando archivos...</p>
+            <p style={{ color: '#94a3b8', fontSize: '14px', margin: 0 }}>Esto puede tomar unos segundos por archivo</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <div style={{ fontSize: '48px' }}>☁️</div>
+            <p style={{ color: '#f1f5f9', fontSize: '20px', fontWeight: 800, margin: 0 }}>Arrastra aquí todos tus PDFs</p>
+            <p style={{ color: '#94a3b8', fontSize: '15px', margin: 0 }}>Estados de cuenta de cualquier banco, achocados</p>
+            <p style={{ color: '#64748b', fontSize: '13px', margin: 0, fontStyle: 'italic' }}>o haz clic para seleccionar archivos</p>
+          </div>
+        )}
+      </div>
+
+      {/* ═ RESULTADO DEL UPLOAD ═ */}
+      {uploadResult && !uploadResult.error && (
+        <div style={styles.resultBox}>
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#f1f5f9' }}>
+            ✅ Procesados {(uploadResult.detectados || []).length + (uploadResult.no_detectados || []).length} archivos
+          </p>
+          {(uploadResult.detectados || []).map((d, i) => (
+            <p key={i} style={{ margin: '2px 0', fontSize: '13px', color: '#86efac' }}>
+              🏦 <strong>{d.banco}</strong>: {d.nombre}
+            </p>
+          ))}
+          {(uploadResult.no_detectados || []).map((d, i) => (
+            <p key={i} style={{ margin: '2px 0', fontSize: '13px', color: '#fca5a5' }}>
+              ⚠️ <strong>No reconocido</strong>: {d.nombre} — {d.razon}
+            </p>
+          ))}
+        </div>
+      )}
+      {uploadResult?.error && (
+        <div style={styles.errorBox}>⚠️ {uploadResult.error}</div>
+      )}
+
+      {/* ═ TARJETA NO RECONOCIDOS (si hay) ═ */}
+      {docsNoRec.length > 0 && (
+        <div style={{ margin: '32px 0 8px' }}>
+          <h3 style={{ color: '#fca5a5', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 16px' }}>
+            ⚠️ Archivos No Reconocidos
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {docsNoRec.map(doc => (
+              <div key={doc.documento_id || doc.clave} style={styles.noRecRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ color: '#f1f5f9', fontSize: '14px', fontWeight: 600 }}>📄 {doc.nombre_archivo}</span>
+                  <span style={{ color: '#64748b', fontSize: '12px', marginLeft: '12px' }}>No se pudo identificar el banco</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                  {doc.url_documento && (
+                    <a
+                      href={doc.url_documento}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ ...styles.btnOutline, padding: '7px 12px', textDecoration: 'none', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      👁️ Ver PDF
+                    </a>
+                  )}
+                  {bancosReales.length > 0 && (
+                    movingDoc?.documento_id === doc.documento_id ? (
+                      <>
+                        <select
+                          value={movingTo}
+                          onChange={e => setMovingTo(e.target.value)}
+                          style={styles.select}
+                        >
+                          <option value="">Seleccionar banco...</option>
+                          {bancosReales.map(b => (
+                            <option key={b.id} value={b.id}>{b.nombre_banco}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={handleMover}
+                          disabled={!movingTo || moveLoading}
+                          style={{ ...styles.btnMover, opacity: (!movingTo || moveLoading) ? 0.5 : 1 }}
+                        >
+                          {moveLoading ? 'Moviendo...' : 'Confirmar'}
+                        </button>
+                        <button onClick={() => { setMovingDoc(null); setMovingTo('') }} style={styles.btnCancelarMover}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => setMovingDoc(doc)} style={styles.btnMover}>
+                        Mover a…
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
-      {bancos.length === 0 && !showAdd && (
-        <div style={styles.emptyState}>
-          <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.8 }}>🏛️</div>
-          <h3 style={{ fontSize: '20px', color: '#f1f5f9', margin: '0 0 8px 0' }}>Aún no hay cuentas registradas</h3>
-          <p style={{ color: '#94a3b8', fontSize: '15px', maxWidth: '400px', margin: '0 auto 24px' }}>
-            Para poder subir tus estados de cuenta, primero debes registrar las instituciones bancarias que manejas.
-          </p>
-          <button onClick={() => setShowAdd(true)} style={{ ...styles.btnPrimary, fontSize: '16px', padding: '12px 24px' }}>
-            Empezar: Agregar Cuenta
-          </button>
+
+      {/* ═ GRID DE BANCOS DETECTADOS ═ */}
+      {bancosReales.length > 0 && (
+        <div style={{ marginTop: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+              🏦 Bancos Detectados
+            </h3>
+            {selectedBanks.length > 0 && (
+              <button 
+                onClick={handleBulkDelete}
+                disabled={deletingBulk}
+                style={{
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#fca5a5', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer',
+                  fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                {deletingBulk ? '⏳ Eliminando...' : `🗑️ Eliminar ${selectedBanks.length} seleccionados`}
+              </button>
+            )}
+          </div>
+          <div style={styles.grid}>
+            {bancosReales.map(banco => {
+              const bankDocs = allDocs.filter(d => d.cuenta_bancaria_id === banco.id)
+              const total = bankDocs.length
+              const aprobados = bankDocs.filter(d => d.estado === 'APROBADO').length
+              const faltantes = bankDocs.filter(d => d.estado === 'FALTANTE' || d.estado === 'RECHAZADO').length
+              const progress = total > 0 ? (aprobados / total) * 100 : 0
+              return (
+                <div key={banco.id} style={{ ...styles.bankCard, position: 'relative' }} onClick={() => setActiveBanco(banco)}>
+                  <div style={{ position: 'absolute', top: '16px', right: '16px', zIndex: 10 }}>
+                    <input 
+                      type="checkbox"
+                      checked={selectedBanks.includes(banco.id)}
+                      onChange={(e) => handleToggleBankSelection(e, banco.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ transform: 'scale(1.3)', cursor: 'pointer', accentColor: '#ef4444' }}
+                    />
+                  </div>
+                  <div style={{...styles.bankCardHeader, paddingRight: '24px'}}>
+                    <div style={styles.bankIcon}>🏦</div>
+                    <div style={styles.bankBadge}>{aprobados} de {total} aprobados</div>
+                  </div>
+                  <h3 style={styles.bankName}>{banco.nombre_banco}</h3>
+                  <div style={styles.progressBarBg}>
+                    <div style={{ ...styles.progressBarFill, width: `${progress}%` }} />
+                  </div>
+                  {faltantes > 0 ? (
+                    <p style={{ color: '#fca5a5', fontSize: '13px', margin: '16px 0 0', fontWeight: 600 }}>
+                      ⚠️ Faltan {faltantes} documentos por subir
+                    </p>
+                  ) : (
+                    <p style={{ color: '#4ade80', fontSize: '13px', margin: '16px 0 0', fontWeight: 600 }}>
+                      ✅ Todos los documentos cargados
+
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
-      <div style={styles.grid}>
-        {bancos.map(banco => {
-          const bankDocs = allDocs.filter(d => d.cuenta_bancaria_id === banco.id)
-          const total = bankDocs.length
-          const aprobados = bankDocs.filter(d => d.estado === 'APROBADO').length
-          const faltantes = bankDocs.filter(d => d.estado === 'FALTANTE' || d.estado === 'RECHAZADO').length
-          const progress = total > 0 ? (aprobados / total) * 100 : 0
 
-          return (
-            <div key={banco.id} style={styles.bankCard} onClick={() => setActiveBanco(banco)}>
-              <div style={styles.bankCardHeader}>
-                <div style={styles.bankIcon}>🏦</div>
-                <div style={styles.bankBadge}>
-                  {aprobados} de {total} documentos aprobados
-                </div>
-              </div>
-              <h3 style={styles.bankName}>{banco.nombre_banco}</h3>
-
-              <div style={styles.progressBarBg}>
-                <div style={{ ...styles.progressBarFill, width: `${progress}%` }} />
-              </div>
-
-              {faltantes > 0 ? (
-                <p style={{ color: '#fca5a5', fontSize: '13px', margin: '16px 0 0', fontWeight: 600 }}>
-                  ⚠️ Faltan {faltantes} documentos por subir
-                </p>
-              ) : (
-                <p style={{ color: '#4ade80', fontSize: '13px', margin: '16px 0 0', fontWeight: 600 }}>
-                  ✅ Todos los documentos completados
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {bancos.length === 0 && (
+        <div style={styles.emptyState}>
+          <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.8 }}>🏗️</div>
+          <h3 style={{ fontSize: '20px', color: '#f1f5f9', margin: '0 0 8px 0' }}>Aún no hay estados de cuenta</h3>
+          <p style={{ color: '#94a3b8', fontSize: '15px', maxWidth: '400px', margin: '0 auto' }}>
+            Arrastra tus PDFs a la zona de arriba y el sistema los clasificará automáticamente.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -386,5 +583,44 @@ const styles = {
   errorBox: {
     padding: '16px', borderRadius: '12px', marginTop: '24px',
     background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5',
-  }
+  },
+  bulkDropzone: {
+    border: '2px dashed rgba(59,130,246,0.4)', borderRadius: '24px', padding: '56px 32px',
+    textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+    background: 'rgba(59,130,246,0.04)', display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', minHeight: '200px',
+    marginBottom: '0',
+  },
+  bulkDropzoneDrag: {
+    border: '2px dashed #3b82f6', background: 'rgba(59,130,246,0.1)', transform: 'scale(1.01)',
+  },
+  spinner: {
+    width: '44px', height: '44px', borderRadius: '50%',
+    border: '4px solid rgba(59,130,246,0.2)', borderTopColor: '#3b82f6',
+    animation: 'spin 0.8s linear infinite',
+  },
+  resultBox: {
+    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '14px', padding: '16px 20px', marginTop: '16px',
+  },
+  noRecRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
+    borderRadius: '14px', padding: '14px 18px', flexWrap: 'wrap', gap: '10px',
+  },
+  btnMover: {
+    background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)',
+    color: '#60a5fa', padding: '7px 16px', borderRadius: '10px',
+    fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'background 0.2s',
+  },
+  btnCancelarMover: {
+    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+    color: '#94a3b8', padding: '7px 14px', borderRadius: '10px',
+    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+  },
+  select: {
+    background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.15)',
+    color: '#f1f5f9', padding: '7px 12px', borderRadius: '10px', fontSize: '13px',
+    outline: 'none', cursor: 'pointer',
+  },
 }

@@ -6,7 +6,7 @@ const ESTADO_CONFIG = {
   APROBADO: { color: '#22c55e', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', icon: '✅', label: 'Aprobado' },
   PENDIENTE: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', icon: '⏳', label: 'En Revisión' },
   RECHAZADO: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', icon: '❌', label: 'Rechazado' },
-  FALTANTE: { color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)', icon: '📭', label: 'Faltante' },
+  FALTANTE: { color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)', icon: '', label: 'Faltante' },
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -102,7 +102,7 @@ function UploadModal({ doc, onClose, onSuccess }) {
             disabled={!file || uploading}
             style={{ ...modalStyles.btnPrimary, ...(!file || uploading ? modalStyles.btnDisabled : {}) }}
           >
-            {uploading ? '⏳ Subiendo...' : '⬆️ Subir Documento'}
+            {uploading ? '⏳ Subiendo...' : 'Subir Documento'}
           </button>
         </div>
       </div>
@@ -114,7 +114,7 @@ function UploadModal({ doc, onClose, onSuccess }) {
 // DOCUMENT CARD — tarjeta individual para docs simples
 // ══════════════════════════════════════════════════════════════════════════════
 
-function DocumentCard({ doc, onUpload }) {
+function DocumentCard({ doc, onUpload, onSuccess }) {
   const cfg = ESTADO_CONFIG[doc.estado] || ESTADO_CONFIG.FALTANTE
 
   return (
@@ -155,11 +155,41 @@ function DocumentCard({ doc, onUpload }) {
         </p>
       )}
 
+      {doc.estado !== 'FALTANTE' && (
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          {doc.url_documento && (
+            <button
+              onClick={() => window.open(doc.url_documento, '_blank')}
+              style={{ flex: 1, padding: '8px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              👁️ Ver PDF
+            </button>
+          )}
+          <button
+            onClick={async () => {
+              if (window.confirm(`¿Seguro que deseas eliminar el archivo de ${doc.nombre}?`)) {
+                try {
+                  await api.eliminarDocumento(doc.clave);
+                  if (onSuccess) onSuccess();
+                } catch (err) {
+                  alert('Error al eliminar: ' + err.message);
+                }
+              }
+            }}
+            style={{ padding: '8px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', fontSize: '14px', flexShrink: 0 }}
+            title="Eliminar"
+          >
+            🗑️
+          </button>
+        </div>
+      )}
+
       <button
         id={`btn-subir-${doc.clave}`}
         onClick={() => onUpload(doc)}
         style={{
           ...cardStyles.uploadBtn,
+          marginTop: doc.estado !== 'FALTANTE' ? '8px' : 'auto',
           background: doc.estado === 'RECHAZADO'
             ? 'linear-gradient(135deg, #ef4444, #dc2626)'
             : doc.estado === 'FALTANTE'
@@ -168,9 +198,9 @@ function DocumentCard({ doc, onUpload }) {
           border: (doc.estado !== 'FALTANTE' && doc.estado !== 'RECHAZADO') ? '1px solid rgba(255,255,255,0.2)' : 'none',
         }}
       >
-        {doc.estado === 'RECHAZADO' ? '🔄 Volver a Subir'
-          : doc.estado === 'FALTANTE' ? '⬆️ Subir Documento'
-            : '🔄 Reemplazar Archivo'}
+        {doc.estado === 'RECHAZADO' ? 'Volver a Subir'
+          : doc.estado === 'FALTANTE' ? 'Subir Documento'
+            : 'Reemplazar Archivo'}
       </button>
     </div>
   )
@@ -241,7 +271,7 @@ function GroupedCard({ title, icon, description, docs, onOpenModal }) {
 // GROUPED MODAL — modal con lista de documentos (sin sub-secciones)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function GroupedModal({ title, icon, description, docs, onClose, onUpload }) {
+function GroupedModal({ title, icon, description, docs, onClose, onUpload, onSuccess }) {
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
       <div style={{ ...modalStyles.modal, maxWidth: '640px' }} onClick={(e) => e.stopPropagation()}>
@@ -299,16 +329,278 @@ function GroupedModal({ title, icon, description, docs, onClose, onUpload }) {
                       color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
                     }}
                   >
-                    {doc.estado === 'RECHAZADO' ? '🔄 Resubir'
-                      : doc.estado === 'FALTANTE' ? '⬆️ Subir'
-                        : '🔄 Reemplazar'}
+                    {doc.estado === 'RECHAZADO' ? 'Resubir'
+                      : doc.estado === 'FALTANTE' ? 'Subir'
+                        : 'Reemplazar'}
                   </button>
+                  {doc.estado !== 'FALTANTE' && (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {doc.url_documento && (
+                        <button
+                          onClick={() => window.open(doc.url_documento, '_blank')}
+                          style={{
+                            padding: '6px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          title="Ver PDF"
+                        >
+                          👁️
+                        </button>
+                      )}
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`¿Seguro que deseas eliminar el archivo de ${doc.nombre}?`)) {
+                            try {
+                              await api.eliminarDocumento(doc.clave);
+                              if (onSuccess) onSuccess();
+                            } catch (err) {
+                              alert('Error al eliminar: ' + err.message);
+                            }
+                          }
+                        }}
+                        style={{
+                          padding: '6px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                        title="Eliminar"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
       </div>
+    </div>
+  )
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DECLARACIONES VIEW — arrastrar y soltar PDFs del SAT para clasificación automática
+// ══════════════════════════════════════════════════════════════════════════════
+
+function DeclaracionesView({ docs, onSuccess, onBack, onUpload }) {
+  const [dragging, setDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState(null)
+  const [fileMap, setFileMap] = useState({}) // filename -> File object
+  const [manualAssignments, setManualAssignments] = useState({}) // filename -> {tipo, year}
+
+  const handleDrop = useCallback(async (e) => {
+    e.preventDefault()
+    setDragging(false)
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf')
+    if (!droppedFiles.length) return
+    await handleAutoUpload(droppedFiles)
+  }, [])
+
+  const handleFileChange = async (e) => {
+    const selectedFiles = Array.from(e.target.files).filter(f => f.type === 'application/pdf')
+    if (!selectedFiles.length) return
+    await handleAutoUpload(selectedFiles)
+  }
+
+  const handleAutoUpload = async (selectedFiles) => {
+    // Save map of filename -> File to use later if manual assignment is needed
+    const newFileMap = { ...fileMap }
+    selectedFiles.forEach(f => newFileMap[f.name] = f)
+    setFileMap(newFileMap)
+
+    setUploading(true)
+    setUploadResult(null)
+    try {
+      const result = await api.subirDeclaracionesAuto(selectedFiles)
+      setUploadResult(result)
+      onSuccess()
+    } catch (err) {
+      setUploadResult({ error: err.message })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleManualUpload = async (filename) => {
+    const file = fileMap[filename]
+    const assignment = manualAssignments[filename]
+    if (!file || !assignment?.tipo || !assignment?.year) {
+      alert("Selecciona el tipo y el año")
+      return
+    }
+
+    try {
+      await api.subirDeclaracionManual(file, assignment.tipo, assignment.year)
+      
+      // Remove from no_detectados
+      setUploadResult(prev => ({
+        ...prev,
+        detectados: [...(prev.detectados || []), { nombre: filename, tipo: assignment.tipo, year: assignment.year }],
+        no_detectados: prev.no_detectados.filter(d => d.nombre !== filename)
+      }))
+      
+      onSuccess()
+    } catch (err) {
+      alert("Error: " + err.message)
+    }
+  }
+
+  // Group docs by year
+  const byYear = {}
+  docs.forEach(doc => {
+    const yr = doc.año || '?'
+    if (!byYear[yr]) byYear[yr] = []
+    byYear[yr].push(doc)
+  })
+  const years = Object.keys(byYear).sort((a, b) => b - a)
+
+  return (
+    <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
+      <button onClick={onBack} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', marginBottom: '8px' }}>
+        ← Volver al Dashboard
+      </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '24px', marginBottom: '32px' }}>
+        <div>
+          <h2 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: '#f8fafc', letterSpacing: '-0.5px' }}>
+            🏨 Declaraciones Fiscales (SAT)
+          </h2>
+          <p style={{ color: '#94a3b8', fontSize: '15px', marginTop: '8px', maxWidth: '600px', lineHeight: 1.5 }}>
+            Arrastra los PDFs del SAT aquí y los clasificaremos automáticamente según el tipo (Acuse o Declaración) y el año fiscal.
+          </p>
+        </div>
+      </div>
+
+      {/* Zona de Drop */}
+      <div
+        style={{
+          border: `2px dashed ${dragging ? '#7c3aed' : 'rgba(124,58,237,0.3)'}`,
+          borderRadius: '16px', padding: '40px', textAlign: 'center', cursor: 'pointer',
+          background: dragging ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.03)',
+          transition: 'all 0.2s', marginBottom: '32px',
+        }}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => document.getElementById('sat-file-input').click()}
+      >
+        <input id="sat-file-input" type="file" multiple accept=".pdf" onChange={handleFileChange} style={{ display: 'none' }} />
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>{uploading ? '⏳' : '🏨'}</div>
+        <p style={{ color: '#f1f5f9', fontSize: '18px', fontWeight: 700, margin: 0 }}>
+          {uploading ? 'Clasificando documentos SAT...' : 'Arrastra tus PDFs del SAT aquí'}
+        </p>
+        <p style={{ color: '#94a3b8', fontSize: '14px', margin: '8px 0 0' }}>
+          Acuses de Recibo y Declaraciones del Ejercicio • los últimos 3 años
+        </p>
+      </div>
+
+      {/* Resultado del upload */}
+      {uploadResult && (
+        <div style={{ marginBottom: '24px' }}>
+          {uploadResult.error && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '16px', color: '#fca5a5' }}>
+              ⚠️ {uploadResult.error}
+            </div>
+          )}
+          {uploadResult.detectados?.length > 0 && (
+            <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '12px', padding: '16px', marginBottom: '8px' }}>
+              <p style={{ color: '#4ade80', fontWeight: 700, margin: '0 0 8px' }}>✅ {uploadResult.detectados.length} archivo(s) clasificados:</p>
+              {uploadResult.detectados.map((d, i) => (
+                <p key={i} style={{ color: '#86efac', fontSize: '13px', margin: '2px 0' }}>• {d.tipo} {d.year} → {d.nombre}</p>
+              ))}
+            </div>
+          )}
+          {uploadResult.no_detectados?.length > 0 && (
+            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '12px', padding: '16px' }}>
+              <p style={{ color: '#fbbf24', fontWeight: 700, margin: '0 0 12px' }}>⚠️ {uploadResult.no_detectados.length} no clasificados automáticamente:</p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {uploadResult.no_detectados.map((d, i) => (
+                  <div key={i} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.1)' }}>
+                    <p style={{ color: '#fde68a', fontSize: '13px', margin: '0 0 8px', fontWeight: 600 }}>• {d.nombre}</p>
+                    <p style={{ color: '#94a3b8', fontSize: '12px', margin: '0 0 12px' }}>Razón: {d.razon}</p>
+                    
+                    {fileMap[d.nombre] && (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select
+                          value={manualAssignments[d.nombre]?.tipo || ''}
+                          onChange={e => setManualAssignments(prev => ({ ...prev, [d.nombre]: { ...prev[d.nombre], tipo: e.target.value } }))}
+                          style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '6px 12px', fontSize: '13px' }}
+                        >
+                          <option value="">-- Seleccionar Tipo --</option>
+                          <option value="acuse">Acuse de Recibo</option>
+                          <option value="declaracion">Declaración del Ejercicio</option>
+                        </select>
+
+                        <select
+                          value={manualAssignments[d.nombre]?.year || ''}
+                          onChange={e => setManualAssignments(prev => ({ ...prev, [d.nombre]: { ...prev[d.nombre], year: e.target.value } }))}
+                          style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '6px 12px', fontSize: '13px' }}
+                        >
+                          <option value="">-- Año --</option>
+                          {years.slice(0, 3).map(yr => <option key={yr} value={yr}>{yr}</option>)}
+                        </select>
+
+                        <button
+                          onClick={() => handleManualUpload(d.nombre)}
+                          style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Documentos por año */}
+      {years.map(yr => (
+        <div key={yr} style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 12px' }}>
+            📅 Año {yr}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {byYear[yr].map(doc => {
+              const cfg = ESTADO_CONFIG[doc.estado] || ESTADO_CONFIG.FALTANTE
+              return (
+                <div key={doc.clave} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${cfg.border}` }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0 }}>
+                    <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '14px' }}>{doc.icono} {doc.nombre}</span>
+                    {doc.nombre_archivo && <span style={{ color: '#64748b', fontSize: '12px', fontStyle: 'italic' }}>📎 {doc.nombre_archivo}</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <span style={{ padding: '4px 12px', borderRadius: '16px', fontSize: '12px', fontWeight: 700, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
+                      {cfg.icon} {cfg.label}
+                    </span>
+                    {doc.estado !== 'FALTANTE' && doc.url_documento && (
+                      <button onClick={() => window.open(doc.url_documento, '_blank')} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '6px', borderRadius: '8px', cursor: 'pointer' }} title="Ver PDF">
+                        👁️
+                      </button>
+                    )}
+                    {doc.estado !== 'FALTANTE' && (
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`¿Eliminar ${doc.nombre}?`)) {
+                            try { await api.eliminarDocumento(doc.clave); onSuccess() }
+                            catch (err) { alert('Error: ' + err.message) }
+                          }
+                        }}
+                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
+                        title="Eliminar"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -322,11 +614,10 @@ export default function ClienteDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [uploadDoc, setUploadDoc] = useState(null)
-  const [activeView, setActiveView] = useState('dashboard') // 'dashboard' | 'bancos'
+  const [activeView, setActiveView] = useState('dashboard') // 'dashboard' | 'bancos' | 'declaraciones'
 
   // Modal visibility states
   const [showFinancierosModal, setShowFinancierosModal] = useState(false)
-  const [showDeclaracionesModal, setShowDeclaracionesModal] = useState(false)
 
   const fetchExpediente = useCallback(async () => {
     setLoading(true)
@@ -354,13 +645,13 @@ export default function ClienteDashboard({ user, onLogout }) {
   const docsDeclaraciones = byGroup('declaraciones')
   const docsVigentes = byGroup('vigentes')
   const docsRepresentante = byGroup('representante')
+  const docsOtros = byGroup('otros')
 
   const hasEmpresaDocs = docsLegal.length > 0 || docsEdos.length > 0 ||
     docsFinancieros.length > 0 || docsDeclaraciones.length > 0 || docsVigentes.length > 0
 
   const handleUploadFromModal = (doc) => {
     setShowFinancierosModal(false)
-    setShowDeclaracionesModal(false)
     setUploadDoc(doc)
   }
 
@@ -397,6 +688,38 @@ export default function ClienteDashboard({ user, onLogout }) {
     )
   }
 
+  if (activeView === 'declaraciones') {
+    return (
+      <div style={dashStyles.page}>
+        <header style={dashStyles.header}>
+          <div style={dashStyles.headerLeft}>
+            <img src="/Logo.webp" alt="Logo" style={dashStyles.headerIcon} />
+            <div>
+              <h1 style={dashStyles.headerTitle}>Expediente Rojo</h1>
+              <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+        </header>
+        <main style={dashStyles.main}>
+          <DeclaracionesView
+            docs={docsDeclaraciones}
+            onSuccess={fetchExpediente}
+            onBack={() => setActiveView('dashboard')}
+            onUpload={setUploadDoc}
+          />
+        </main>
+        {uploadDoc && (
+          <UploadModal
+            doc={uploadDoc}
+            onClose={() => setUploadDoc(null)}
+            onSuccess={fetchExpediente}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={dashStyles.page}>
       {/* Header */}
@@ -408,9 +731,14 @@ export default function ClienteDashboard({ user, onLogout }) {
             <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
           </div>
         </div>
-        <button id="btn-logout" onClick={onLogout} style={dashStyles.logoutBtn}>
-          Cerrar Sesión
-        </button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button onClick={fetchExpediente} style={dashStyles.refreshBtn}>
+            🔄 Actualizar
+          </button>
+          <button id="btn-logout" onClick={onLogout} style={dashStyles.logoutBtn}>
+            Cerrar Sesión
+          </button>
+        </div>
       </header>
 
       <main style={dashStyles.main}>
@@ -506,21 +834,73 @@ export default function ClienteDashboard({ user, onLogout }) {
                 />
               )}
 
-              {/* Declaraciones — tarjeta agrupada */}
+              {/* Declaraciones SAT — tarjeta tipo bancos */}
               {docsDeclaraciones.length > 0 && (
-                <GroupedCard
-                  title="Declaraciones Anuales (SAT)"
-                  icon="📋"
-                  description="Con acuse y Excel descargados directamente del SAT"
-                  docs={docsDeclaraciones}
-                  onOpenModal={() => setShowDeclaracionesModal(true)}
-                />
+                <div style={{
+                  ...cardStyles.card,
+                  background: 'linear-gradient(135deg, rgba(30,30,36,0.9) 0%, rgba(15,23,42,0.9) 100%)',
+                  borderColor: 'rgba(255,255,255,0.1)'
+                }}>
+                  <div style={cardStyles.topRow}>
+                    <div style={cardStyles.iconWrap}><span style={{ fontSize: '22px' }}>🏨</span></div>
+                    <span style={{ ...cardStyles.badge, background: 'rgba(168,85,247,0.1)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.2)' }}>
+                      {docsDeclaraciones.filter(d => d.estado !== 'FALTANTE').length} / {docsDeclaraciones.length} subidos
+                    </span>
+                  </div>
+                  <h4 style={cardStyles.docName}>Declaraciones Anuales (SAT)</h4>
+                  <p style={cardStyles.docDesc}>Sube tu Acuse de Recibo y Declaración del Ejercicio de los últimos 3 años. El sistema los clasifica automáticamente.</p>
+                  {docsDeclaraciones.filter(d => d.estado === 'FALTANTE').length > 0 && (
+                    <p style={{ margin: '4px 0 0', color: '#fca5a5', fontSize: '12px', fontWeight: 600 }}>
+                      ⚠️ Faltan {docsDeclaraciones.filter(d => d.estado === 'FALTANTE').length} por subir
+                    </p>
+                  )}
+                  <button
+                    onClick={() => setActiveView('declaraciones')}
+                    style={{
+                      ...cardStyles.uploadBtn,
+                      background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
+                      marginTop: 'auto',
+                    }}
+                  >
+                    Ir a Declaraciones SAT →
+                  </button>
+                </div>
               )}
 
               {/* Documentos vigentes — tarjetas individuales */}
               {docsVigentes.map(doc => (
                 <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* SECCIÓN 3: OTROS DOCUMENTOS                                     */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {!loading && !error && (
+          <div style={dashStyles.section}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '10px', borderBottom: '1px solid rgba(225,29,72,0.2)' }}>
+              <h2 style={{ ...dashStyles.sectionTitle, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}>
+                📁 Otros Documentos
+              </h2>
+              <button
+                onClick={() => setUploadDoc({ clave: `otros_${Date.now()}`, nombre: 'Documento Adicional', descripcion: 'Sube cualquier archivo extra aquí.', grupo: 'otros', estado: 'FALTANTE', icono: '📁' })}
+                style={{ ...cardStyles.uploadBtn, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', padding: '6px 16px', fontSize: '13px' }}
+              >
+                + Subir Archivo Extra
+              </button>
+            </div>
+
+            <div style={dashStyles.grid}>
+              {docsOtros.map(doc => (
+                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
+              ))}
+              {docsOtros.length === 0 && (
+                <div style={{ gridColumn: '1 / -1', background: 'rgba(255,255,255,0.02)', padding: '24px', borderRadius: '16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                  <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>No has subido documentos adicionales.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -533,7 +913,7 @@ export default function ClienteDashboard({ user, onLogout }) {
             <h2 style={dashStyles.sectionTitle}>🧑‍💼 Documentos del Representante Legal</h2>
             <div style={dashStyles.grid}>
               {docsRepresentante.map(doc => (
-                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
+                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} onSuccess={fetchExpediente} />
               ))}
             </div>
           </div>
@@ -550,17 +930,7 @@ export default function ClienteDashboard({ user, onLogout }) {
           docs={docsFinancieros}
           onClose={() => setShowFinancierosModal(false)}
           onUpload={handleUploadFromModal}
-        />
-      )}
-
-      {showDeclaracionesModal && (
-        <GroupedModal
-          title="Declaraciones Fiscales (SAT)"
-          icon="📋"
-          description="Declaraciones anuales con acuse de recibo y Excel descargados del SAT"
-          docs={docsDeclaraciones}
-          onClose={() => setShowDeclaracionesModal(false)}
-          onUpload={handleUploadFromModal}
+          onSuccess={fetchExpediente}
         />
       )}
 
@@ -702,6 +1072,12 @@ const dashStyles = {
     padding: '8px 18px', borderRadius: '10px',
     background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
     color: '#fca5a5', cursor: 'pointer', fontWeight: 600, fontSize: '13px',
+  },
+  refreshBtn: {
+    padding: '8px 18px', borderRadius: '10px',
+    background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)',
+    color: '#60a5fa', cursor: 'pointer', fontWeight: 600, fontSize: '13px',
+    display: 'flex', alignItems: 'center', gap: '6px'
   },
   main: { padding: '32px', maxWidth: '1200px', margin: '0 auto' },
   progressCard: {

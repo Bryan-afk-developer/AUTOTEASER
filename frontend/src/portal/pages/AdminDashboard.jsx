@@ -2,14 +2,14 @@ import { useState, useCallback, useEffect } from 'react'
 import api from '../lib/api'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
-  XCircle, Clock, Eye, Download, ShieldCheck
+  XCircle, Clock, Eye, Download, ShieldCheck, RefreshCw, ChevronDown, ChevronUp
 } from 'lucide-react'
 
 const ESTADO_CONFIG = {
-  APROBADO:  { color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20', icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: 'Aprobado' },
-  PENDIENTE: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: <Clock className="w-3.5 h-3.5"/>, label: 'Pendiente' },
-  RECHAZADO: { color: 'text-rose-400',  bg: 'bg-rose-500/10',  border: 'border-rose-500/20',  icon: <XCircle className="w-3.5 h-3.5"/>, label: 'Rechazado' },
-  FALTANTE:  { color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: <FileText className="w-3.5 h-3.5"/>, label: 'Faltante' },
+  APROBADO: { color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20', icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: 'Aprobado' },
+  PENDIENTE: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: <Clock className="w-3.5 h-3.5" />, label: 'Pendiente' },
+  RECHAZADO: { color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/20', icon: <XCircle className="w-3.5 h-3.5" />, label: 'Rechazado' },
+  FALTANTE: { color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: <FileText className="w-3.5 h-3.5" />, label: 'Faltante' },
 }
 
 function ReviewModal({ doc, onClose, onSuccess }) {
@@ -69,8 +69,8 @@ function ReviewModal({ doc, onClose, onSuccess }) {
             <span className="text-sm font-medium text-text-muted">📎 {doc.nombre_archivo || 'Sin nombre de archivo'}</span>
             {loadingPdf && <span className="text-xs text-primary-400 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Obteniendo vista previa...</span>}
             {pdfUrl && (
-              <a href={pdfUrl} target="_blank" rel="noopener noreferrer" 
-                 className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 border border-primary-500/30 rounded-xl text-sm font-semibold transition-colors self-start">
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 border border-primary-500/30 rounded-xl text-sm font-semibold transition-colors self-start">
                 <Eye className="w-4 h-4" /> Ver PDF en nueva pestaña
               </a>
             )}
@@ -124,12 +124,33 @@ export default function AdminDashboard() {
   const [empresas, setEmpresas] = useState([])
   const [selectedEmpresa, setSelectedEmpresa] = useState(null)
   const [documentos, setDocumentos] = useState([])
-  
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [reviewDoc, setReviewDoc] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState({})
+  const [downloadingSection, setDownloadingSection] = useState(null)
+
+  const toggleSection = (title) => {
+    setCollapsedSections(prev => ({ ...prev, [title]: !prev[title] }))
+  }
+
+  const handleDescargarSeccion = async (title, docs, e) => {
+    e.stopPropagation()
+    if (downloadingSection) return
+    
+    try {
+      setDownloadingSection(title)
+      const docIds = docs.map(d => d.id || d.documento_id).filter(Boolean)
+      await api.descargarSeleccion(selectedEmpresa.id, docIds, `Seleccion_${title.replace(/[^a-z0-9]/gi, '_')}.zip`)
+    } catch (err) {
+      alert('Error al descargar: ' + err.message)
+    } finally {
+      setDownloadingSection(null)
+    }
+  }
 
   const loadEmpresas = useCallback(async () => {
     setLoading(true)
@@ -163,8 +184,8 @@ export default function AdminDashboard() {
     }
   }, [selectedEmpresa, loadEmpresas, loadDocumentos])
 
-  const filteredEmpresas = empresas.filter(emp => 
-    emp.nombre.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredEmpresas = empresas.filter(emp =>
+    emp.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (emp.rfc && emp.rfc.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
@@ -176,16 +197,26 @@ export default function AdminDashboard() {
           <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider flex items-center gap-2">
             <Building2 className="w-4 h-4 text-primary-400" /> Directorio de Empresas
           </h2>
-          
-          <div className="relative">
-            <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-            <input 
-              type="text" 
-              placeholder="Buscar por nombre o RFC..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-surface border border-border rounded-xl py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-primary-500/50 w-full md:w-64 text-text-main"
-            />
+
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <button
+              onClick={() => loadEmpresas()}
+              disabled={loading}
+              className={`p-2.5 bg-surface border border-border hover:border-primary-500/50 rounded-xl text-text-muted hover:text-primary-400 transition-colors shadow-sm flex-shrink-0 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Actualizar directorio"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-400' : ''}`} />
+            </button>
+            <div className="relative flex-1 md:w-64">
+              <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre o RFC..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="bg-surface border border-border rounded-xl py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-primary-500/50 w-full text-text-main"
+              />
+            </div>
           </div>
         </div>
 
@@ -206,8 +237,8 @@ export default function AdminDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredEmpresas.map(emp => (
-              <div 
-                key={emp.id} 
+              <div
+                key={emp.id}
                 onClick={() => setSelectedEmpresa(emp)}
                 className="bg-card border border-border hover:border-primary-500/50 rounded-xl p-5 cursor-pointer transition-all hover:shadow-[0_0_15px_rgba(225,29,72,0.05)] group flex flex-col h-full"
               >
@@ -230,6 +261,7 @@ export default function AdminDashboard() {
                         <XCircle className="w-3 h-3" /> {emp.conteo_estados.RECHAZADO}
                       </span>
                     )}
+
                   </div>
                   <span className="text-xs font-semibold text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity">
                     Ver Expediente. →
@@ -248,7 +280,7 @@ export default function AdminDashboard() {
     <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1 animate-fade-in">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => setSelectedEmpresa(null)}
             className="p-2 bg-surface hover:bg-surface/80 border border-border rounded-xl text-text-muted hover:text-text-main transition-colors"
           >
@@ -259,26 +291,37 @@ export default function AdminDashboard() {
             <p className="text-xs text-text-muted">{selectedEmpresa.rfc || 'Sin RFC'}</p>
           </div>
         </div>
-        <button
-          onClick={async () => {
-            setDownloading(true)
-            try {
-              await api.descargarTodosDocumentos(selectedEmpresa.id)
-              loadDocumentos(selectedEmpresa.id)
-            } catch (err) {
-              alert(`Error al descargar: ${err.message}`)
-            } finally {
-              setDownloading(false)
-            }
-          }}
-          disabled={downloading || documentos.every(d => d.estado === 'FALTANTE')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all
-            ${downloading ? 'opacity-50 cursor-not-allowed' : ''}
-            bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)]`}
-        >
-          {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          {downloading ? 'Descargando...' : 'Descargar Todo (ZIP)'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => loadDocumentos(selectedEmpresa.id)}
+            disabled={loading}
+            className={`p-2.5 bg-surface border border-border hover:border-primary-500/50 rounded-xl text-text-muted hover:text-primary-400 transition-colors shadow-sm flex-shrink-0 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="Actualizar expediente"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-400' : ''}`} />
+          </button>
+          <button
+            onClick={async () => {
+              setDownloading(true)
+              try {
+                await api.descargarTodosDocumentos(selectedEmpresa.id)
+                loadDocumentos(selectedEmpresa.id)
+              } catch (err) {
+                alert(`Error al descargar: ${err.message}`)
+              } finally {
+                setDownloading(false)
+              }
+            }}
+            disabled={downloading || documentos.every(d => d.estado === 'FALTANTE')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all
+              ${downloading ? 'opacity-50 cursor-not-allowed' : ''}
+              bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)]`}
+          >
+            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span className="hidden md:inline">{downloading ? 'Descargando...' : 'Descargar Todo (ZIP)'}</span>
+            <span className="md:hidden">{downloading ? 'Descargando...' : 'ZIP'}</span>
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -302,16 +345,35 @@ export default function AdminDashboard() {
             const docsDeclaraciones = documentos.filter(d => d.grupo === 'declaraciones')
             const docsVigentes = documentos.filter(d => d.grupo === 'vigentes')
             const docsRep = documentos.filter(d => d.grupo === 'representante')
+            const docsOtros = documentos.filter(d => d.grupo === 'otros')
 
             const renderTable = (docs, title) => {
               if (docs.length === 0) return null;
               return (
-                <div className="mb-6">
-                  <h3 className="text-sm font-bold text-primary-400 uppercase tracking-wider mb-4 border-b border-border pb-2">
-                    {title}
-                  </h3>
-                  <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-                    <table className="w-full text-sm text-left">
+                <div className="mb-6 bg-card border border-border rounded-xl shadow-sm transition-all">
+                  <div 
+                    className="flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-surface/50 border-b border-border transition-colors"
+                    onClick={() => toggleSection(title)}
+                  >
+                    <h3 className="text-sm font-bold text-primary-400 uppercase tracking-wider mb-0 flex items-center gap-2">
+                      {collapsedSections[title] ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                      {title}
+                    </h3>
+                    <button 
+                      onClick={(e) => handleDescargarSeccion(title, docs, e)}
+                      disabled={downloadingSection === title}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 border border-primary-500/30 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {downloadingSection === title ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Descargando...</>
+                      ) : (
+                        <><Download className="w-3 h-3" /> Descargar Sección</>
+                      )}
+                    </button>
+                  </div>
+                  {!collapsedSections[title] && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-left">
                       <thead className="bg-surface/50 border-b border-border text-xs uppercase text-text-muted font-bold tracking-wider">
                         <tr>
                           <th className="px-6 py-4">Documento</th>
@@ -377,7 +439,7 @@ export default function AdminDashboard() {
                                         try {
                                           await api.descargarDocumentoIndividual(selectedEmpresa.id, doc.id, doc.grupo === 'representante');
                                           loadDocumentos(selectedEmpresa.id);
-                                        } catch(err) {
+                                        } catch (err) {
                                           alert('Error al descargar: ' + err.message);
                                         } finally {
                                           btn.disabled = false;
@@ -424,31 +486,33 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </div>
               )
             }
 
-              const banks = {};
-              docsEdosCuenta.forEach(d => {
-                const b = d.nombre_carpeta || 'Otros / General';
-                if (!banks[b]) banks[b] = [];
-                banks[b].push(d);
-              });
+            const banks = {};
+            docsEdosCuenta.forEach(d => {
+              const b = d.nombre_carpeta || 'Otros / General';
+              if (!banks[b]) banks[b] = [];
+              banks[b].push(d);
+            });
 
-              return (
-                <>
-                  {renderTable(docsRep, "🧑‍💼 1. Representante Legal")}
-                  {renderTable(docsLegales, "🏢 2.1. Actas / Legales")}
-                  {renderTable(docsFinancieros, "📊 2.2. Estados Financieros")}
-                  {Object.entries(banks).map(([bank, items]) => 
-                    <div key={bank}>
-                      {renderTable(items, `🏦 2.3. Estados de Cuenta${bank !== 'Otros / General' ? ` — ${bank}` : ''}`)}
-                    </div>
-                  )}
-                  {renderTable(docsDeclaraciones, "📋 2.5. Declaraciones")}
-                  {renderTable(docsVigentes, "✅ 2.6. Generales / Vigentes")}
-                </>
-              )
+            return (
+              <>
+                {renderTable(docsRep, "🧑‍💼 1. Representante Legal")}
+                {renderTable(docsLegales, "🏢 2.1. Actas / Legales")}
+                {renderTable(docsFinancieros, "📊 2.2. Estados Financieros")}
+                {Object.entries(banks).map(([bank, items]) =>
+                  <div key={bank}>
+                    {renderTable(items, `🏦 2.3. Estados de Cuenta${bank !== 'Otros / General' ? ` — ${bank}` : ''}`)}
+                  </div>
+                )}
+                {renderTable(docsDeclaraciones, "📋 2.5. Declaraciones")}
+                {renderTable(docsVigentes, "✅ 2.6. Generales / Vigentes")}
+                {renderTable(docsOtros, "📁 2.7. Otros Documentos")}
+              </>
+            )
           })()}
         </div>
       )}
@@ -456,7 +520,7 @@ export default function AdminDashboard() {
       {/* Modal Review */}
       {reviewDoc && (
         <ReviewModal
-          doc={{...reviewDoc, empresa_nombre: selectedEmpresa.nombre}}
+          doc={{ ...reviewDoc, empresa_nombre: selectedEmpresa.nombre }}
           onClose={() => setReviewDoc(null)}
           onSuccess={() => {
             setReviewDoc(null)

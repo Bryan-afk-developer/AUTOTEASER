@@ -18,10 +18,13 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Header
 
+from pydantic import BaseModel
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
 
 logger = logging.getLogger(__name__)
+
+BUCKET_NAME = "expedientes_clientes"
 router = APIRouter()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -222,9 +225,13 @@ def calcular_declaraciones() -> list[dict]:
       - Siempre 3 años fiscales
     
     Cada año requiere 2 documentos:
-      - Declaración Anual con Acuse (PDF)
-      - Declaración Anual Excel SAT
+      - Declaración Anual con Acuse (PDF del SAT)
+      - Declaración Anual del Ejercicio (PDF del SAT)
     
+    Las claves coinciden con lo que detecta Detect_Sat_file.py:
+      declaracion_acuse_{year}       → ACUSE DE RECIBO
+      declaracion_declaracion_{year} → DECLARACIÓN DEL EJERCICIO
+
     Ej: Mayo 2026 (pasó marzo) → 2025, 2024, 2023
     Ej: Feb 2026 (no ha pasado marzo) → 2024, 2023, 2022
     """
@@ -236,10 +243,10 @@ def calcular_declaraciones() -> list[dict]:
         año_mas_reciente = hoy.year - 2
 
     tipos = [
-        ("acuse", "Declaración Anual con Acuse", "📋",
-         "Declaración anual con acuse de recibo del SAT"),
-        ("excel", "Declaración Anual – Excel SAT", "📊",
-         "Archivo Excel descargado directamente del portal del SAT"),
+        ("acuse",       "Acuse de Recibo",        "📋",
+         "Acuse de recibo emitido por el SAT al presentar la declaración anual"),
+        ("declaracion", "Declaración del Ejercicio", "📄",
+         "PDF de la declaración anual ISR descargado del portal del SAT"),
     ]
 
     docs = []
@@ -344,6 +351,16 @@ async def get_expediente(authorization: str = Header(None)):
 
         if doc_subido:
             estado = doc_subido["estado"]
+            url_documento = None
+            storage_path = doc_subido.get("storage_path")
+            if storage_path:
+                try:
+                    signed_resp = sb.storage.from_(BUCKET_NAME).create_signed_url(storage_path, expires_in=3600)
+                    url_documento = signed_resp.get("signedURL") if isinstance(signed_resp, dict) else signed_resp
+                except Exception as e:
+                    logger.error(f"Error al generar URL para {storage_path}: {e}")
+                    url_documento = None
+
             entry = {
                 **doc_req,
                 "estado": estado,
@@ -352,7 +369,8 @@ async def get_expediente(authorization: str = Header(None)):
                 "subido_en": doc_subido.get("subido_en"),
                 "revisado_en": doc_subido.get("revisado_en"),
                 "comentario_admin": doc_subido.get("comentario_admin"),
-                "storage_path": doc_subido.get("storage_path"),
+                "storage_path": storage_path,
+                "url_documento": url_documento,
             }
             if estado == "APROBADO":
                 aprobados += 1
@@ -366,9 +384,45 @@ async def get_expediente(authorization: str = Header(None)):
                 "revisado_en": None,
                 "comentario_admin": None,
                 "storage_path": None,
+                "url_documento": None,
             }
 
         resultado.append(entry)
+
+    # Agregar documentos "Otros" que no están en la lista de requeridos
+    req_claves = {d["clave"] for d in documentos_requeridos}
+    for doc_subido in todos_subidos:
+        if doc_subido["tipo_documento"] not in req_claves and doc_subido["tipo_documento"].startswith("otros_"):
+            estado = doc_subido["estado"]
+            url_documento = None
+            storage_path = doc_subido.get("storage_path")
+            if storage_path:
+                try:
+                    signed_resp = sb.storage.from_(BUCKET_NAME).create_signed_url(storage_path, expires_in=3600)
+                    url_documento = signed_resp.get("signedURL") if isinstance(signed_resp, dict) else signed_resp
+                except Exception as e:
+                    logger.error(f"Error al generar URL para {storage_path}: {e}")
+                    url_documento = None
+
+            entry = {
+                "clave": doc_subido["tipo_documento"],
+                "nombre": doc_subido.get("nombre_archivo", "Otro Documento"),
+                "descripcion": "Documento adicional subido por el cliente",
+                "categoria": "otros",
+                "icono": "📁",
+                "grupo": "otros",
+                "estado": estado,
+                "documento_id": doc_subido["id"],
+                "nombre_archivo": doc_subido.get("nombre_archivo"),
+                "subido_en": doc_subido.get("subido_en"),
+                "revisado_en": doc_subido.get("revisado_en"),
+                "comentario_admin": doc_subido.get("comentario_admin"),
+                "storage_path": storage_path,
+                "url_documento": url_documento,
+            }
+            if estado == "APROBADO":
+                aprobados += 1
+            resultado.append(entry)
 
     total = len(resultado)
     progreso = round((aprobados / total) * 100) if total > 0 else 0
@@ -426,11 +480,24 @@ async def eliminar_carpeta_banco(
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
 
-    # Verificar si hay documentos aprobados
-    docs_resp = sb.table("documentos_expediente").select("estado").eq("cuenta_bancaria_id", cuenta_id).execute()
-    if docs_resp.data:
-        if any(d["estado"] == "APROBADO" for d in docs_resp.data):
-            raise HTTPException(status_code=400, detail="No puedes eliminar un banco con documentos aprobados")
+    # Primero, buscar todos los documentos asociados a esta cuenta
+    docs_resp = sb.table("documentos_expediente").select("id, storage_path").eq("cuenta_bancaria_id", cuenta_id).eq("empresa_id", empresa_id).execute()
+    
+    docs_to_delete = docs_resp.data or []
+    
+    # Eliminar de Storage
+    for doc in docs_to_delete:
+        if doc.get("storage_path"):
+            try:
+                sb.storage.from_("expedientes_clientes").remove([doc["storage_path"]])
+            except Exception as e:
+                logger.warning(f"Error eliminando de storage: {e}")
+                
+    # Eliminar de la base de datos (los documentos)
+    if docs_to_delete:
+        doc_ids = [d["id"] for d in docs_to_delete]
+        sb.table("documentos_expediente").delete().in_("id", doc_ids).execute()
 
+    # Finalmente, eliminar la cuenta bancaria
     sb.table("cuentas_bancarias").delete().eq("id", cuenta_id).eq("empresa_id", empresa_id).execute()
-    return {"message": "Cuenta bancaria eliminada"}
+    return {"message": "Cuenta bancaria y documentos eliminados"}

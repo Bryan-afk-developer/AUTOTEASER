@@ -1,14 +1,12 @@
 """
 AutoTeaser - Bank Detector
-Uses Gemini Vision to identify the bank from the LOGO on the first page of the PDF.
-Falls back to text-based detection if Gemini is unavailable.
+Uses filename heuristics and text-based patterns to identify the bank.
+Gemini Vision is NOT used — pure text extraction only.
 """
-import io
-import base64
 import logging
 from pathlib import Path
 
-import fitz  # PyMuPDF - renders PDF pages as images
+import fitz  # PyMuPDF
 import google.generativeai as genai
 
 from app.config import GEMINI_API_KEY
@@ -19,75 +17,7 @@ logger = logging.getLogger(__name__)
 VALID_BANKS = ["hsbc", "bbva", "banorte", "santander", "scotiabank", "banamex", "inbursa", "sabadell", "bxplus"]
 
 
-def _render_first_page_as_image(pdf_path: str | Path) -> bytes:
-    """
-    Render the first page of a PDF as a PNG image using PyMuPDF.
-    Returns the raw PNG bytes.
-    """
-    doc = fitz.open(str(pdf_path))
-    page = doc[0]
-    # Render at 2x resolution for better logo clarity
-    pix = page.get_pixmap(dpi=200)
-    png_bytes = pix.tobytes("png")
-    doc.close()
-    return png_bytes
-
-
-def detect_bank_with_gemini(pdf_path: str | Path) -> str | None:
-    """
-    Send the first page of the PDF as an image to Gemini Vision
-    and ask it to identify the bank from the logo/header.
-    
-    Returns:
-        Bank key (e.g. "hsbc", "bbva") or None if detection fails.
-    """
-    if not GEMINI_API_KEY:
-        logger.warning("No GEMINI_API_KEY configured, skipping vision detection")
-        return None
-    
-    try:
-        # 1. Render first page as image
-        png_bytes = _render_first_page_as_image(pdf_path)
-        
-        # 2. Configure Gemini
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        
-        # 3. Build the prompt
-        prompt = (
-            "Mira esta imagen de un estado de cuenta bancario mexicano. "
-            "Identifica el banco que EMITIÓ este documento basándote en el LOGO o encabezado principal del banco. "
-            "IGNORA cualquier nombre de banco que aparezca en los movimientos o transacciones. "
-            "Solo me interesa el banco que generó este estado de cuenta.\n\n"
-            f"Los bancos posibles son ÚNICAMENTE estos: {', '.join(VALID_BANKS)}\n\n"
-            "Responde SOLAMENTE con el nombre del banco en minúsculas, sin explicación. "
-            "Ejemplo de respuesta válida: bbva"
-        )
-        
-        # 4. Send image to Gemini
-        image_part = {
-            "mime_type": "image/png",
-            "data": png_bytes,
-        }
-        
-        response = model.generate_content([prompt, image_part])
-        answer = response.text.strip().lower()
-        
-        # 5. Validate the answer is one of our banks
-        for bank in VALID_BANKS:
-            if bank in answer:
-                logger.info(f"Gemini Vision detected bank: {bank} (raw answer: '{answer}')")
-                return bank
-        
-        logger.warning(f"Gemini returned unrecognized bank: '{answer}'")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Gemini Vision detection failed: {e}")
-        return None
-
-
-# ── Text-based fallback ─────────────────────────────────────────
+# ── Text-based detection ─────────────────────────────────────────────────────
 
 # Structural patterns unique to each bank's format (NOT bank names in transactions)
 # Highly specific signatures go first to prevent false matches in transaction text of other banks.
@@ -107,17 +37,16 @@ TEXT_FALLBACK_PATTERNS = [
 
 def detect_bank_from_text(text: str) -> str | None:
     """
-    Fallback: detect bank from structural text patterns unique to each bank's format.
-    Only used if Gemini Vision is unavailable.
+    Detect bank from structural text patterns unique to each bank's format.
     """
     header = text[:8000].lower()
-    
+
     # Phase 1: High-precision structural patterns
     for bank_key, patterns in TEXT_FALLBACK_PATTERNS:
         for pattern in patterns:
             if pattern in header:
                 return bank_key
-                
+
     # Phase 2: Simple fallback keywords in header
     fallback_keywords = [
         ("bbva", ["bbva", "bancomer"]),
@@ -134,20 +63,21 @@ def detect_bank_from_text(text: str) -> str | None:
         for keyword in keywords:
             if keyword in header:
                 return bank_key
-                
+
     return None
 
 
-def detect_bank(pdf_path: str | Path, text: str = "") -> str | None:
+def detect_bank(pdf_path: str | Path = None, text: str = "") -> str | None:
     """
-    Main detection function. Tries filename heuristics first, then Gemini Vision, then text patterns.
-    
+    Main detection function. Tries filename heuristics first, then text patterns.
+    Gemini Vision is NOT used.
+
     Args:
-        pdf_path: Path to the PDF file (for Gemini Vision)
-        text: Extracted text from the PDF (for text fallback)
-    
+        pdf_path: Path to the PDF file (for filename heuristics)
+        text: Extracted text from the PDF
+
     Returns:
-        Bank key or None
+        Bank key (e.g. "hsbc", "bbva") or None
     """
     # 1. Try filename heuristics (fast, free, local)
     if pdf_path:
@@ -161,18 +91,64 @@ def detect_bank(pdf_path: str | Path, text: str = "") -> str | None:
                 logger.info(f"Filename heuristic detected bank: {bank_key}")
                 return bank_key
 
-    # 2. Try Gemini Vision (identifies by logo)
-    bank = detect_bank_with_gemini(pdf_path)
-    if bank:
-        return bank
-    
-    # 3. Fallback to text patterns
-    logger.info("Falling back to text-based detection")
+    # 2. Text-based detection
     if text:
         bank = detect_bank_from_text(text)
         if bank:
-            logger.info(f"Text fallback detected bank: {bank}")
+            logger.info(f"Text detection detected bank: {bank}")
             return bank
-    
-    logger.warning("Could not detect bank with any method")
+
+    logger.warning("Could not detect bank from filename or text")
     return None
+
+def _render_first_page_as_image(pdf_bytes: bytes) -> bytes:
+    """
+    Render the first page of a PDF as a PNG image using PyMuPDF from memory bytes.
+    """
+    doc = fitz.open("pdf", pdf_bytes)
+    page = doc[0]
+    pix = page.get_pixmap(dpi=200)
+    png_bytes = pix.tobytes("png")
+    doc.close()
+    return png_bytes
+
+def detect_bank_with_gemini(pdf_bytes: bytes) -> str | None:
+    """
+    Send the first page of the PDF as an image to Gemini Vision
+    and ask it to identify the bank from the logo/header.
+    """
+    if not GEMINI_API_KEY:
+        logger.warning("No GEMINI_API_KEY configured, skipping vision detection")
+        return None
+    
+    try:
+        png_bytes = _render_first_page_as_image(pdf_bytes)
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        
+        prompt = (
+            "Mira esta imagen de un estado de cuenta bancario mexicano. "
+            "Identifica el banco que EMITIÓ este documento basándote en el LOGO o encabezado principal del banco. "
+            "IGNORA cualquier nombre de banco que aparezca en los movimientos o transacciones. "
+            "Solo me interesa el banco que generó este estado de cuenta.\n\n"
+            f"Los bancos posibles son ÚNICAMENTE estos: {', '.join(VALID_BANKS)}\n\n"
+            "Responde SOLAMENTE con el nombre del banco en minúsculas, sin explicación. "
+            "Ejemplo de respuesta válida: bbva"
+        )
+        
+        image_part = {"mime_type": "image/png", "data": png_bytes}
+        response = model.generate_content([prompt, image_part])
+        answer = response.text.strip().lower()
+        
+        for bank in VALID_BANKS:
+            if bank in answer:
+                logger.info(f"Gemini Vision detected bank: {bank}")
+                return bank
+        
+        logger.warning(f"Gemini returned unrecognized bank: '{answer}'")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Gemini Vision detection failed: {e}")
+        return None
+

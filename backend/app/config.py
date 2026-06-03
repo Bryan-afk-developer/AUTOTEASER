@@ -19,7 +19,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
 
 # Limits
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
 # Gemini API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
