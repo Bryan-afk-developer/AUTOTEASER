@@ -191,9 +191,14 @@ async def get_empresa_documentos(empresa_id: str):
             doc_subido["empresa_nombre"] = empresa_info.get("nombre")
             doc_subido["empresa_rfc"] = empresa_info.get("rfc")
             doc_subido["nombre_esperado"] = doc_subido.get("nombre_archivo", doc_subido["tipo_documento"])
-            doc_subido["grupo"] = "otros" if doc_subido["tipo_documento"].startswith("otros_") else "empresa"
             
-
+            if doc_subido["tipo_documento"].startswith("declaracion_"):
+                doc_subido["grupo"] = "declaraciones"
+            elif doc_subido["tipo_documento"].startswith("otros_"):
+                doc_subido["grupo"] = "otros"
+            else:
+                doc_subido["grupo"] = "empresa"
+            
             documentos_completos.append(doc_subido)
         
     return {

@@ -448,7 +448,7 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
           <span style={{ fontSize: '20px' }}>⚠️</span>
           <div>
             <p style={{ color: '#fbbf24', fontWeight: 700, margin: 0, fontSize: '14px' }}>Mínimo 2 archivos requeridos</p>
-            <p style={{ color: '#94a3b8', fontSize: '13px', margin: '2px 0 0' }}>Necesitamos al menos 2 declaraciones del ejercicio 2023 en adelante (Acuse + Declaración).</p>
+            <p style={{ color: '#94a3b8', fontSize: '13px', margin: '2px 0 0' }}>Necesitamos las Declaraciones y Acuses de los últimos 3 años o los ultimos años que disponga.</p>
           </div>
         </div>
       )}
