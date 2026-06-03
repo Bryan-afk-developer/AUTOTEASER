@@ -40,7 +40,7 @@ def parse(text: str) -> dict:
         "is_complementaria": False,
     }
 
-    if "TIPO DE DECLARACIÓN: COMPLEMENTARIA" in text.upper():
+    if re.search(r"TIPO DE DECLARACI.N:\s*COMPLEMENTARIA", text, re.IGNORECASE):
         result["is_complementaria"] = True
 
     # "Período de la declaración: Del Ejercicio Ejercicio: 2025"
