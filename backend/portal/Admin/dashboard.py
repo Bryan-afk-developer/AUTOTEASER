@@ -15,8 +15,9 @@ from typing import List
 
 from pydantic import BaseModel
 
+import concurrent.futures
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
 
 from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import get_todos_los_documentos_requeridos, DOCUMENTOS_REPRESENTANTE
@@ -272,6 +273,7 @@ async def descargar_todos_documentos(empresa_id: str):
             zf.writestr(zipfile.ZipInfo(c), b'')
 
         rutas_agregadas = set()
+        docs_a_bajar = []
 
         for doc in todos_docs:
             storage_path = doc.get("storage_path")
@@ -344,21 +346,29 @@ async def descargar_todos_documentos(empresa_id: str):
                 if zip_path in rutas_agregadas:
                     continue
                 rutas_agregadas.add(zip_path)
-                
-                # Descargar SOLO si no es duplicado (ahorra tiempo y ancho de banda)
-                file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
-                
-                zf.writestr(zip_path, file_bytes)
-                archivos_incluidos += 1
-
-                table = "documentos_representante" if tipo in CLAVES_REPRESENTANTE else "documentos_expediente"
-                sb.table(table).update({
-                    "descargado": True,
-                    "descargado_en": ahora,
-                }).eq("id", doc["id"]).execute()
+                docs_a_bajar.append({"zip_path": zip_path, "storage_path": storage_path, "id": doc["id"], "tipo": tipo})
             except Exception as e:
-                logger.warning(f"No se pudo descargar {storage_path}: {e}")
+                logger.warning(f"Error procesando {storage_path}: {e}")
                 continue
+
+        def fetch_file(d):
+            return d, sb.storage.from_("expedientes_clientes").download(d["storage_path"])
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futuros = [executor.submit(fetch_file, d) for d in docs_a_bajar]
+            for future in concurrent.futures.as_completed(futuros):
+                try:
+                    d, file_bytes = future.result()
+                    zf.writestr(d["zip_path"], file_bytes)
+                    archivos_incluidos += 1
+                    
+                    table = "documentos_representante" if d["tipo"] in CLAVES_REPRESENTANTE else "documentos_expediente"
+                    sb.table(table).update({
+                        "descargado": True,
+                        "descargado_en": ahora,
+                    }).eq("id", d["id"]).execute()
+                except Exception as e:
+                    logger.warning(f"Error descargando ZIP: {e}")
 
     # Siempre permitimos descargar el ZIP aunque solo tenga las carpetas vacías (archivos_incluidos puede ser 0)
     zip_buffer.seek(0)
@@ -406,6 +416,7 @@ async def descargar_seleccion_documentos(empresa_id: str, req: DescargarSeleccio
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         rutas_agregadas = set()
+        docs_a_bajar = []
 
         for doc in todos_docs:
             if str(doc.get("id")) not in req.doc_ids:
@@ -415,33 +426,36 @@ async def descargar_seleccion_documentos(empresa_id: str, req: DescargarSeleccio
             if not storage_path:
                 continue
                 
-            try:
-                nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
-                tipo = doc.get("tipo_documento", "doc")
-                
-                # Al descargar una sección específica, usamos una estructura plana
-                ruta_final = nombre_archivo
+            nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+            tipo = doc.get("tipo_documento", "doc")
+            
+            # Al descargar una sección específica, usamos una estructura plana
+            ruta_final = nombre_archivo
 
-                if len(ruta_final) > 0:
-                    if ruta_final in rutas_agregadas:
-                        partes = ruta_final.rsplit(".", 1)
-                        if len(partes) == 2:
-                            ruta_final = f"{partes[0]}_{archivos_incluidos}.{partes[1]}"
-                        else:
-                            ruta_final = f"{ruta_final}_{archivos_incluidos}"
-                            
-                    # Agregamos la ruta final
-                    zip_path = ruta_final
+            if len(ruta_final) > 0:
+                if ruta_final in rutas_agregadas:
+                    partes = ruta_final.rsplit(".", 1)
+                    if len(partes) == 2:
+                        ruta_final = f"{partes[0]}_{archivos_incluidos}.{partes[1]}"
+                    else:
+                        ruta_final = f"{ruta_final}_{archivos_incluidos}"
+                        
+                rutas_agregadas.add(ruta_final)
+                docs_a_bajar.append({"zip_path": ruta_final, "storage_path": storage_path, "id": doc["id"], "tipo": tipo})
 
-                    file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
-                    
-                    zf.writestr(zip_path, file_bytes)
-                    rutas_agregadas.add(ruta_final)
+        def fetch_file(d):
+            return d, sb.storage.from_("expedientes_clientes").download(d["storage_path"])
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futuros = [executor.submit(fetch_file, d) for d in docs_a_bajar]
+            for future in concurrent.futures.as_completed(futuros):
+                try:
+                    d, file_bytes = future.result()
+                    zf.writestr(d["zip_path"], file_bytes)
                     archivos_incluidos += 1
-
-            except Exception as e:
-                logger.warning(f"No se pudo descargar seleccion {storage_path}: {e}")
-                continue
+                except Exception as e:
+                    logger.warning(f"No se pudo descargar seleccion {d['storage_path']}: {e}")
+                    continue
 
     if archivos_incluidos == 0:
         raise HTTPException(status_code=404, detail="No se pudo descargar ningún archivo de Storage")
