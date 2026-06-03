@@ -385,6 +385,37 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState(null)
+  const [selectedDocs, setSelectedDocs] = useState(new Set())
+  const [eliminandoMultiples, setEliminandoMultiples] = useState(false)
+
+  const toggleSelection = (clave) => {
+    const newSel = new Set(selectedDocs)
+    if (newSel.has(clave)) newSel.delete(clave)
+    else newSel.add(clave)
+    setSelectedDocs(newSel)
+  }
+
+  const selectAll = () => {
+    if (declaraciones && selectedDocs.size === declaraciones.length) {
+      setSelectedDocs(new Set())
+    } else {
+      setSelectedDocs(new Set(declaraciones.map(d => d.clave)))
+    }
+  }
+
+  const handleEliminarMultiples = async () => {
+    if (!window.confirm(`¿Eliminar los ${selectedDocs.size} archivos seleccionados?`)) return
+    setEliminandoMultiples(true)
+    try {
+      await Promise.all(Array.from(selectedDocs).map(clave => api.eliminarDocumento(clave)))
+      setSelectedDocs(new Set())
+      onSuccess()
+    } catch (err) {
+      alert('Error al eliminar algunos archivos: ' + err.message)
+    } finally {
+      setEliminandoMultiples(false)
+    }
+  }
 
   const handleDrop = useCallback(async (e) => {
     e.preventDefault()
@@ -520,6 +551,31 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
       {/* Lista de archivos subidos */}
       {tieneArchivos ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Controles de Selección Múltiple */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#94a3b8', fontSize: '14px' }}>
+              <input 
+                type="checkbox" 
+                checked={selectedDocs.size === declaraciones.length && declaraciones.length > 0} 
+                onChange={selectAll} 
+                style={{ cursor: 'pointer' }}
+              />
+              Seleccionar Todos
+            </label>
+            {selectedDocs.size > 0 && (
+              <button
+                onClick={handleEliminarMultiples}
+                disabled={eliminandoMultiples}
+                style={{
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#fca5a5', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer',
+                  fontSize: '13px', fontWeight: 600
+                }}
+              >
+                {eliminandoMultiples ? 'Eliminando...' : `🗑️ Borrar Seleccionados (${selectedDocs.size})`}
+              </button>
+            )}
+          </div>
           {declaraciones.map((doc) => {
             const cfg = ESTADO_CONFIG[doc.estado] || ESTADO_CONFIG.PENDIENTE
             return (
@@ -532,13 +588,20 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
                   border: `1px solid ${doc.clasificado ? cfg.border : 'rgba(148,163,184,0.15)'}`,
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>{doc.icono}</span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedDocs.has(doc.clave)} 
+                    onChange={() => toggleSelection(doc.clave)}
+                    style={{ marginTop: '4px', cursor: 'pointer' }}
+                  />
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>{doc.icono}</span>
                     <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '14px' }}>{doc.nombre}</span>
                     {!doc.clasificado && (
                       <span style={{ fontSize: '11px', color: '#64748b', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        Pendiente de clasificación
+                        Pendiente de Revisión
                       </span>
                     )}
                   </div>
@@ -547,11 +610,12 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
                       📎 {doc.nombre_archivo}
                     </p>
                   )}
-                  {!doc.clasificado && doc.nombre_archivo && (
-                    <p style={{ color: '#64748b', fontSize: '12px', margin: '3px 0 0 24px', fontStyle: 'italic' }}>
-                      📎 {doc.nombre_archivo}
-                    </p>
-                  )}
+                    {!doc.clasificado && doc.nombre_archivo && (
+                      <p style={{ color: '#64748b', fontSize: '12px', margin: '3px 0 0 24px', fontStyle: 'italic' }}>
+                        📎 {doc.nombre_archivo}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                   <span style={{ padding: '4px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 700, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
