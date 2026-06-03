@@ -17,7 +17,6 @@ SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 
-@lru_cache(maxsize=1)
 def get_supabase_anon() -> Client:
     """Cliente con anon/publishable key — respeta Row Level Security."""
     if not SUPABASE_URL or not SUPABASE_PUBLISHABLE_KEY:
@@ -25,7 +24,6 @@ def get_supabase_anon() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
 
 
-@lru_cache(maxsize=1)
 def get_supabase_admin() -> Client:
     """Cliente con service_role key — bypassa RLS. Solo para uso interno del backend."""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
