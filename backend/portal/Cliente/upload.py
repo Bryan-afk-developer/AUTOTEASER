@@ -145,6 +145,7 @@ async def subir_documento(
         doc_data["nombre_carpeta"] = nombre_carpeta
 
     # --- Opinión de Cumplimiento: detect POSITIVO/NEGATIVO and save in metadata ---
+    requires_justification = False
     if tipo_documento == "opinion_cumplimiento" and SAT_DETECTION_AVAILABLE:
         try:
             text_opc = ""
@@ -159,6 +160,8 @@ async def subir_documento(
                     # Guardamos el sentido como comentario técnico del sistema
                     doc_data["comentario_admin"] = f"[SISTEMA] OPC: {sentido}"
                     logger.info(f"Opinión de Cumplimiento detectada: {sentido}")
+                    if sentido == "NEGATIVO":
+                        requires_justification = True
         except Exception as e:
             logger.warning(f"No se pudo leer Opinión de Cumplimiento: {e}")
 
@@ -186,7 +189,47 @@ async def subir_documento(
         "estado": "PENDIENTE",
         "storage_path": storage_path,
         "subido_en": ahora,
+        "requires_justification": requires_justification,
     }
+
+
+class JustificacionRequest(BaseModel):
+    justificacion: str
+
+@router.patch("/documentos/{doc_id}/justificar")
+async def justificar_documento(
+    doc_id: str,
+    payload: JustificacionRequest,
+    authorization: str = Header(None)
+):
+    """
+    Guarda la justificación de un cliente para un documento (ej. OPC Negativa).
+    """
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+    
+    # Primero buscamos en expedientes
+    doc_resp = sb.table("documentos_expediente").select("*").eq("id", doc_id).execute()
+    table = "documentos_expediente"
+    
+    if not doc_resp.data:
+        # Si no, buscamos en representante
+        doc_resp = sb.table("documentos_representante").select("*").eq("id", doc_id).execute()
+        table = "documentos_representante"
+        if not doc_resp.data:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+            
+    doc = doc_resp.data[0]
+    
+    # Concatenar a comentario_admin actual si existe
+    comentario_actual = doc.get("comentario_admin") or ""
+    nuevo_comentario = comentario_actual + f"\n\n[JUSTIFICACIÓN CLIENTE]:\n{payload.justificacion}"
+    
+    sb.table(table).update({
+        "comentario_admin": nuevo_comentario.strip()
+    }).eq("id", doc_id).execute()
+    
+    return {"message": "Justificación guardada exitosamente"}
 
 
 @router.delete("/eliminar-documento/{tipo_documento}")

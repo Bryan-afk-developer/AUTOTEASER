@@ -36,7 +36,15 @@ function UploadModal({ doc, onClose, onSuccess }) {
     setUploading(true)
     setError('')
     try {
-      await api.subirDocumento(doc.clave, file)
+      const res = await api.subirDocumento(doc.clave, file)
+      
+      if (res.requires_justification) {
+        const justification = window.prompt("Hemos detectado que tu Opinión de Cumplimiento es NEGATIVA.\n\nSi lo deseas, puedes proveer una justificación breve para el equipo de crédito (opcional):")
+        if (justification && justification.trim().length > 0) {
+          await api.justificarDocumento(res.documento_id, justification.trim())
+        }
+      }
+      
       onSuccess()
       onClose()
     } catch (err) {

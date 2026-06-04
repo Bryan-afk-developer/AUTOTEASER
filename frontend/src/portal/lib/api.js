@@ -83,6 +83,9 @@ export const api = {
     return request('POST', '/api/portal/cliente/subir-documentos-banco', formData, true)
   },
 
+  justificarDocumento: (docId, justificacion) =>
+    request('PATCH', `/api/portal/cliente/documentos/${docId}/justificar`, { justificacion }),
+
   eliminarDocumento: (tipoDocumento) =>
     request('DELETE', `/api/portal/cliente/eliminar-documento/${tipoDocumento}`),
 
