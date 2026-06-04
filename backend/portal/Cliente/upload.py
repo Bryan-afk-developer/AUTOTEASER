@@ -36,6 +36,7 @@ except ImportError:
 # SAT detection imports
 try:
     from app.SAT.Detect_Sat_file import detect_sat_document
+    from app.SAT.Opinion_Cumplimiento import matches as opc_matches, parse as opc_parse
     SAT_DETECTION_AVAILABLE = True
 except ImportError:
     SAT_DETECTION_AVAILABLE = False
@@ -142,6 +143,24 @@ async def subir_documento(
         doc_data["cuenta_bancaria_id"] = cuenta_bancaria_id
     if nombre_carpeta:
         doc_data["nombre_carpeta"] = nombre_carpeta
+
+    # --- Opinión de Cumplimiento: detect POSITIVO/NEGATIVO and save in metadata ---
+    if tipo_documento == "opinion_cumplimiento" and SAT_DETECTION_AVAILABLE:
+        try:
+            text_opc = ""
+            if BANK_DETECTION_AVAILABLE:
+                import fitz as _fitz
+                _doc = _fitz.open(stream=content, filetype="pdf")
+                text_opc = " ".join(_page.get_text() for _page in _doc)
+            if text_opc and opc_matches(text_opc):
+                parsed_opc = opc_parse(text_opc)
+                sentido = parsed_opc.get("sentido")
+                if sentido:
+                    # Guardamos el sentido como comentario técnico del sistema
+                    doc_data["comentario_admin"] = f"[SISTEMA] OPC: {sentido}"
+                    logger.info(f"Opinión de Cumplimiento detectada: {sentido}")
+        except Exception as e:
+            logger.warning(f"No se pudo leer Opinión de Cumplimiento: {e}")
 
     if existing.data:
         # Actualizar registro existente

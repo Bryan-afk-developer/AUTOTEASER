@@ -412,6 +412,18 @@ export default function AdminDashboard() {
                                     📁 {doc.nombre_carpeta}
                                   </div>
                                 )}
+                                {doc.tipo_documento === 'opinion_cumplimiento' && doc.comentario_admin?.startsWith('[SISTEMA] OPC:') && (() => {
+                                  const sentido = doc.comentario_admin.replace('[SISTEMA] OPC:', '').trim()
+                                  return (
+                                    <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border ${
+                                      sentido === 'POSITIVO'
+                                        ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
+                                        : 'text-red-300 bg-red-500/10 border-red-500/30'
+                                    }`}>
+                                      {sentido === 'POSITIVO' ? '✅' : '❌'} {sentido}
+                                    </div>
+                                  )
+                                })()}
                               </td>
                               <td className="px-6 py-4 text-text-muted text-xs truncate max-w-[180px]" title={doc.nombre_archivo}>
                                 {doc.nombre_archivo || '—'}
