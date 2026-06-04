@@ -491,10 +491,20 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     if not storage_path:
         raise HTTPException(status_code=400, detail="El documento no tiene un archivo asociado")
         
+    nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+    
     try:
-        file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+        # Generar signed url con el parámetro download=nombre_archivo
+        res = sb.storage.from_("expedientes_clientes").create_signed_url(
+            storage_path, 
+            expires_in=60, 
+            options={"download": nombre_archivo}
+        )
+        signed_url = res.get("signedURL") or res.get("signedUrl")
+        if not signed_url:
+            raise ValueError("No se obtuvo URL firmada")
     except Exception as e:
-        logger.error(f"Error descargando {storage_path}: {e}")
+        logger.error(f"Error generando URL firmada para {storage_path}: {e}")
         raise HTTPException(status_code=500, detail="Error descargando de Storage")
         
     ahora = datetime.now(timezone.utc).isoformat()
@@ -503,17 +513,4 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
         "descargado_en": ahora,
     }).eq("id", doc_id).execute()
     
-    nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
-    mime_type, _ = mimetypes.guess_type(nombre_archivo)
-    if not mime_type:
-        mime_type = "application/octet-stream"
-    
-    from urllib.parse import quote
-    filename_encoded = quote(nombre_archivo, safe='')
-    content_disposition = f"attachment; filename=\"{nombre_archivo}\"; filename*=UTF-8''{filename_encoded}"
-        
-    return StreamingResponse(
-        io.BytesIO(file_bytes),
-        media_type=mime_type,
-        headers={"Content-Disposition": content_disposition},
-    )
+    return {"url": signed_url, "filename": nombre_archivo}

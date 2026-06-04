@@ -184,24 +184,17 @@ export const api = {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.detail || `Error ${res.status}`)
     }
-    const blob = await res.blob()
-    const disposition = res.headers.get('Content-Disposition') || ''
-    // Try RFC 5987 filename* first, then plain filename
-    const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i)
-    const matchPlain = disposition.match(/filename="?([^"]+)"?/i)
-    const filename = matchUtf8
-      ? decodeURIComponent(matchUtf8[1])
-      : matchPlain
-        ? matchPlain[1]
-        : `documento_${docId}.pdf`
-    const url = window.URL.createObjectURL(blob)
+    
+    const data = await res.json()
+    if (!data.url) throw new Error('No URL returned')
+    
+    // Create an invisible link to trigger the download directly from Supabase CDN
     const a = document.createElement('a')
-    a.href = url
-    a.download = filename
+    a.href = data.url
+    a.download = data.filename || 'documento.pdf'
     document.body.appendChild(a)
     a.click()
     a.remove()
-    window.URL.revokeObjectURL(url)
   },
 }
 
