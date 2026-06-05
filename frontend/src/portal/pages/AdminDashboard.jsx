@@ -13,38 +13,38 @@ const ESTADO_CONFIG = {
   APROBADO: { color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20', icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: 'Aprobado' },
   PENDIENTE: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: <Clock className="w-3.5 h-3.5" />, label: 'Pendiente' },
   RECHAZADO: { color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/20', icon: <XCircle className="w-3.5 h-3.5" />, label: 'Rechazado' },
-  FALTANTE:  { color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: <FileText className="w-3.5 h-3.5" />, label: 'Faltante' },
+  FALTANTE: { color: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: <FileText className="w-3.5 h-3.5" />, label: 'Faltante' },
 }
 
 const MOP_NIVEL_CONFIG = [
   { nivel: 1, color: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', alerta: false, desc: 'Al corriente' },
-  { nivel: 2, color: 'text-yellow-300',  bg: 'bg-yellow-500/10',  border: 'border-yellow-500/20',  alerta: false, desc: '1-29 días' },
-  { nivel: 3, color: 'text-orange-300',  bg: 'bg-orange-500/10',  border: 'border-orange-500/20',  alerta: true,  desc: '30-59 días' },
-  { nivel: 4, color: 'text-orange-400',  bg: 'bg-orange-500/15',  border: 'border-orange-500/30',  alerta: true,  desc: '60-89 días' },
-  { nivel: 5, color: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/20',     alerta: true,  desc: '90-119 días' },
-  { nivel: 6, color: 'text-red-400',     bg: 'bg-red-500/15',     border: 'border-red-500/30',     alerta: true,  desc: '120-179 días' },
-  { nivel: 7, color: 'text-red-500',     bg: 'bg-red-500/20',     border: 'border-red-500/40',     alerta: true,  desc: '180+ días' },
+  { nivel: 2, color: 'text-yellow-300', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', alerta: false, desc: '1-29 días' },
+  { nivel: 3, color: 'text-orange-300', bg: 'bg-orange-500/10', border: 'border-orange-500/20', alerta: true, desc: '30-59 días' },
+  { nivel: 4, color: 'text-orange-400', bg: 'bg-orange-500/15', border: 'border-orange-500/30', alerta: true, desc: '60-89 días' },
+  { nivel: 5, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', alerta: true, desc: '90-119 días' },
+  { nivel: 6, color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30', alerta: true, desc: '120-179 días' },
+  { nivel: 7, color: 'text-red-500', bg: 'bg-red-500/20', border: 'border-red-500/40', alerta: true, desc: '180+ días' },
 ]
 
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
 
 function MopsDrawer({ empresaId, onClose }) {
-  const [data, setData]       = useState(null)
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError('')
     api.getBuroMops(empresaId)
-      .then(res  => { if (!cancelled) setData(res) })
+      .then(res => { if (!cancelled) setData(res) })
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [empresaId])
 
-  const anios   = data?.anios   || data?.años   || []
+  const anios = data?.anios || data?.años || []
   const niveles = data?.niveles || {}
 
   return createPortal(
@@ -149,17 +149,16 @@ function MopsDrawer({ empresaId, onClose }) {
                       </thead>
                       <tbody className="divide-y divide-border/50">
                         {MOP_NIVEL_CONFIG.map(cfg => {
-                          const nivelData  = niveles[String(cfg.nivel)] || niveles[cfg.nivel] || {}
+                          const nivelData = niveles[String(cfg.nivel)] || niveles[cfg.nivel] || {}
                           const hasAnyData = Object.values(nivelData).some(v => v > 0)
-                          const hasAlert   = cfg.alerta && hasAnyData
+                          const hasAlert = cfg.alerta && hasAnyData
                           return (
                             <tr
                               key={cfg.nivel}
-                              className={`transition-colors ${
-                                hasAlert ? 'bg-red-500/5 hover:bg-red-500/10'
+                              className={`transition-colors ${hasAlert ? 'bg-red-500/5 hover:bg-red-500/10'
                                   : cfg.nivel === 2 && hasAnyData ? 'bg-yellow-500/5 hover:bg-yellow-500/10'
-                                  : 'hover:bg-surface/30'
-                              }`}
+                                    : 'hover:bg-surface/30'
+                                }`}
                             >
                               <td className="px-4 py-3">
                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
@@ -171,12 +170,11 @@ function MopsDrawer({ empresaId, onClose }) {
                                 const count = nivelData[anio] || 0
                                 return (
                                   <td key={anio} className="px-4 py-3 text-center">
-                                    <span className={`text-sm font-bold ${
-                                      count === 0    ? 'text-text-muted/40'
-                                        : hasAlert   ? 'text-red-300'
-                                        : cfg.nivel === 2 ? 'text-yellow-300'
-                                        : 'text-emerald-300'
-                                    }`}>
+                                    <span className={`text-sm font-bold ${count === 0 ? 'text-text-muted/40'
+                                        : hasAlert ? 'text-red-300'
+                                          : cfg.nivel === 2 ? 'text-yellow-300'
+                                            : 'text-emerald-300'
+                                      }`}>
                                       {count}
                                     </span>
                                   </td>
@@ -232,11 +230,11 @@ function MopsDrawer({ empresaId, onClose }) {
 // ── ReviewModal ───────────────────────────────────────────────────────────────
 
 function ReviewModal({ doc, onClose, onSuccess }) {
-  const [estado, setEstado]       = useState('APROBADO')
+  const [estado, setEstado] = useState('APROBADO')
   const [comentario, setComentario] = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState('')
-  const [pdfUrl, setPdfUrl]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [pdfUrl, setPdfUrl] = useState(null)
   const [loadingPdf, setLoadingPdf] = useState(false)
 
   const fetchUrl = useCallback(async () => {
@@ -330,13 +328,13 @@ function ReviewModal({ doc, onClose, onSuccess }) {
             className={`px-5 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-2 transition-all
               ${estado === 'APROBADO' ? 'bg-green-600 hover:bg-green-500 shadow-[0_0_15px_rgba(22,163,74,0.3)]'
                 : estado === 'RECHAZADO' ? 'bg-rose-600 hover:bg-rose-500 shadow-[0_0_15px_rgba(225,29,72,0.3)]'
-                : 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]'}
+                  : 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]'}
               ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
             {loading
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : estado === 'APROBADO' ? <CheckCircle2 className="w-4 h-4" />
-              : estado === 'RECHAZADO' ? <XCircle className="w-4 h-4" />
-              : <Clock className="w-4 h-4" />}
+                : estado === 'RECHAZADO' ? <XCircle className="w-4 h-4" />
+                  : <Clock className="w-4 h-4" />}
             Confirmar {estado === 'APROBADO' ? 'Aprobación' : estado === 'RECHAZADO' ? 'Rechazo' : 'Revisión'}
           </button>
         </div>
@@ -349,17 +347,17 @@ function ReviewModal({ doc, onClose, onSuccess }) {
 // ── AdminDashboard ────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const [empresas, setEmpresas]               = useState([])
+  const [empresas, setEmpresas] = useState([])
   const [selectedEmpresa, setSelectedEmpresa] = useState(null)
-  const [documentos, setDocumentos]           = useState([])
-  const [loading, setLoading]                 = useState(true)
-  const [error, setError]                     = useState('')
-  const [searchQuery, setSearchQuery]         = useState('')
-  const [reviewDoc, setReviewDoc]             = useState(null)
-  const [downloading, setDownloading]         = useState(false)
+  const [documentos, setDocumentos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [reviewDoc, setReviewDoc] = useState(null)
+  const [downloading, setDownloading] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState({})
   const [downloadingSection, setDownloadingSection] = useState(null)
-  const [mopsEmpresaId, setMopsEmpresaId]     = useState(null)
+  const [mopsEmpresaId, setMopsEmpresaId] = useState(null)
 
   const toggleSection = title =>
     setCollapsedSections(prev => ({ ...prev, [title]: !prev[title] }))
@@ -558,11 +556,10 @@ export default function AdminDashboard() {
                         {doc.tipo_documento === 'opinion_cumplimiento' && doc.comentario_admin?.startsWith('[SISTEMA] OPC:') && (() => {
                           const sentido = doc.comentario_admin.replace('[SISTEMA] OPC:', '').trim()
                           return (
-                            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border ${
-                              sentido === 'POSITIVO'
+                            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border ${sentido === 'POSITIVO'
                                 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
                                 : 'text-red-300 bg-red-500/10 border-red-500/30'
-                            }`}>
+                              }`}>
                               {sentido === 'POSITIVO' ? '✅' : '❌'} {sentido}
                             </div>
                           )
@@ -659,13 +656,13 @@ export default function AdminDashboard() {
     )
   }
 
-  const docsLegales      = documentos.filter(d => d.grupo === 'legal')
-  const docsEdosCuenta   = documentos.filter(d => d.grupo === 'estados_cuenta')
-  const docsFinancieros  = documentos.filter(d => d.grupo === 'financieros')
+  const docsLegales = documentos.filter(d => d.grupo === 'legal')
+  const docsEdosCuenta = documentos.filter(d => d.grupo === 'estados_cuenta')
+  const docsFinancieros = documentos.filter(d => d.grupo === 'financieros')
   const docsDeclaraciones = documentos.filter(d => d.grupo === 'declaraciones')
-  const docsVigentes     = documentos.filter(d => d.grupo === 'vigentes')
-  const docsRep          = documentos.filter(d => d.grupo === 'representante')
-  const docsOtros        = documentos.filter(d => d.grupo === 'otros')
+  const docsVigentes = documentos.filter(d => d.grupo === 'vigentes')
+  const docsRep = documentos.filter(d => d.grupo === 'representante')
+  const docsOtros = documentos.filter(d => d.grupo === 'otros')
 
   const banks = {}
   docsEdosCuenta.forEach(d => {
@@ -737,17 +734,17 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <div className="space-y-2">
-          {renderTable(docsRep,           '🧑‍💼 1. Representante Legal')}
-          {renderTable(docsLegales,       '🏢 2.1. Actas / Legales')}
-          {renderTable(docsFinancieros,   '📊 2.2. Estados Financieros')}
+          {renderTable(docsRep, '1. Representante Legal')}
+          {renderTable(docsLegales, '2.1. Actas / Legales')}
+          {renderTable(docsFinancieros, '2.2. Estados Financieros')}
           {Object.entries(banks).map(([bank, items]) => (
             <div key={bank}>
-              {renderTable(items, `🏦 2.3. Estados de Cuenta${bank !== 'Otros / General' ? ` — ${bank}` : ''}`)}
+              {renderTable(items, `2.3. Estados de Cuenta${bank !== 'Otros / General' ? ` — ${bank}` : ''}`)}
             </div>
           ))}
-          {renderTable(docsDeclaraciones, '📋 2.5. Declaraciones')}
-          {renderTable(docsVigentes,      '✅ 2.6. Generales / Vigentes')}
-          {renderTable(docsOtros,         '📁 2.7. Otros Documentos')}
+          {renderTable(docsDeclaraciones, '2.5. Declaraciones')}
+          {renderTable(docsVigentes, '2.6. Generales / Vigentes')}
+          {renderTable(docsOtros, '2.7. Otros Documentos')}
         </div>
       )}
 
