@@ -74,7 +74,7 @@ DOCUMENTOS_VIGENTES = [
         "nombre": "Opinión de Cumplimiento",
         "descripcion": "Emitida por el SAT, correspondiente al mes actual",
         "categoria": "fiscal",
-        "icono": "✅",
+        "icono": "",
         "grupo": "vigentes",
     },
     {

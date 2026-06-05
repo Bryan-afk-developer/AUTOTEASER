@@ -130,6 +130,8 @@ export const api = {
 
   getEmpresaDocumentos: (empresaId) => request('GET', `/api/portal/admin/empresas/${empresaId}/documentos`),
 
+  getBuroMops: (empresaId) => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-mops`),
+
   // Admin - Revisión
   getDocumentoDetalle: (docId) =>
     request('GET', `/api/portal/admin/documentos/${docId}`),

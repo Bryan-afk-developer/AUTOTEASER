@@ -849,7 +849,7 @@ export default function ClienteDashboard({ user, onLogout }) {
             <div style={dashStyles.grid}>
               {/* Documentos legales — tarjetas individuales */}
               {docsLegal.map(doc => (
-                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
+                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} onSuccess={fetchExpediente} />
               ))}
 
               {/* Carpetas de Banco (Estados de cuenta dinámicos) */}
@@ -928,7 +928,7 @@ export default function ClienteDashboard({ user, onLogout }) {
 
               {/* Documentos vigentes — tarjetas individuales */}
               {docsVigentes.map(doc => (
-                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
+                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} onSuccess={fetchExpediente} />
               ))}
             </div>
           </div>
@@ -953,7 +953,7 @@ export default function ClienteDashboard({ user, onLogout }) {
 
             <div style={dashStyles.grid}>
               {docsOtros.map(doc => (
-                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} />
+                <DocumentCard key={doc.clave} doc={doc} onUpload={setUploadDoc} onSuccess={fetchExpediente} />
               ))}
               {docsOtros.length === 0 && (
                 <div style={{ gridColumn: '1 / -1', background: 'rgba(255,255,255,0.02)', padding: '24px', borderRadius: '16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>

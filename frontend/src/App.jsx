@@ -421,7 +421,7 @@ function App() {
             <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-rose-500'}`}></span>
             {sidebarOpen && <span className="text-xs font-semibold text-text-muted">{isOnline ? 'Servicio Activo' : 'Off'}</span>}
           </div>
-          {sidebarOpen && <span className="text-[10px] text-text-muted/60 mt-1">AutoSuite v1.0.0 BETA</span>}
+          {sidebarOpen && <span className="text-[10px] text-text-muted/60 mt-1">MVP</span>}
         </div>
       </aside>
 

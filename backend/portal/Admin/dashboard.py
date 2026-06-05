@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
 
 from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import get_todos_los_documentos_requeridos, DOCUMENTOS_REPRESENTANTE
+from app.Buro_Credito.mop_extractor import extraer_mops_desde_storage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -514,3 +515,54 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     }).eq("id", doc_id).execute()
     
     return {"url": signed_url, "filename": nombre_archivo}
+
+
+@router.get("/empresas/{empresa_id}/buro-mops")
+async def get_buro_mops(empresa_id: str):
+    """
+    Descarga el PDF de Buró de Crédito de la empresa y extrae el análisis de MOPs
+    (Manera de Pago / Histórico de Pagos).
+
+    Returns:
+        - mops_detectados: bool — si hay MOPs nivel 2+
+        - alerta: bool — si hay MOPs nivel 3+ (requieren atención)
+        - años: lista de años encontrados en el reporte (desc)
+        - niveles: dict nivel -> {año -> conteo}
+        - mops_alerta: lista de {nivel, año, conteo} para niveles 3+
+        - total_mops_nivel2_plus: total de ocurrencias nivel 2+
+    """
+    sb = get_supabase_admin()
+
+    # Verificar que la empresa existe
+    emp_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not emp_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    # Buscar el documento de Buró de Crédito
+    doc_resp = (
+        sb.table("documentos_expediente")
+        .select("id, storage_path, nombre_archivo, estado")
+        .eq("empresa_id", empresa_id)
+        .eq("tipo_documento", "buro_credito")
+        .single()
+        .execute()
+    )
+
+    if not doc_resp.data:
+        raise HTTPException(status_code=404, detail="No se encontró el documento de Buró de Crédito para esta empresa")
+
+    doc = doc_resp.data
+    storage_path = doc.get("storage_path")
+
+    if not storage_path:
+        raise HTTPException(status_code=400, detail="El Buró de Crédito aún no tiene un archivo subido")
+
+    # Extraer MOPs
+    resultado = extraer_mops_desde_storage(storage_path, sb)
+    resultado["empresa_id"] = empresa_id
+    resultado["documento_id"] = doc.get("id")
+    resultado["nombre_archivo"] = doc.get("nombre_archivo")
+    resultado["estado_documento"] = doc.get("estado")
+
+    return resultado
+
