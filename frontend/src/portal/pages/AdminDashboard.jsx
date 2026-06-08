@@ -70,6 +70,8 @@ function MopsBadge({ empresaId }) {
 }
 
 // ── PdfDrawer ──────────────────────────────────────────────────────────────────
+const pdfCache = {}
+
 function PdfDrawer({ empresaId, docId, onClose }) {
   const [pdfUrl, setPdfUrl] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -78,9 +80,24 @@ function PdfDrawer({ empresaId, docId, onClose }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+
+    const now = Date.now()
+    const cached = pdfCache[docId]
+    if (cached && cached.expiresAt > now) {
+      setPdfUrl(cached.url)
+      setLoading(false)
+      return
+    }
+
     api.descargarDocumentoIndividual(empresaId, docId, false, true)
       .then(res => {
-        if (!cancelled) setPdfUrl(res.url)
+        if (!cancelled) {
+          pdfCache[docId] = {
+            url: res.url,
+            expiresAt: now + (55 * 60 * 1000) // cache for 55 minutes
+          }
+          setPdfUrl(res.url)
+        }
       })
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })

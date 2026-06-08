@@ -542,9 +542,10 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     
     try:
         options = {} if preview else {"download": nombre_archivo}
+        exp_time = 3600 if preview else 60
         res = sb.storage.from_("expedientes_clientes").create_signed_url(
             storage_path, 
-            expires_in=60, 
+            expires_in=exp_time, 
             options=options
         )
         signed_url = res.get("signedURL") or res.get("signedUrl")
