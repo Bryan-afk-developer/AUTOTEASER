@@ -95,16 +95,21 @@ def extraer_mops_de_bytes(pdf_bytes: bytes) -> dict:
             # Analizar cada línea buscando patrón: AÑO + dígitos MOP
             for y_key in sorted(lines.keys()):
                 line_words = sorted(lines[y_key], key=lambda w: w[0])
-                texts = [w[4] for w in line_words]
+                year_words = [w for w in line_words if _is_valid_year(w[4])]
 
-                years_in_line = [t for t in texts if _is_valid_year(t)]
-                mop_digits = [t for t in texts if t in MOP_VALID]
-
-                if years_in_line and mop_digits:
-                    year = years_in_line[0]  # primer año encontrado en la línea
-                    for mop in mop_digits:
-                        nivel = int(mop)
-                        mops_por_nivel[nivel][year] += 1
+                if year_words:
+                    year_word = year_words[0]
+                    year_text = year_word[4]
+                    year_x = year_word[0]
+                    
+                    # Los verdaderos dígitos MOP en la tabla de Histórico siempre 
+                    # aparecen a la DERECHA del año. Esto evita falsos positivos 
+                    # con otros campos numéricos (como Plazo o Frecuencia) que caen a la izquierda.
+                    mop_words = [w for w in line_words if w[4] in MOP_VALID and w[0] > year_x]
+                    
+                    for w in mop_words:
+                        nivel = int(w[4])
+                        mops_por_nivel[nivel][year_text] += 1
 
     # --- Construir respuesta estructurada ---
     años_set: set[str] = set()
