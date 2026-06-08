@@ -24,7 +24,7 @@ import logging
 import re
 from collections import defaultdict
 
-import pdfplumber
+import fitz  # PyMuPDF
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +71,9 @@ def extraer_mops_de_bytes(pdf_bytes: bytes) -> dict:
     """
     mops_por_nivel: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ''
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf:
+        for page in pdf:
+            text = page.get_text() or ''
 
             # Solo procesar páginas con contenido de créditos/pagos
             keywords = ['Hist', 'Pago', 'CREDITO', 'CRÉDITO', 'Crédito', 'Mes E F']
@@ -81,7 +81,7 @@ def extraer_mops_de_bytes(pdf_bytes: bytes) -> dict:
                 continue
 
             try:
-                words = page.extract_words(x_tolerance=3, y_tolerance=3)
+                words = page.get_text("words") # list of tuples: (x0, y0, x1, y1, word, block_no, line_no, word_no)
             except Exception as e:
                 logger.warning(f"Error extrayendo palabras de página: {e}")
                 continue
@@ -89,13 +89,13 @@ def extraer_mops_de_bytes(pdf_bytes: bytes) -> dict:
             # Agrupar palabras por línea (y-position redondeada a múltiplos de 4)
             lines: dict[int, list] = defaultdict(list)
             for w in words:
-                y_key = round(float(w['top']) / 4) * 4
+                y_key = round(float(w[1]) / 4) * 4
                 lines[y_key].append(w)
 
             # Analizar cada línea buscando patrón: AÑO + dígitos MOP
             for y_key in sorted(lines.keys()):
-                line_words = sorted(lines[y_key], key=lambda w: w['x0'])
-                texts = [w['text'] for w in line_words]
+                line_words = sorted(lines[y_key], key=lambda w: w[0])
+                texts = [w[4] for w in line_words]
 
                 years_in_line = [t for t in texts if _is_valid_year(t)]
                 mop_digits = [t for t in texts if t in MOP_VALID]
