@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../lib/api'
+import AdminCompanySummary from '../components/AdminCompanySummary'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
   XCircle, Clock, Eye, Download, RefreshCw, ChevronDown, ChevronUp,
@@ -802,7 +803,14 @@ export default function AdminDashboard() {
   })
 
   return (
-    <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1 animate-fade-in">
+    <main className="max-w-[1400px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
+      
+      {/* Sidebar de Resumen (Izquierda) */}
+      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} />
+
+      {/* Contenido Principal (Derecha) */}
+      <div className="flex-1 space-y-6 min-w-0 w-full">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -877,6 +885,7 @@ export default function AdminDashboard() {
           {renderTable(docsOtros, '2.7. Otros Documentos')}
         </div>
       )}
+      </div>
 
       {/* Modal Revisión */}
       {reviewDoc && (
