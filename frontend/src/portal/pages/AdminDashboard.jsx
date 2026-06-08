@@ -78,7 +78,7 @@ function PdfDrawer({ empresaId, docId, onClose }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    api.descargarDocumentoIndividual(empresaId, docId)
+    api.descargarDocumentoIndividual(empresaId, docId, false, true)
       .then(res => {
         if (!cancelled) setPdfUrl(res.url)
       })

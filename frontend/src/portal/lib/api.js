@@ -182,9 +182,9 @@ export const api = {
     window.URL.revokeObjectURL(url)
   },
 
-  descargarDocumentoIndividual: async (empresaId, docId, isRep = false) => {
+  descargarDocumentoIndividual: async (empresaId, docId, isRep = false, preview = false) => {
     const headers = { ...authHeaders() }
-    const res = await fetch(`${BASE_URL}/api/portal/admin/empresas/${empresaId}/documentos/${docId}/descargar?is_rep=${isRep}`, { headers })
+    const res = await fetch(`${BASE_URL}/api/portal/admin/empresas/${empresaId}/documentos/${docId}/descargar?is_rep=${isRep}&preview=${preview}`, { headers })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.detail || `Error ${res.status}`)
@@ -192,6 +192,10 @@ export const api = {
     
     const data = await res.json()
     if (!data.url) throw new Error('No URL returned')
+    
+    if (preview) {
+      return data;
+    }
     
     // Create an invisible link to trigger the download directly from Supabase CDN
     const a = document.createElement('a')

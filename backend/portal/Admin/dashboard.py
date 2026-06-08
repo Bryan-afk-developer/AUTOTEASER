@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
 from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import get_todos_los_documentos_requeridos, DOCUMENTOS_REPRESENTANTE
 from app.Buro_Credito.mop_extractor import extraer_mops_desde_storage
+import re
 
 def format_generales_filename(tipo: str, original_name: str, is_rep: bool = False) -> str:
     """
@@ -518,7 +519,7 @@ async def descargar_seleccion_documentos(empresa_id: str, req: DescargarSeleccio
 import mimetypes
 
 @router.get("/empresas/{empresa_id}/documentos/{doc_id}/descargar")
-async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: bool = False):
+async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: bool = False, preview: bool = False):
     """
     Descarga un archivo individual, marcándolo como descargado.
     """
@@ -540,11 +541,11 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     nombre_archivo = format_generales_filename(tipo, raw_name, is_rep)
     
     try:
-        # Generar signed url con el parámetro download=nombre_archivo
+        options = {} if preview else {"download": nombre_archivo}
         res = sb.storage.from_("expedientes_clientes").create_signed_url(
             storage_path, 
             expires_in=60, 
-            options={"download": nombre_archivo}
+            options=options
         )
         signed_url = res.get("signedURL") or res.get("signedUrl")
         if not signed_url:
