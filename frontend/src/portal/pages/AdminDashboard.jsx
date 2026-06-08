@@ -26,6 +26,49 @@ const MOP_NIVEL_CONFIG = [
   { nivel: 7, color: 'text-red-500', bg: 'bg-red-500/20', border: 'border-red-500/40', alerta: true, desc: '180+ días' },
 ]
 
+// ── Componente MopsBadge (Alerta Inline) ──────────────────────────────────────
+function MopsBadge({ empresaId }) {
+  const [mopMax, setMopMax] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const process = (data) => {
+      let highest = 0
+      if (data.mops_alerta?.length > 0) {
+        highest = Math.max(...data.mops_alerta.map(m => m.nivel))
+      } else if (data.niveles) {
+        const levels = Object.keys(data.niveles).map(Number)
+        if (levels.length > 0) highest = Math.max(...levels)
+      }
+      // Solo mostrar de nivel 3 para arriba
+      if (highest >= 3) setMopMax(highest)
+    }
+
+    if (mopsCache[empresaId]) {
+      process(mopsCache[empresaId])
+      return
+    }
+
+    api.getBuroMops(empresaId).then(res => {
+      if (!cancelled) {
+        mopsCache[empresaId] = res
+        process(res)
+      }
+    }).catch(() => {})
+
+    return () => { cancelled = true }
+  }, [empresaId])
+
+  if (!mopMax) return null
+
+  return (
+    <div className="mt-1.5 ml-2 inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in">
+      ⚠️ MOP {mopMax}
+    </div>
+  )
+}
+
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
 const mopsCache = {}
 
@@ -574,13 +617,16 @@ export default function AdminDashboard() {
                         })()}
                         {/* Botón Ver MOPs — solo para Buró de Crédito con archivo */}
                         {doc.tipo_documento === 'buro_credito' && doc.estado !== 'FALTANTE' && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setMopsEmpresaId(selectedEmpresa.id) }}
-                            className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded-lg text-[10px] font-bold transition-colors"
-                          >
-                            <BarChart2 className="w-3 h-3" />
-                            Ver MOPs
-                          </button>
+                          <div className="flex items-center">
+                            <button
+                              onClick={e => { e.stopPropagation(); setMopsEmpresaId(selectedEmpresa.id) }}
+                              className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded-lg text-[10px] font-bold transition-colors"
+                            >
+                              <BarChart2 className="w-3 h-3" />
+                              Ver MOPs
+                            </button>
+                            <MopsBadge empresaId={selectedEmpresa.id} />
+                          </div>
                         )}
                       </td>
 
