@@ -27,18 +27,26 @@ const MOP_NIVEL_CONFIG = [
 ]
 
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
+const mopsCache = {}
 
 function MopsDrawer({ empresaId, onClose }) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState(mopsCache[empresaId] || null)
+  const [loading, setLoading] = useState(!mopsCache[empresaId])
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (mopsCache[empresaId]) return // Evitar petición si ya está en caché
+
     let cancelled = false
     setLoading(true)
     setError('')
     api.getBuroMops(empresaId)
-      .then(res => { if (!cancelled) setData(res) })
+      .then(res => { 
+        if (!cancelled) {
+          mopsCache[empresaId] = res
+          setData(res) 
+        }
+      })
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
