@@ -69,6 +69,62 @@ function MopsBadge({ empresaId }) {
   )
 }
 
+// ── PdfDrawer ──────────────────────────────────────────────────────────────────
+function PdfDrawer({ empresaId, docId, onClose }) {
+  const [pdfUrl, setPdfUrl] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    api.descargarDocumentoIndividual(empresaId, docId)
+      .then(res => {
+        if (!cancelled) setPdfUrl(res.url)
+      })
+      .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [empresaId, docId])
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[900] animate-fade-in" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-3xl bg-[#111113] border-l border-border shadow-2xl z-[910] flex flex-col animate-slide-in">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
+          <h2 className="text-lg font-bold text-text-main flex items-center gap-2">
+            <FileText className="w-5 h-5 text-primary-400" />
+            Vista Previa de Opinión de Cumplimiento
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-surface/80 rounded-xl text-text-muted transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 bg-black/50 relative">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+            </div>
+          )}
+          {error && (
+            <div className="absolute inset-0 flex items-center justify-center text-red-400 px-6 text-center">
+              {error}
+            </div>
+          )}
+          {pdfUrl && (
+            <iframe 
+               src={pdfUrl} 
+               className="w-full h-full border-none bg-white"
+               title="Vista Previa PDF"
+            />
+          )}
+        </div>
+      </div>
+    </>,
+    document.body
+  )
+}
+
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
 const mopsCache = {}
 
@@ -409,6 +465,7 @@ export default function AdminDashboard() {
   const [collapsedSections, setCollapsedSections] = useState({})
   const [downloadingSection, setDownloadingSection] = useState(null)
   const [mopsEmpresaId, setMopsEmpresaId] = useState(null)
+  const [pdfViewerDoc, setPdfViewerDoc] = useState(null)
 
   const toggleSection = title =>
     setCollapsedSections(prev => ({ ...prev, [title]: !prev[title] }))
@@ -607,12 +664,14 @@ export default function AdminDashboard() {
                         {doc.tipo_documento === 'opinion_cumplimiento' && doc.comentario_admin?.startsWith('[SISTEMA] OPC:') && (() => {
                           const sentido = doc.comentario_admin.replace('[SISTEMA] OPC:', '').trim()
                           return (
-                            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border ${sentido === 'POSITIVO'
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setPdfViewerDoc({ empresaId: selectedEmpresa.id, docId: doc.id }) }}
+                              className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border hover:opacity-80 transition-opacity cursor-pointer ${sentido === 'POSITIVO'
                                 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
                                 : 'text-red-300 bg-red-500/10 border-red-500/30'
                               }`}>
                               {sentido === 'POSITIVO' ? '✅' : '❌'} {sentido}
-                            </div>
+                            </button>
                           )
                         })()}
                         {/* Botón Ver MOPs — solo para Buró de Crédito con archivo */}
@@ -819,6 +878,15 @@ export default function AdminDashboard() {
         <MopsDrawer
           empresaId={mopsEmpresaId}
           onClose={() => setMopsEmpresaId(null)}
+        />
+      )}
+
+      {/* PDF Drawer */}
+      {pdfViewerDoc && (
+        <PdfDrawer
+          empresaId={pdfViewerDoc.empresaId}
+          docId={pdfViewerDoc.docId}
+          onClose={() => setPdfViewerDoc(null)}
         />
       )}
     </main>
