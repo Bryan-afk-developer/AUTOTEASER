@@ -23,6 +23,44 @@ from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import get_todos_los_documentos_requeridos, DOCUMENTOS_REPRESENTANTE
 from app.Buro_Credito.mop_extractor import extraer_mops_desde_storage
 
+def format_generales_filename(tipo: str, original_name: str, is_rep: bool = False) -> str:
+    """
+    Format names for '6. GENERALES' section.
+    1. CONSTANCIA SITUACIÓN FISCAL (1. CSF - PM - AAAA.MM.DD)
+    2. COMPROBANTE DOMICILIO (2. CD - PM - AAAA.MM.DD)
+    3. OPINIÓN DE CUMPLIMIENTO (3. OPC - PM - AAAA.MM.DD)
+    4. FIEL (4. FIEL - PM - AAAA.MM.DD)
+    """
+    ext = ""
+    if "." in original_name:
+        partes = original_name.rsplit(".", 1)
+        ext = "." + partes[-1]
+        
+    date_str = ""
+    match = re.search(r"(\d{4})[.-](\d{2})[.-](\d{2})", original_name)
+    if match:
+        date_str = f" - {match.group(1)}.{match.group(2)}.{match.group(3)}"
+        
+    entity = "PF" if is_rep else "PM"
+    
+    if tipo in ("csf_empresa", "csf_representante"):
+        if date_str: return f"1. CSF - {entity}{date_str}{ext}"
+        return f"CONSTANCIA SITUACION FISCAL{ext}"
+        
+    elif tipo in ("comprobante_domicilio_empresa", "comprobante_domicilio_representante"):
+        if date_str: return f"2. CD - {entity}{date_str}{ext}"
+        return f"COMPROBANTE DOMICILIO{ext}"
+        
+    elif tipo == "opinion_cumplimiento":
+        if date_str: return f"3. OPC - {entity}{date_str}{ext}"
+        return f"OPINION DE CUMPLIMIENTO{ext}"
+        
+    elif tipo in ("fiel_empresa", "fiel_representante", "fiel"):
+        if date_str: return f"4. FIEL - {entity}{date_str}{ext}"
+        return f"FIEL{ext}"
+        
+    return original_name
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -282,8 +320,10 @@ async def descargar_todos_documentos(empresa_id: str):
                 continue
                 
             try:
-                nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+                raw_name = doc.get("nombre_archivo", storage_path.split("/")[-1])
                 tipo = doc.get("tipo_documento", "doc")
+                is_rep = tipo in CLAVES_REPRESENTANTE
+                nombre_archivo = format_generales_filename(tipo, raw_name, is_rep)
                 
                 # ==== LÓGICA DE MAPEO DE CARPETAS ====
                 # Directorio Raíz: GRUPO
@@ -429,6 +469,8 @@ async def descargar_seleccion_documentos(empresa_id: str, req: DescargarSeleccio
                 
             nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
             tipo = doc.get("tipo_documento", "doc")
+            is_rep = tipo in CLAVES_REPRESENTANTE
+            nombre_archivo = format_generales_filename(tipo, nombre_archivo, is_rep)
             
             # Al descargar una sección específica, usamos una estructura plana
             ruta_final = nombre_archivo
@@ -492,7 +534,10 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
     if not storage_path:
         raise HTTPException(status_code=400, detail="El documento no tiene un archivo asociado")
         
-    nombre_archivo = doc.get("nombre_archivo", storage_path.split("/")[-1])
+    raw_name = doc.get("nombre_archivo", storage_path.split("/")[-1])
+    tipo = doc.get("tipo_documento", "doc")
+    is_rep = tipo in CLAVES_REPRESENTANTE
+    nombre_archivo = format_generales_filename(tipo, raw_name, is_rep)
     
     try:
         # Generar signed url con el parámetro download=nombre_archivo
