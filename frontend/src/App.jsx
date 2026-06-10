@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import { motion, AnimatePresence } from 'framer-motion'
 import PortalApp from './portal/PortalApp'
 import AdminDashboard from './portal/pages/AdminDashboard'
 import LoginPage from './portal/pages/LoginPage'
@@ -8,7 +9,7 @@ import AutoCafView from './AutoCafView'
 import {
   UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2,
   AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, Menu,
-  Layers, Plus, Calendar, Database, Sparkles, Settings, ChevronLeft
+  Layers, Plus, Calendar, Database, Sparkles, Settings, ChevronLeft, ChevronRight
 } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -321,114 +322,161 @@ function App() {
       )}
 
       {/* ── Sidebar ── */}
-      <aside
-        className={`fixed top-0 left-0 h-screen z-40 flex flex-col bg-card border-r border-border
-          transition-all duration-300 ease-in-out
-          ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-16 md:translate-x-0'}`}
-        style={{ overflow: sidebarOpen || window.innerWidth >= 768 ? 'visible' : 'hidden' }}
+      <motion.aside
+        initial={false}
+        animate={{ width: sidebarOpen ? 260 : 72 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="fixed top-0 left-0 h-screen z-40 flex flex-col bg-[#0a0a0c]/95 backdrop-blur-xl border-r border-white/5 md:sticky shadow-[10px_0_30px_rgba(0,0,0,0.5)]"
       >
-        {/* Logo */}
-        <div className={`flex items-center border-b border-border shrink-0 transition-all duration-300
-          ${sidebarOpen ? 'px-4 py-1 justify-between' : 'px-2 py-3 justify-center'}`}>
-          {sidebarOpen && (
-            <img src="/Logo.webp" alt="Logo" className="h-50 w-auto object-contain drop-shadow-[0_0_12px_rgba(230,57,70,0.3)]" />
+        {/* Floating Toggle Button (Circular) */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 bg-[#1e1e24] border border-white/10 rounded-full flex items-center justify-center hover:bg-[#2a2a32] hover:scale-110 transition-all z-50 shadow-[0_0_15px_rgba(0,0,0,0.8)] group hidden md:flex"
+        >
+          {sidebarOpen ? (
+            <ChevronLeft className="w-3.5 h-3.5 text-text-muted group-hover:text-white transition-colors" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-text-muted group-hover:text-white transition-colors" />
           )}
+        </button>
+
+        {/* Logo */}
+        <div className={`flex items-center justify-center shrink-0 transition-all duration-300 relative overflow-hidden
+          ${sidebarOpen ? 'py-6 h-32' : 'py-4 h-20'}`}>
+          <img
+            src="/Logo.webp"
+            alt="Logo"
+            className={`w-auto object-contain drop-shadow-[0_0_20px_rgba(230,57,70,0.5)] transition-all duration-300 ${sidebarOpen ? 'h-20' : 'h-10'}`}
+          />
+
+          {/* Mobile toggle inside logo bar */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-lg hover:bg-surface/60 text-text-muted hover:text-text-main transition-colors"
-            title={sidebarOpen ? 'Colapsar sidebar' : 'Expandir sidebar'}
+            className="md:hidden absolute right-4 p-2 rounded-lg hover:bg-white/5 text-text-muted"
           >
-            {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            <Menu className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto overflow-x-hidden">
-          {sidebarOpen && (
-            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-3 mb-2">Herramientas</div>
-          )}
+        <nav className="flex-1 px-3 py-4 space-y-2 overflow-y-auto overflow-x-hidden">
+          <AnimatePresence>
+            {sidebarOpen && (
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-3 mb-3 mt-2">
+                Herramientas
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* AutoTeaser */}
-          <button
+          <motion.button
+            whileHover={{ x: 4 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setActiveSection('teaser')}
             title="AutoTeaser"
-            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+            className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
               ${activeSection === 'teaser'
-                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30'
-                : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
+                ? 'bg-gradient-to-r from-primary-500/10 to-transparent border border-primary-500/20 shadow-[inset_4px_0_0_rgba(99,102,241,1)]'
+                : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
-            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
-              <span className="text-sm">⚡</span>
-              {sidebarOpen && <span>AutoTeaser</span>}
+            <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
+              <span className={`text-base transition-colors ${activeSection === 'teaser' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}>⚡</span>
+              <AnimatePresence>
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'teaser' ? 'text-primary-300 font-bold' : ''}`}>AutoTeaser</motion.span>}
+              </AnimatePresence>
             </div>
-            {sidebarOpen && documents.length > 0 && (
-              <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                {documents.length}
-              </span>
-            )}
-          </button>
+            <AnimatePresence>
+              {sidebarOpen && documents.length > 0 && (
+                <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="bg-primary-500/20 text-primary-400 text-[10px] px-2 py-0.5 rounded-full font-black border border-primary-500/30">
+                  {documents.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
 
           {/* AutoCAF */}
-          <button
+          <motion.button
+            whileHover={{ x: 4 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setActiveSection('caf')}
             title="AutoCAF"
-            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+            className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-2
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
               ${activeSection === 'caf'
-                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30'
-                : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
+                ? 'bg-gradient-to-r from-primary-500/10 to-transparent border border-primary-500/20 shadow-[inset_4px_0_0_rgba(99,102,241,1)]'
+                : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
-            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
-              <span className="text-sm">📊</span>
-              {sidebarOpen && <span>AutoCAF</span>}
+            <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
+              <span className={`text-base transition-colors ${activeSection === 'caf' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}>📊</span>
+              <AnimatePresence>
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'caf' ? 'text-primary-300 font-bold' : ''}`}>AutoCAF</motion.span>}
+              </AnimatePresence>
             </div>
-            {sidebarOpen && cafDocuments.length > 0 && (
-              <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                {cafDocuments.length}
-              </span>
-            )}
-          </button>
+            <AnimatePresence>
+              {sidebarOpen && cafDocuments.length > 0 && (
+                <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="bg-primary-500/20 text-primary-400 text-[10px] px-2 py-0.5 rounded-full font-black border border-primary-500/30">
+                  {cafDocuments.length}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
 
           {/* Divider */}
-          <div className="my-3 border-t border-border/60" />
-          {sidebarOpen && (
-            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider px-3 mb-2">Intranet</div>
-          )}
+          <div className="my-6 border-t border-white/5 mx-2" />
+
+          <AnimatePresence>
+            {sidebarOpen && (
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] px-3 mb-3">
+                Intranet
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Portal Admin */}
-          <button
+          <motion.button
+            whileHover={{ x: 4 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => setActiveSection('portal')}
             title="Expediente Rojo"
-            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border
+            className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
               ${activeSection === 'portal'
-                ? 'bg-primary-500/10 text-primary-400 border-primary-500/30 shadow-[0_0_12px_rgba(230,57,70,0.08)]'
-                : 'text-text-muted hover:text-text-main hover:bg-surface/50 border-transparent'}`}
+                ? 'bg-gradient-to-r from-rose-500/10 to-transparent border border-rose-500/20 shadow-[inset_4px_0_0_rgba(244,63,94,1)]'
+                : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
-            <div className={`flex items-center ${sidebarOpen ? 'gap-2.5' : ''}`}>
-              <span className="text-sm">🔴</span>
-              {sidebarOpen && <span>Expediente Rojo</span>}
+            <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
+              <span className={`text-base transition-colors ${activeSection === 'portal' ? 'text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-text-muted group-hover:text-rose-400'}`}>🔴</span>
+              <AnimatePresence>
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'portal' ? 'text-rose-300 font-bold' : ''}`}>Expediente Rojo</motion.span>}
+              </AnimatePresence>
             </div>
-            {sidebarOpen && (
-              <span className="bg-primary-500/20 text-primary-400 text-[10px] px-1.5 py-0.5 rounded-full font-bold">Admin</span>
-            )}
-          </button>
+            <AnimatePresence>
+              {sidebarOpen && (
+                <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="bg-rose-500/20 text-rose-400 text-[9px] px-2 py-0.5 rounded-full font-black tracking-widest uppercase border border-rose-500/30">
+                  Admin
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
         </nav>
 
-        <div className={`border-t border-border flex flex-col gap-1 bg-surface/20 transition-all
-          ${sidebarOpen ? 'p-4' : 'p-2 items-center'}`}>
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-rose-500'}`}></span>
-            {sidebarOpen && <span className="text-xs font-semibold text-text-muted">{isOnline ? 'Servicio Activo' : 'Off'}</span>}
+        <div className={`border-t border-white/5 flex flex-col gap-1 bg-[#050505]/50 transition-all overflow-hidden
+          ${sidebarOpen ? 'p-5' : 'p-3 items-center'}`}>
+          <div className="flex items-center gap-3">
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.8)]'}`}></span>
+            <AnimatePresence>
+              {sidebarOpen && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-xs font-bold text-white/70 whitespace-nowrap">{isOnline ? 'Servicio Activo' : 'Desconectado'}</motion.span>}
+            </AnimatePresence>
           </div>
-          {sidebarOpen && <span className="text-[10px] text-text-muted/60 mt-1">MVP</span>}
+          <AnimatePresence>
+            {sidebarOpen && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-[10px] text-white/30 mt-1 font-black tracking-[0.3em] px-1 ml-5">MVP VER. 2.0</motion.span>}
+          </AnimatePresence>
         </div>
-      </aside>
+      </motion.aside>
 
       {/* ── Main Content Area ── */}
       <div
         className="flex-1 flex flex-col min-w-0 min-h-screen transition-all duration-300"
-        style={{ marginLeft: sidebarOpen ? '256px' : (window.innerWidth >= 768 ? '64px' : '0px') }}
       >
 
         {/* Header */}

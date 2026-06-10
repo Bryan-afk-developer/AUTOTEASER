@@ -75,18 +75,77 @@ export default function AdminCompanySummary({ empresa, documentos }) {
   const totalBancos = banks.size
 
   // Check representative documents
+  const ineDoc = documentos?.find(d => d.tipo_documento === 'ine_representante')
+  const hasINE = ineDoc && ineDoc.estado !== 'FALTANTE'
+  
+  let ineName = 'No disponible'
+  if (hasINE && ineDoc?.nombre_archivo) {
+    const match = ineDoc.nombre_archivo.match(/1\. INE - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+    if (match && match[1]) {
+      ineName = match[1]
+    } else {
+      // Fallback
+      ineName = ineDoc.nombre_archivo
+    }
+  }
+
+  const cdEmpresaDoc = documentos?.find(d => d.tipo_documento === 'comprobante_domicilio_empresa')
+  const hasCDEmpresa = cdEmpresaDoc && cdEmpresaDoc.estado !== 'FALTANTE'
+  let cdEmpresaName = 'No disponible'
+  if (hasCDEmpresa && cdEmpresaDoc?.nombre_archivo) {
+    const match = cdEmpresaDoc.nombre_archivo.match(/3\. CD - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+    if (match && match[1]) {
+      cdEmpresaName = match[1].replace(' - ', ' | ')
+    } else {
+      cdEmpresaName = cdEmpresaDoc.nombre_archivo
+    }
+  }
+
+  const cdRepDoc = documentos?.find(d => d.tipo_documento === 'comprobante_domicilio_representante')
+  const hasCDRep = cdRepDoc && cdRepDoc.estado !== 'FALTANTE'
+  let cdRepName = 'No disponible'
+  if (hasCDRep && cdRepDoc?.nombre_archivo) {
+    const match = cdRepDoc.nombre_archivo.match(/2\. CD - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+    if (match && match[1]) {
+      cdRepName = match[1].replace(' - ', ' | ')
+    } else {
+      cdRepName = cdRepDoc.nombre_archivo
+    }
+  }
+
+  const csfEmpresaDoc = documentos?.find(d => d.tipo_documento === 'csf_empresa')
+  const hasCSFEmpresa = csfEmpresaDoc && csfEmpresaDoc.estado !== 'FALTANTE'
+  let csfEmpresaName = 'No disponible'
+  if (hasCSFEmpresa && csfEmpresaDoc?.nombre_archivo) {
+    const match = csfEmpresaDoc.nombre_archivo.match(/1\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+    if (match && match[1]) {
+      csfEmpresaName = match[1]
+    } else {
+      csfEmpresaName = csfEmpresaDoc.nombre_archivo
+    }
+  }
+
+  const csfRepDoc = documentos?.find(d => d.tipo_documento === 'csf_representante')
+  const hasCSF = csfRepDoc && csfRepDoc.estado !== 'FALTANTE'
+  let csfRepName = 'No disponible'
+  if (hasCSF && csfRepDoc?.nombre_archivo) {
+    const match = csfRepDoc.nombre_archivo.match(/3\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+    if (match && match[1]) {
+      csfRepName = match[1]
+    } else {
+      csfRepName = csfRepDoc.nombre_archivo
+    }
+  }
+
   const isUploaded = (clave) => {
     const doc = documentos?.find(d => d.tipo_documento === clave)
     return doc && doc.estado !== 'FALTANTE'
   }
 
-  const hasINE = isUploaded('ine_representante')
-  const hasCSF = isUploaded('csf_representante')
   const hasMatrimonio = isUploaded('acta_matrimonio')
-  const hasCD = isUploaded('comprobante_domicilio_representante')
 
   return (
-    <div className="w-full xl:w-80 flex-shrink-0 flex flex-col gap-6 animate-fade-in">
+    <div className="w-full xl:w-[26rem] flex-shrink-0 flex flex-col gap-6 animate-fade-in">
       
       {/* ── CARD: Resumen de Empresa ────────────────────────────── */}
       <div className="bg-[#111113] border border-border rounded-2xl overflow-hidden shadow-xl">
@@ -161,8 +220,8 @@ export default function AdminCompanySummary({ empresa, documentos }) {
                 <MapPin className="w-3.5 h-3.5 text-text-muted" />
                 <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Ubicación CD</span>
               </div>
-              <p className="text-sm text-text-muted italic bg-surface/50 border border-border/50 rounded-lg px-3 py-2">
-                No disponible
+              <p className={`text-sm ${hasCDEmpresa ? 'text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 not-italic' : 'text-text-muted italic bg-surface/50 border border-border/50'} rounded-lg px-3 py-2 truncate`} title={cdEmpresaName}>
+                {cdEmpresaName}
               </p>
             </div>
             
@@ -171,8 +230,8 @@ export default function AdminCompanySummary({ empresa, documentos }) {
                 <MapPin className="w-3.5 h-3.5 text-text-muted" />
                 <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Ubicación CSF</span>
               </div>
-              <p className="text-sm text-text-muted italic bg-surface/50 border border-border/50 rounded-lg px-3 py-2">
-                No disponible
+              <p className={`text-sm ${hasCSFEmpresa ? 'text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 not-italic' : 'text-text-muted italic bg-surface/50 border border-border/50'} rounded-lg px-3 py-2 truncate`} title={csfEmpresaName}>
+                {csfEmpresaName}
               </p>
             </div>
           </div>
@@ -205,39 +264,40 @@ export default function AdminCompanySummary({ empresa, documentos }) {
               </div>
               {hasINE ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400 opacity-50" />}
             </div>
-            <p className="text-sm text-text-muted italic bg-surface/50 border border-border/50 rounded-lg px-3 py-2">
-              No disponible
+            <p className={`text-sm ${hasINE ? 'text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 not-italic' : 'text-text-muted italic bg-surface/50 border border-border/50'} rounded-lg px-3 py-2 truncate`} title={ineName}>
+              {ineName}
             </p>
           </div>
 
-          {/* CSF y Matrimonio */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Constancia (CSF)</span>
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
-                  hasCSF 
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                    : 'bg-rose-500/5 border-rose-500/20 text-rose-400/50'
-                }`}>
-                  {hasCSF ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  <span className="text-xs font-bold">{hasCSF ? 'Subida' : 'Faltante'}</span>
-                </div>
+          {/* Ubicación CSF (Rep) */}
+          <div className="group">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-text-muted" />
+                <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Ubicación CSF (Rep)</span>
               </div>
+              {hasCSF ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400 opacity-50" />}
             </div>
-            
-            <div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider">Acta Matrimonio</span>
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
-                  hasMatrimonio 
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                    : 'bg-rose-500/5 border-rose-500/20 text-rose-400/50'
-                }`}>
-                  {hasMatrimonio ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  <span className="text-xs font-bold">{hasMatrimonio ? 'Subida' : 'Faltante'}</span>
-                </div>
+            <p className={`text-sm ${hasCSF ? 'text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 not-italic' : 'text-text-muted italic bg-surface/50 border border-border/50'} rounded-lg px-3 py-2 truncate`} title={csfRepName}>
+              {hasCSF ? csfRepName : 'No disponible'}
+            </p>
+          </div>
+
+          {/* Acta Matrimonio */}
+          <div className="group">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5 text-text-muted" />
+                <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Acta Matrimonio</span>
               </div>
+              {hasMatrimonio ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400 opacity-50" />}
+            </div>
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+              hasMatrimonio 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                : 'bg-rose-500/5 border-rose-500/20 text-rose-400/50'
+            }`}>
+              <span className="text-xs font-bold">{hasMatrimonio ? 'Subida' : 'Faltante'}</span>
             </div>
           </div>
 
@@ -250,10 +310,10 @@ export default function AdminCompanySummary({ empresa, documentos }) {
                 <MapPin className="w-3.5 h-3.5 text-text-muted" />
                 <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Ubicación CD (Rep)</span>
               </div>
-              {hasCD ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400 opacity-50" />}
+              {hasCDRep ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-rose-400 opacity-50" />}
             </div>
-            <p className="text-sm text-text-muted italic bg-surface/50 border border-border/50 rounded-lg px-3 py-2">
-              No disponible
+            <p className={`text-sm ${hasCDRep ? 'text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 not-italic' : 'text-text-muted italic bg-surface/50 border border-border/50'} rounded-lg px-3 py-2 truncate`} title={cdRepName}>
+              {cdRepName}
             </p>
           </div>
 

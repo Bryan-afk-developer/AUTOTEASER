@@ -23,6 +23,9 @@ from typing import List
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import DOCUMENTOS_REPRESENTANTE, calcular_estados_de_cuenta
+from app.INE.extractor import extract_name_from_ine
+from app.Comprobante_Domicilio.extractor import extract_location_from_cd
+from app.SAT.CSF_Location_Extractor import extract_csf_location
 
 # Bank detection imports
 try:
@@ -95,11 +98,60 @@ async def subir_documento(
             if banco_resp.data:
                 nombre_carpeta = banco_resp.data["nombre_banco"]
     
+    import unicodedata
+    import re
+
+    def sanitize_filename(name: str) -> str:
+        # Remover acentos y caracteres especiales
+        name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+        # Reemplazar todo lo que no sea alfanumérico o punto por guion bajo
+        name = re.sub(r'[^a-zA-Z0-9\.]', '_', name)
+        # Colapsar guiones bajos múltiples
+        return re.sub(r'_+', '_', name)
+
+    original_filename = file.filename
+    if tipo_documento == "ine_representante":
+        try:
+            extracted_name = extract_name_from_ine(file_bytes=content, filename=file.filename)
+            if extracted_name and extracted_name not in ["Nombre no detectado", "Error al leer documento"]:
+                ext = ""
+                if "." in file.filename:
+                    ext = "." + file.filename.split(".")[-1]
+                original_filename = f"1. INE - {extracted_name}{ext}"
+        except Exception as e:
+            logger.error(f"Error extrayendo nombre de INE durante subida: {e}")
+            
+    elif tipo_documento in ["comprobante_domicilio_representante", "comprobante_domicilio_empresa"]:
+        try:
+            extracted_loc = extract_location_from_cd(file_bytes=content, filename=file.filename)
+            if extracted_loc and extracted_loc != "Ubicacion no detectada":
+                ext = ""
+                if "." in file.filename:
+                    ext = "." + file.filename.split(".")[-1]
+                prefix = "2. CD - " if "representante" in tipo_documento else "3. CD - "
+                original_filename = f"{prefix}{extracted_loc}{ext}"
+        except Exception as e:
+            logger.error(f"Error extrayendo ubicacion de CD durante subida: {e}")
+            
+    elif tipo_documento in ["csf_empresa", "csf_representante"]:
+        try:
+            extracted_loc = extract_csf_location(file_bytes=content, filename=file.filename)
+            if extracted_loc and extracted_loc != "Ubicacion no detectada":
+                ext = ""
+                if "." in file.filename:
+                    ext = "." + file.filename.split(".")[-1]
+                prefix = "3. CSF - " if "representante" in tipo_documento else "1. CSF - "
+                original_filename = f"{prefix}{extracted_loc}{ext}"
+        except Exception as e:
+            logger.error(f"Error extrayendo ubicacion de CSF durante subida: {e}")
+
+    safe_filename = sanitize_filename(original_filename)
     file_id = str(uuid.uuid4())[:8]
     if nombre_carpeta:
-        storage_path = f"empresas/{empresa_id}/estados_cuenta/{nombre_carpeta}/{file_id}_{file.filename}"
+        safe_carpeta = sanitize_filename(nombre_carpeta)
+        storage_path = f"empresas/{empresa_id}/estados_cuenta/{safe_carpeta}/{file_id}_{safe_filename}"
     else:
-        storage_path = f"empresas/{empresa_id}/{tipo_documento}/{file_id}_{file.filename}"
+        storage_path = f"empresas/{empresa_id}/{tipo_documento}/{file_id}_{safe_filename}"
 
     # 5. Subir a Supabase Storage
     try:
@@ -131,7 +183,7 @@ async def subir_documento(
     doc_data = {
         "empresa_id": empresa_id,
         "tipo_documento": tipo_documento,
-        "nombre_archivo": file.filename,
+        "nombre_archivo": original_filename,
         "storage_path": storage_path,
         "estado": "PENDIENTE",
         "comentario_admin": None,  # Limpia comentarios previos al re-subir

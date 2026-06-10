@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import api from '../lib/api'
 import AdminCompanySummary from '../components/AdminCompanySummary'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
   XCircle, Clock, Eye, Download, RefreshCw, ChevronDown, ChevronUp,
-  BarChart2, AlertTriangle, X,
+  BarChart2, AlertTriangle, X, ChevronRight,
 } from 'lucide-react'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -73,12 +74,13 @@ function MopsBadge({ empresaId }) {
 // ── PdfDrawer ──────────────────────────────────────────────────────────────────
 const pdfCache = {}
 
-function PdfDrawer({ empresaId, docId, onClose }) {
+function PdfDrawer({ isOpen, empresaId, docId, onClose }) {
   const [pdfUrl, setPdfUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!isOpen || !docId) return
     let cancelled = false
     setLoading(true)
 
@@ -95,7 +97,7 @@ function PdfDrawer({ empresaId, docId, onClose }) {
         if (!cancelled) {
           pdfCache[docId] = {
             url: res.url,
-            expiresAt: now + (55 * 60 * 1000) // cache for 55 minutes
+            expiresAt: now + (55 * 60 * 1000)
           }
           setPdfUrl(res.url)
         }
@@ -103,42 +105,80 @@ function PdfDrawer({ empresaId, docId, onClose }) {
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [empresaId, docId])
+  }, [isOpen, empresaId, docId])
 
   return createPortal(
-    <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[900] animate-fade-in" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-3xl bg-[#111113] border-l border-border shadow-2xl z-[910] flex flex-col animate-slide-in">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
-          <h2 className="text-lg font-bold text-text-main flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary-400" />
-            Vista Previa de Opinión de Cumplimiento
-          </h2>
-          <button onClick={onClose} className="p-2 hover:bg-surface/80 rounded-xl text-text-muted transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="flex-1 bg-black/50 relative">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[900]" 
+            onClick={onClose} 
+          />
+          <motion.div 
+            initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed right-0 top-0 h-full w-full max-w-3xl bg-[#111113] border-l border-border shadow-2xl z-[910] flex flex-col"
+          >
+            {/* Floating Arrow Close Button */}
+            <motion.button 
+              initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
+              transition={{ delay: 0.3 }}
+              onClick={onClose} 
+              className="absolute -left-12 top-1/2 -translate-y-1/2 w-12 h-16 bg-[#111113] border-y border-l border-border rounded-l-xl flex items-center justify-center hover:bg-surface hover:w-14 hover:-left-14 transition-all z-50 shadow-[-10px_0_20px_rgba(0,0,0,0.5)] group"
+            >
+              <ChevronRight className="w-6 h-6 text-text-muted group-hover:text-primary-400 transition-colors" />
+            </motion.button>
+
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-surface">
+              <div className="w-10 h-10 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(225,29,72,0.1)]">
+                <FileText className="w-5 h-5 text-primary-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-text-main leading-tight">
+                  Vista Previa del Documento
+                </h2>
+                <p className="text-xs text-text-muted">Previsualización segura y rápida</p>
+              </div>
             </div>
-          )}
-          {error && (
-            <div className="absolute inset-0 flex items-center justify-center text-red-400 px-6 text-center">
-              {error}
+            
+            <div className="flex-1 bg-black/50 relative overflow-hidden">
+              <AnimatePresence>
+                {loading && (
+                  <motion.div 
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-10 backdrop-blur-sm"
+                  >
+                    <Loader2 className="w-10 h-10 animate-spin text-primary-400 mb-4 drop-shadow-[0_0_10px_rgba(225,29,72,0.5)]" />
+                    <p className="text-sm font-semibold text-text-main animate-pulse">Obteniendo vista previa segura...</p>
+                  </motion.div>
+                )}
+                {error && (
+                  <motion.div 
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="absolute inset-0 flex items-center justify-center text-red-400 px-6 text-center z-10"
+                  >
+                    ⚠️ {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {pdfUrl && (
+                <motion.iframe 
+                   initial={{ opacity: 0, scale: 0.95 }}
+                   animate={{ opacity: 1, scale: 1 }}
+                   transition={{ delay: 0.2 }}
+                   src={pdfUrl} 
+                   className="w-full h-full border-none bg-white relative z-0"
+                   title="Vista Previa PDF"
+                />
+              )}
             </div>
-          )}
-          {pdfUrl && (
-            <iframe 
-               src={pdfUrl} 
-               className="w-full h-full border-none bg-white"
-               title="Vista Previa PDF"
-            />
-          )}
-        </div>
-      </div>
-    </>,
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>,
     document.body
   )
 }
@@ -146,13 +186,18 @@ function PdfDrawer({ empresaId, docId, onClose }) {
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
 const mopsCache = {}
 
-function MopsDrawer({ empresaId, onClose }) {
+function MopsDrawer({ isOpen, empresaId, onClose }) {
   const [data, setData] = useState(mopsCache[empresaId] || null)
   const [loading, setLoading] = useState(!mopsCache[empresaId])
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (mopsCache[empresaId]) return // Evitar petición si ya está en caché
+    if (!isOpen || !empresaId) return
+    if (mopsCache[empresaId]) {
+      setData(mopsCache[empresaId])
+      setLoading(false)
+      return
+    }
 
     let cancelled = false
     setLoading(true)
@@ -167,94 +212,122 @@ function MopsDrawer({ empresaId, onClose }) {
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [empresaId])
+  }, [isOpen, empresaId])
 
   const anios = data?.anios || data?.años || []
   const niveles = data?.niveles || {}
 
   return createPortal(
-    <>
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[900] animate-fade-in"
-        onClick={onClose}
-      />
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Overlay */}
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[900]"
+            onClick={onClose}
+          />
 
-      {/* Drawer */}
-      <div
-        className="fixed right-0 top-0 h-full w-full max-w-2xl bg-[#111113] border-l border-border shadow-2xl z-[910] flex flex-col"
-        style={{ animation: 'slideInRight 0.25s ease-out' }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-surface/50 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center justify-center">
-              <BarChart2 className="w-4 h-4 text-primary-400" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-text-main">Análisis de MOPs</h2>
-              <p className="text-xs text-text-muted">Buró de Crédito — Histórico de Pagos</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/5 text-text-muted hover:text-text-main transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+          {/* Drawer */}
+          <motion.div
+            initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed right-0 top-0 h-full w-full max-w-2xl bg-[#111113] border-l border-border shadow-2xl z-[910] flex flex-col"
+          >
+            {/* Floating Arrow Close Button */}
+            <motion.button 
+              initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }}
+              transition={{ delay: 0.3 }}
+              onClick={onClose} 
+              className="absolute -left-12 top-1/2 -translate-y-1/2 w-12 h-16 bg-[#111113] border-y border-l border-border rounded-l-xl flex items-center justify-center hover:bg-surface hover:w-14 hover:-left-14 transition-all z-50 shadow-[-10px_0_20px_rgba(0,0,0,0.5)] group"
+            >
+              <ChevronRight className="w-6 h-6 text-text-muted group-hover:text-primary-400 transition-colors" />
+            </motion.button>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 text-text-muted">
-              <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
-              <p className="text-sm">Analizando PDF del Buró de Crédito...</p>
-              <p className="text-xs opacity-60">Esto puede tomar unos segundos</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl p-4 text-sm">
-              ⚠️ {error}
-            </div>
-          )}
-
-          {data && !loading && (
-            <>
-              {/* Banner alerta */}
-              {data.alerta ? (
-                <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-red-300">⚠️ MOPs de alto riesgo detectados</p>
-                    <p className="text-xs text-red-400/80 mt-0.5">
-                      Se encontraron {data.mops_alerta?.length || 0} registros con nivel de atraso 3 o superior.
-                      Revisa los créditos con atraso para evaluar el riesgo crediticio.
-                    </p>
-                  </div>
-                </div>
-              ) : !data.mops_detectados && (
-                <div className="flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-emerald-300">Sin atrasos significativos</p>
-                    <p className="text-xs text-emerald-400/80 mt-0.5">No se detectaron MOPs nivel 2 o superior en el reporte.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Leyenda */}
-              <div>
-                <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Leyenda de MOPs</h3>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {MOP_NIVEL_CONFIG.map(cfg => (
-                    <div key={cfg.nivel} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${cfg.bg} ${cfg.border}`}>
-                      <span className={`text-xs font-bold ${cfg.color}`}>{cfg.nivel}</span>
-                      <span className="text-[10px] text-text-muted leading-tight">{cfg.desc}</span>
-                      {cfg.alerta && <AlertTriangle className="w-3 h-3 text-red-400 ml-auto flex-shrink-0" />}
-                    </div>
-                  ))}
-                </div>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 py-5 border-b border-border bg-surface flex-shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(139,92,246,0.1)]">
+                <BarChart2 className="w-5 h-5 text-violet-400" />
               </div>
+              <div>
+                <h2 className="text-lg font-bold text-text-main leading-tight">Análisis de MOPs</h2>
+                <p className="text-xs text-text-muted">Buró de Crédito — Histórico de Pagos</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 relative">
+              <AnimatePresence mode="wait">
+                {loading && (
+                  <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="flex flex-col items-center justify-center py-20 gap-4 text-text-muted"
+                  >
+                    <Loader2 className="w-10 h-10 animate-spin text-violet-400 drop-shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
+                    <p className="text-sm font-semibold animate-pulse text-text-main">Analizando PDF del Buró de Crédito...</p>
+                    <p className="text-xs opacity-60">Extrayendo meses de pago histórico</p>
+                  </motion.div>
+                )}
+
+                {error && (
+                  <motion.div 
+                    key="error"
+                    initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl p-4 text-sm font-semibold shadow-inner"
+                  >
+                    ⚠️ {error}
+                  </motion.div>
+                )}
+
+                {data && !loading && (
+                  <motion.div 
+                    key="content"
+                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ staggerChildren: 0.1 }}
+                    className="space-y-6"
+                  >
+                    {/* Banner alerta */}
+                    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+                      {data.alerta ? (
+                        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-xl p-4 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-bold text-red-300">⚠️ MOPs de alto riesgo detectados</p>
+                            <p className="text-xs text-red-400/80 mt-0.5">
+                              Se encontraron {data.mops_alerta?.length || 0} registros con nivel de atraso 3 o superior.
+                              Revisa los créditos con atraso para evaluar el riesgo crediticio.
+                            </p>
+                          </div>
+                        </div>
+                      ) : !data.mops_detectados && (
+                        <div className="flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-bold text-emerald-300">Sin atrasos significativos</p>
+                            <p className="text-xs text-emerald-400/80 mt-0.5">No se detectaron MOPs nivel 2 o superior en el reporte.</p>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+
+                    {/* Leyenda */}
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+                      <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Leyenda de MOPs</h3>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {MOP_NIVEL_CONFIG.map((cfg, idx) => (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
+                            key={cfg.nivel} 
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${cfg.bg} ${cfg.border} hover:bg-surface/50 transition-colors`}
+                          >
+                            <span className={`text-xs font-black ${cfg.color}`}>{cfg.nivel}</span>
+                            <span className="text-[10px] text-text-muted leading-tight font-medium">{cfg.desc}</span>
+                            {cfg.alerta && <AlertTriangle className="w-3 h-3 text-red-400 ml-auto flex-shrink-0" />}
+                          </motion.div>
+                        ))}
+                      </div>
+                    </motion.div>
 
               {/* Tabla principal */}
               {anios.length > 0 && (
@@ -337,17 +410,20 @@ function MopsDrawer({ empresaId, onClose }) {
               )}
 
               {/* Footer */}
-              <div className="text-xs text-text-muted/60 pt-2 border-t border-border">
+              <div className="text-xs text-text-muted/60 pt-2 border-t border-border mt-6">
                 📄 {data.nombre_archivo || 'Buró de Crédito'}
                 {data.total_mops_nivel2_plus > 0 && (
                   <span className="ml-3">· Total MOPs nivel 2+: <strong>{data.total_mops_nivel2_plus}</strong></span>
                 )}
               </div>
-            </>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
-      </div>
-    </>,
+      </motion.div>
+      </>
+    )}
+    </AnimatePresence>,
     document.body
   )
 }
@@ -625,7 +701,9 @@ export default function AdminDashboard() {
           onClick={() => toggleSection(title)}
         >
           <h3 className="text-sm font-bold text-primary-400 uppercase tracking-wider mb-0 flex items-center gap-2">
-            {collapsedSections[title] ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            <motion.div animate={{ rotate: collapsedSections[title] ? 0 : 180 }} transition={{ duration: 0.3 }}>
+              <ChevronDown className="w-4 h-4" />
+            </motion.div>
             {title}
           </h3>
           <button
@@ -639,8 +717,16 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {!collapsedSections[title] && (
-          <div className="overflow-x-auto">
+        <AnimatePresence initial={false}>
+          {!collapsedSections[title] && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-surface/50 border-b border-border text-xs uppercase text-text-muted font-bold tracking-wider">
                 <tr>
@@ -781,8 +867,10 @@ export default function AdminDashboard() {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
@@ -803,7 +891,7 @@ export default function AdminDashboard() {
   })
 
   return (
-    <main className="max-w-[1400px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
+    <main className="max-w-[1600px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
       
       {/* Sidebar de Resumen (Izquierda) */}
       <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} />
@@ -900,21 +988,19 @@ export default function AdminDashboard() {
       )}
 
       {/* MOP Drawer */}
-      {mopsEmpresaId && (
-        <MopsDrawer
-          empresaId={mopsEmpresaId}
-          onClose={() => setMopsEmpresaId(null)}
-        />
-      )}
+      <MopsDrawer
+        isOpen={!!mopsEmpresaId}
+        empresaId={mopsEmpresaId}
+        onClose={() => setMopsEmpresaId(null)}
+      />
 
       {/* PDF Drawer */}
-      {pdfViewerDoc && (
-        <PdfDrawer
-          empresaId={pdfViewerDoc.empresaId}
-          docId={pdfViewerDoc.docId}
-          onClose={() => setPdfViewerDoc(null)}
-        />
-      )}
+      <PdfDrawer
+        isOpen={!!pdfViewerDoc}
+        empresaId={pdfViewerDoc?.empresaId}
+        docId={pdfViewerDoc?.docId}
+        onClose={() => setPdfViewerDoc(null)}
+      />
     </main>
   )
 }
