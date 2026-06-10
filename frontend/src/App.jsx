@@ -5,7 +5,7 @@ import PortalApp from './portal/PortalApp'
 import AdminDashboard from './portal/pages/AdminDashboard'
 import LoginPage from './portal/pages/LoginPage'
 import api from './portal/lib/api'
-import AutoCafView from './AutoCafView'
+import CafApp from './caf/CafApp'
 import {
   UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2,
   AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, Menu,
@@ -23,8 +23,9 @@ function fmt(n) {
 
 function App() {
   // ── Portal routing: si la URL empieza con /portal, mostrar el portal ──
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
-    return <PortalApp />
+  if (typeof window !== 'undefined') {
+    if (window.location.pathname.startsWith('/portal')) return <PortalApp />
+    if (window.location.pathname.startsWith('/CAF')) return <CafApp />
   }
 
   const [activeSection, setActiveSection] = useState('teaser') // 'teaser' | 'caf' | 'portal'
@@ -398,7 +399,7 @@ function App() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setActiveSection('caf')}
+            onClick={() => window.location.href = '/CAF'}
             title="AutoCAF"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-2
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
@@ -756,10 +757,7 @@ function App() {
           <AdminDashboard />
         )}
 
-        {/* ── Section: AutoCAF ── */}
-        {activeSection === 'caf' && (
-          <AutoCafView />
-        )}
+
 
       </div>
 
