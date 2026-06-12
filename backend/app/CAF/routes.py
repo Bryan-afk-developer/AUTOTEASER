@@ -28,6 +28,53 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path("output/caf_v2")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Re-populate in-memory store from files already on disk (survives hot-reload)
+def _restore_caf_docs():
+    restored = 0
+    for pdf_file in UPLOAD_DIR.glob("*.pdf"):
+        doc_id = pdf_file.stem
+        if doc_id in caf_docs:
+            continue
+        try:
+            # Try to read the original filename from sidecar metadata
+            import json as _json
+            meta_path = pdf_file.with_suffix(".json")
+            original_filename = pdf_file.name
+            if meta_path.exists():
+                with open(meta_path, "r", encoding="utf-8") as mf:
+                    meta = _json.load(mf)
+                    original_filename = meta.get("filename", original_filename)
+
+            doc = fitz.open(str(pdf_file))
+            page_count = len(doc)
+            thumbnails = []
+            for i in range(page_count):
+                page = doc[i]
+                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2))
+                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                thumbnails.append({"page_num": i, "image": f"data:image/png;base64,{img_b64}"})
+            doc.close()
+
+            caf_docs[doc_id] = {
+                "id": doc_id,
+                "filename": original_filename,
+                "path": str(pdf_file),
+                "page_count": page_count,
+                "thumbnails": thumbnails,
+                "status": "uploaded",
+                "extracted_data": None,
+                "excel_path": None
+            }
+            restored += 1
+        except Exception as e:
+            logger.warning(f"Could not restore doc {doc_id}: {e}")
+    if restored:
+        logger.info(f"Restored {restored} CAF documents from disk")
+
+
+_restore_caf_docs()
+
+
 class ProcessRequest(BaseModel):
     pages: List[int]
 
@@ -76,6 +123,12 @@ async def upload_pdf(file: UploadFile = File(...)):
         "extracted_data": None,
         "excel_path": None
     }
+
+    # Save sidecar metadata so the original filename survives server restarts
+    import json as _json
+    meta_path = file_path.with_suffix(".json")
+    with open(meta_path, "w", encoding="utf-8") as mf:
+        _json.dump({"filename": file.filename}, mf)
 
     return {"doc_id": doc_id, "filename": file.filename, "page_count": page_count, "thumbnails": thumbnails}
 
