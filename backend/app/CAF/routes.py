@@ -77,6 +77,7 @@ _restore_caf_docs()
 
 class ProcessRequest(BaseModel):
     pages: List[int]
+    layout_type: str = "auto"  # "two_column", "single_column", or "auto"
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
@@ -139,10 +140,11 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
         
     doc_info = caf_docs[doc_id]
     doc_info["status"] = "processing"
+    doc_info["layout_type"] = request.layout_type
     
     try:
         # Extract tables
-        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}")
+        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layout: {request.layout_type}")
         t0 = time.time()
         result = extract_tables_from_pages(doc_info["path"], request.pages)
         logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
@@ -151,8 +153,6 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
         for page_data in result["pages"]:
             for table in page_data["tables"]:
                 for row in table:
-                    # Crop evidence for the first cell of the row (or the whole row if we merge bboxes)
-                    # For simplicity, let's crop the bbox of the first valid cell, or a combined bbox of the row
                     valid_bboxes = [c["bbox"] for c in row if c.get("bbox")]
                     if valid_bboxes:
                         x0 = min(b[0] for b in valid_bboxes)
@@ -161,10 +161,11 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
                         y1 = max(b[3] for b in valid_bboxes)
                         
                         b64_img = crop_evidence(doc_info["path"], page_data["page_num"], [x0, y0, x1, y1])
-                        # Attach evidence to the first cell
                         if row:
                             row[0]["evidence_b64"] = b64_img
 
+        # Store layout_type alongside extracted data
+        result["layout_type"] = request.layout_type
         doc_info["extracted_data"] = result
         doc_info["status"] = "processed"
         return {"success": True, "message": "Procesado correctamente"}
@@ -234,7 +235,8 @@ async def generate_batch_excel(request: GenerateBatchExcelRequest):
             docs_to_build.append({
                 "year": doc_info["extracted_data"].get("year", "Desconocido"),
                 "filename": doc_info["filename"],
-                "extracted_data": doc_info["extracted_data"]
+                "extracted_data": doc_info["extracted_data"],
+                "layout_type": doc_info.get("layout_type", "auto")
             })
             
     if not docs_to_build:

@@ -53,6 +53,109 @@ def _is_numeric(text):
     return cleaned.isdigit() and len(cleaned) > 0
 
 
+# Ruido de OCR que se debe ignorar
+_OCR_NOISE = {"$", "S", "EA", "69", "SSS", "EAEAEA", "6969", "6A", "09", "th"}
+
+
+def _tokenize_cells(cells):
+    """Extrae tokens limpios de una lista de celdas, separando por saltos de línea."""
+    tokens = []
+    for c in cells:
+        if not c or not str(c.get("text", "")).strip():
+            continue
+        lines = str(c["text"]).strip().split('\n')
+        for line in lines:
+            t = line.strip()
+            if t:
+                tokens.append(t)
+    return tokens
+
+
+def _pair_tokens(tokens):
+    """Agrupa tokens en pares (concepto, monto) de forma lineal."""
+    pairs = []
+    current_concept_parts = []
+
+    for t in tokens:
+        if t in _OCR_NOISE:
+            continue
+        if _is_numeric(t) or t == "-":
+            concepto = " ".join(current_concept_parts).strip()
+            pairs.append((concepto, t))
+            current_concept_parts = []
+        else:
+            current_concept_parts.append(t)
+
+    leftover = " ".join(current_concept_parts).strip()
+    if leftover:
+        pairs.append((leftover, ""))
+
+    if not pairs and tokens:
+        pairs.append((" | ".join(tokens), ""))
+
+    return pairs
+
+
+def _extract_pairs_single_column(row):
+    """Estrategia LINEAL: tokeniza toda la fila y empareja concepto→monto secuencialmente."""
+    tokens = _tokenize_cells(row)
+    if not tokens:
+        return []
+    return _pair_tokens(tokens)
+
+
+def _extract_pairs_two_column(row, page_width):
+    """
+    Estrategia DOBLE COLUMNA: divide las celdas en mitad izquierda y mitad derecha
+    usando las coordenadas X del bounding box, luego tokeniza cada mitad independientemente.
+    Esto resuelve balances donde Activo está a la izquierda y Pasivo a la derecha.
+    """
+    midpoint = page_width / 2.0
+
+    left_cells = []
+    right_cells = []
+    no_bbox_cells = []
+
+    for c in row:
+        if not c or not str(c.get("text", "")).strip():
+            continue
+        bbox = c.get("bbox")
+        if bbox:
+            # Usar el centro X de la celda para clasificarla
+            center_x = (bbox[0] + bbox[2]) / 2.0
+            if center_x < midpoint:
+                left_cells.append(c)
+            else:
+                right_cells.append(c)
+        else:
+            no_bbox_cells.append(c)
+
+    # Si no hay bounding boxes, caer en modo lineal
+    if not left_cells and not right_cells:
+        return _extract_pairs_single_column(row)
+
+    # Si todo cayó a un solo lado, tratarlo como lineal también
+    if not left_cells or not right_cells:
+        all_cells = left_cells + right_cells + no_bbox_cells
+        tokens = _tokenize_cells(all_cells)
+        if not tokens:
+            return []
+        return _pair_tokens(tokens)
+
+    # Tokenizar cada mitad por separado
+    pairs = []
+
+    left_tokens = _tokenize_cells(sorted(left_cells, key=lambda c: c.get("bbox", [0])[0]))
+    if left_tokens:
+        pairs.extend(_pair_tokens(left_tokens))
+
+    right_tokens = _tokenize_cells(sorted(right_cells, key=lambda c: c.get("bbox", [0])[0]))
+    if right_tokens:
+        pairs.extend(_pair_tokens(right_tokens))
+
+    return pairs
+
+
 def build_caf_excel(docs_data: list) -> bytes:
     if not TEMPLATE_PATH.exists():
         raise FileNotFoundError(f"Plantilla no encontrada: {TEMPLATE_PATH}")
@@ -116,65 +219,39 @@ def build_caf_excel(docs_data: list) -> bytes:
         # ══════════════════════════════════════════════════════════
         # COLUMNAS A-E: Datos extraídos del PDF (una fila por dato)
         # ══════════════════════════════════════════════════════════
+        layout_type = doc.get("layout_type", "auto")
+        if layout_type == "auto":
+            layout_type = doc.get("extracted_data", {}).get("layout_type", "auto")
+
         data_row = 2
         if "extracted_data" in doc and "pages" in doc["extracted_data"]:
             for page_data in doc["extracted_data"]["pages"]:
                 p_num = page_data.get("page_num", 0) + 1
+                page_width = page_data.get("page_width", 600)
 
                 for table in page_data.get("tables", []):
                     for row in table:
                         if not row:
                             continue
 
-                        # Separar todos los textos de la fila en tokens (separando por saltos de línea también)
-                        tokens = []
-                        for c in row:
-                            if not c or not str(c.get("text", "")).strip():
-                                continue
-                            lines = str(c["text"]).strip().split('\n')
-                            for line in lines:
-                                t = line.strip()
-                                if t:
-                                    tokens.append(t)
-
-                        if not tokens:
-                            continue
-
-                        # Agrupar tokens en pares (Concepto, Monto)
-                        pairs = []
-                        current_concept_parts = []
-                        
-                        for t in tokens:
-                            # Ignorar ruido común de OCR
-                            if t in ("$", "S", "EA", "69", "SSS", "EAEAEA", "6969", "6A", "09", "th"):
-                                continue
-                                
-                            if _is_numeric(t) or t == "-":
-                                concepto = " ".join(current_concept_parts).strip()
-                                pairs.append((concepto, t))
-                                current_concept_parts = []
-                            else:
-                                current_concept_parts.append(t)
-                                
-                        # Si quedó un concepto suelto sin monto al final
-                        leftover = " ".join(current_concept_parts).strip()
-                        if leftover:
-                            pairs.append((leftover, ""))
-
-                        # Si no encontró ningún par (solo un token que no era número, etc.), ponerlo directo
-                        if not pairs:
-                            pairs.append((" | ".join(tokens), ""))
-
-                        # Extraer la imagen de evidencia de la fila
+                        # ── Extraer la imagen de evidencia de la fila completa ──
                         evidence_b64 = None
                         for cell_data in row:
                             if cell_data and cell_data.get("evidence_b64"):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # Escribir cada par como una fila separada en el Excel
+                        # ── Decidir estrategia según layout ──
+                        if layout_type == "two_column":
+                            pairs = _extract_pairs_two_column(row, page_width)
+                        else:
+                            # single_column o auto → lineal
+                            pairs = _extract_pairs_single_column(row)
+
+                        # ── Escribir cada par como fila en Excel ──
                         for concepto, monto in pairs:
-                            # Si el concepto está vacío pero hay un monto, usar un placeholder
+                            if not concepto and not monto:
+                                continue
                             if not concepto and monto:
                                 concepto = "(Monto sin concepto)"
 
@@ -196,7 +273,7 @@ def build_caf_excel(docs_data: list) -> bytes:
                             c.alignment = Alignment(vertical="center", horizontal="center")
                             c.border = THIN
 
-                            # Col D: Imagen recortada (la misma para todos los pares de esta fila)
+                            # Col D: Imagen recortada
                             img_height = 30
                             if evidence_b64:
                                 try:

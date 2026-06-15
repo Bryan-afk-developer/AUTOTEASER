@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
-import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2 } from 'lucide-react'
+import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -31,7 +31,8 @@ export default function CafDashboard() {
           ...res.data,
           selectedPages: [],
           status: 'uploaded',
-          extractedData: null
+          extractedData: null,
+          layoutType: 'single_column'
         }
       })
       
@@ -90,7 +91,7 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, layout_type: doc.layoutType || 'single_column' })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -181,6 +182,27 @@ export default function CafDashboard() {
                 
                 <div className="p-4">
                   <p className="text-xs text-text-muted mb-3">Selecciona las páginas del Balance y Estado de Resultados:</p>
+                  
+                  {/* Layout selector */}
+                  <div className="flex items-center gap-3 mb-4 bg-surface/40 p-3 rounded-xl border border-border">
+                    <span className="text-xs font-semibold text-text-muted">Formato del documento:</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setDocuments(prev => prev.map(d => d.doc_id === doc.doc_id ? { ...d, layoutType: 'single_column' } : d))}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${doc.layoutType === 'single_column' ? 'bg-primary-600 text-white shadow-glow' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
+                      >
+                        <AlignJustify className="w-3.5 h-3.5" />
+                        Lineal
+                      </button>
+                      <button
+                        onClick={() => setDocuments(prev => prev.map(d => d.doc_id === doc.doc_id ? { ...d, layoutType: 'two_column' } : d))}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${doc.layoutType === 'two_column' ? 'bg-primary-600 text-white shadow-glow' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
+                      >
+                        <Columns className="w-3.5 h-3.5" />
+                        Doble Columna
+                      </button>
+                    </div>
+                  </div>
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 max-h-[350px] overflow-y-auto pr-2 pb-2">
                     {doc.thumbnails.map((thumb) => {
