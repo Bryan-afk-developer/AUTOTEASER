@@ -58,16 +58,31 @@ _OCR_NOISE = {"$", "S", "EA", "69", "SSS", "EAEAEA", "6969", "6A", "09", "th"}
 
 
 def _tokenize_cells(cells):
-    """Extrae tokens limpios de una lista de celdas, separando por saltos de línea."""
+    """Extrae tokens leyendo las celdas línea por línea horizontalmente."""
     tokens = []
+    
+    # Extraer las líneas de cada celda
+    lines_per_cell = []
     for c in cells:
         if not c or not str(c.get("text", "")).strip():
+            lines_per_cell.append([])
             continue
-        lines = str(c["text"]).strip().split('\n')
-        for line in lines:
-            t = line.strip()
-            if t:
-                tokens.append(t)
+        # Separar por saltos de línea y limpiar
+        cell_lines = [line.strip() for line in str(c["text"]).strip().split('\n')]
+        lines_per_cell.append(cell_lines)
+        
+    if not lines_per_cell:
+        return []
+        
+    # Encontrar la celda con más líneas
+    max_lines = max(len(lines) for lines in lines_per_cell)
+    
+    # Leer línea por línea de izquierda a derecha (transponer)
+    for i in range(max_lines):
+        for cell_lines in lines_per_cell:
+            if i < len(cell_lines) and cell_lines[i]:
+                tokens.append(cell_lines[i])
+                
     return tokens
 
 
