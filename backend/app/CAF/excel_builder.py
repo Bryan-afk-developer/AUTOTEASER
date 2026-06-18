@@ -368,6 +368,8 @@ def build_caf_excel(docs_data: list) -> bytes:
         # (enlazados a la plantilla de Balance / Edo de resultados)
         # ══════════════════════════════════════════════════════════
         input_row = 2
+        section_rows = {}  # Track where each section header and its items are
+
         for tpl_sheet in ["Balance", "Edo de resultados"]:
             if tpl_sheet not in mapa or year not in mapa[tpl_sheet]:
                 continue
@@ -387,6 +389,9 @@ def build_caf_excel(docs_data: list) -> bytes:
             input_row += 1
 
             current_section = None
+            current_section_header_row = None
+            current_section_first_item = None
+
             for concept_name, target_cell in concepts.items():
                 row_match = re.search(r'\d+', target_cell)
                 if not row_match:
@@ -395,6 +400,14 @@ def build_caf_excel(docs_data: list) -> bytes:
 
                 sec_label, sec_color = _get_section(tpl_row, tpl_sheet)
                 if sec_label and sec_label != current_section:
+                    # Save previous section range
+                    if current_section and current_section_first_item:
+                        section_rows[current_section] = {
+                            "header_row": current_section_header_row,
+                            "first_item": current_section_first_item,
+                            "last_item": input_row - 1
+                        }
+
                     g = ws[f"G{input_row}"]
                     g.value = sec_label
                     g.font = Font(bold=True, color="FFFFFF", size=10)
@@ -403,8 +416,10 @@ def build_caf_excel(docs_data: list) -> bytes:
                     g.border = THIN
                     ws[f"H{input_row}"].fill = PatternFill("solid", fgColor=sec_color)
                     ws[f"H{input_row}"].border = THIN
+                    current_section_header_row = input_row
                     input_row += 1
                     current_section = sec_label
+                    current_section_first_item = input_row
 
                 # Nombre del concepto
                 g = ws[f"G{input_row}"]
@@ -424,9 +439,96 @@ def build_caf_excel(docs_data: list) -> bytes:
                     wb[tpl_sheet][target_cell] = f"='{sheet_name}'!H{input_row}"
 
                 input_row += 1
+
+            # Save last section of this sheet
+            if current_section and current_section_first_item:
+                section_rows[current_section] = {
+                    "header_row": current_section_header_row,
+                    "first_item": current_section_first_item,
+                    "last_item": input_row - 1
+                }
+
             input_row += 1
+
+        # ══════════════════════════════════════════════════════════
+        # INYECTAR FÓRMULAS DE SUMA EN HEADERS DE SECCIÓN (Col H)
+        # ══════════════════════════════════════════════════════════
+        SUM_FONT = Font(bold=True, color="FFFFFF", size=10)
+        COMPROBACION_FILL = PatternFill("solid", fgColor="1565C0")
+        COMPROBACION_FONT = Font(bold=True, color="FFFFFF", size=11)
+        RESULT_FILL = PatternFill("solid", fgColor="E8F5E9")
+        RESULT_FONT = Font(bold=True, color="1B5E20", size=10)
+
+        for sec_name, sec_info in section_rows.items():
+            hr = sec_info["header_row"]
+            fi = sec_info["first_item"]
+            li = sec_info["last_item"]
+            h_cell = ws[f"H{hr}"]
+            h_cell.value = f"=SUM(H{fi}:H{li})"
+            h_cell.font = SUM_FONT
+            h_cell.number_format = '#,##0.00'
+            h_cell.alignment = Alignment(horizontal="right", vertical="center")
+
+        # ══════════════════════════════════════════════════════════
+        # COLUMNA J-K: BLOQUE DE COMPROBACIÓN CONTABLE
+        # ══════════════════════════════════════════════════════════
+        ws.column_dimensions["I"].width = 3  # separador
+        ws.column_dimensions["J"].width = 26
+        ws.column_dimensions["K"].width = 20
+
+        # J1: Header "COMPROBACIÓN"
+        j1 = ws["J1"]
+        j1.value = "COMPROBACION"
+        j1.font = COMPROBACION_FONT
+        j1.fill = COMPROBACION_FILL
+        j1.alignment = Alignment(horizontal="center", vertical="center")
+        j1.border = THIN
+        k1 = ws["K1"]
+        k1.fill = COMPROBACION_FILL
+        k1.border = THIN
+        ws.merge_cells("J1:K1")
+
+        ac_row = section_rows.get("ACTIVO CIRCULANTE", {}).get("header_row")
+        af_row = section_rows.get("ACTIVO FIJO", {}).get("header_row")
+        ad_row = section_rows.get("ACTIVO DIFERIDO", {}).get("header_row")
+        pc_row = section_rows.get("PASIVO CIRCULANTE", {}).get("header_row")
+        plp_row = section_rows.get("PASIVO LARGO PLAZO", {}).get("header_row")
+        cc_row = section_rows.get("CAPITAL CONTABLE", {}).get("header_row")
+
+        verification_rows = [
+            ("Total Activos", f"=H{ac_row}+H{af_row}+H{ad_row}" if ac_row and af_row and ad_row else ""),
+            ("Total Pasivos", f"=H{pc_row}+H{plp_row}" if pc_row and plp_row else ""),
+            ("Capital Contable", f"=H{cc_row}" if cc_row else ""),
+            ("Activo-(Pasivo+Capital)", "=K2-(K3+K4)"),
+        ]
+
+        for i, (label, formula) in enumerate(verification_rows, start=2):
+            j = ws[f"J{i}"]
+            j.value = label
+            j.font = Font(bold=True, size=10)
+            j.alignment = Alignment(horizontal="left", vertical="center")
+            j.border = THIN
+            j.fill = RESULT_FILL
+
+            k = ws[f"K{i}"]
+            k.value = formula
+            k.font = RESULT_FONT
+            k.number_format = '#,##0.00'
+            k.alignment = Alignment(horizontal="right", vertical="center")
+            k.border = THIN
+            k.fill = RESULT_FILL
+
+        # Fila 6: Indicador visual de si cuadra o no
+        ws["J6"].value = "Resultado:"
+        ws["J6"].font = Font(bold=True, size=10)
+        ws["J6"].alignment = Alignment(horizontal="left", vertical="center")
+        ws["J6"].border = THIN
+        ws["K6"].value = '=IF(ABS(K5)<0.01,"SI CUADRA","NO CUADRA")'
+        ws["K6"].font = Font(bold=True, size=11)
+        ws["K6"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["K6"].border = THIN
 
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
     return buf.read()
+
