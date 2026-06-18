@@ -15,6 +15,8 @@ export default function CafDashboard() {
   const [excelUrl, setExcelUrl] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [regionSelectorState, setRegionSelectorState] = useState(null)
+  const [missingYearDocs, setMissingYearDocs] = useState(null)
+  const [yearOverrides, setYearOverrides] = useState({})
 
   const fileInputRef = useRef(null)
 
@@ -171,14 +173,23 @@ export default function CafDashboard() {
     }
   }
 
-  const handleGenerateExcel = async () => {
+  const handleGenerateExcel = async (providedOverrides = null) => {
+    const overridesToUse = providedOverrides || yearOverrides
     const processedDocs = documents.filter(d => d.status === 'processed' && d.extractedData)
     if (processedDocs.length === 0) return
+    
+    if (!providedOverrides) {
+      const docsWithMissingYear = processedDocs.filter(d => d.extractedData.year === 'Desconocido' && !overridesToUse[d.doc_id])
+      if (docsWithMissingYear.length > 0) {
+        setMissingYearDocs(docsWithMissingYear)
+        return
+      }
+    }
     
     setGenerating(true)
     try {
       const docIds = processedDocs.map(d => d.doc_id)
-      const res = await axios.post(`${API_BASE}/api/caf/generate-batch-excel`, { doc_ids: docIds })
+      const res = await axios.post(`${API_BASE}/api/caf/generate-batch-excel`, { doc_ids: docIds, year_overrides: overridesToUse })
       setExcelUrl(`${API_BASE}${res.data.download_url}`)
     } catch (err) {
       alert("Error generating Excel: " + (err.response?.data?.detail || err.message))
@@ -477,6 +488,83 @@ export default function CafDashboard() {
                   className="max-w-full h-auto object-contain shadow-lg rounded-md" 
                 />
               </div>
+            </motion.div>
+          </>
+        )}
+
+        {missingYearDocs && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-card border border-border rounded-xl shadow-2xl max-w-md w-full overflow-hidden"
+              >
+                <div className="p-5 border-b border-border flex justify-between items-center bg-surface">
+                  <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-500" />
+                    Asignar Años Faltantes
+                  </h3>
+                  <button 
+                    onClick={() => setMissingYearDocs(null)} 
+                    className="p-1.5 hover:bg-white/10 rounded-lg text-text-muted hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <p className="text-sm text-text-muted">
+                    No se pudo detectar el año en algunos documentos. Por favor, asígnalo manualmente para poder inyectar los datos en la plantilla de Excel correcta.
+                  </p>
+                  
+                  <div className="space-y-4 mt-4">
+                    {missingYearDocs.map(doc => (
+                      <div key={doc.doc_id} className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold text-white/80">{doc.filename}</label>
+                        <input 
+                          type="number" 
+                          min="2000" 
+                          max="2100"
+                          placeholder="Ej. 2024"
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                          value={yearOverrides[doc.doc_id] || ''}
+                          onChange={(e) => setYearOverrides(prev => ({ ...prev, [doc.doc_id]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-3 justify-end mt-6">
+                    <button 
+                      onClick={() => setMissingYearDocs(null)}
+                      className="px-4 py-2 rounded-lg font-semibold text-sm hover:bg-white/5 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const allFilled = missingYearDocs.every(d => yearOverrides[d.doc_id]?.trim());
+                        if (!allFilled) {
+                          alert("Por favor ingresa el año para todos los documentos listados.");
+                          return;
+                        }
+                        const overrides = { ...yearOverrides };
+                        setMissingYearDocs(null);
+                        handleGenerateExcel(overrides);
+                      }}
+                      className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg font-semibold text-sm shadow-glow transition-all"
+                    >
+                      Confirmar y Generar Excel
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           </>
         )}
