@@ -530,5 +530,6 @@ def build_caf_excel(docs_data: list) -> bytes:
 
     buf = io.BytesIO()
     wb.save(buf)
+    buf.seek(0)
     return buf.read()
 
