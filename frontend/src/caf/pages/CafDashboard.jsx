@@ -81,19 +81,18 @@ export default function CafDashboard() {
     setPreviewImage(`${API_BASE}/api/caf/document/${docId}/page/${pageNum}/image`)
   }
 
-  const togglePageLayout = (e, docId, pageNum) => {
-    e.stopPropagation()
+  const updatePageLayout = (docId, pageNum, newType) => {
     setDocuments(docs => docs.map(doc => {
       if (doc.doc_id === docId) {
-        const current = doc.pageLayouts[pageNum] || 'single_column'
-        const currentType = typeof current === 'object' ? current.type : current
-        const nextType = currentType === 'single_column' ? 'two_column' : 'single_column'
+        // Keep existing regions if changing to a type that supports them
+        const current = doc.pageLayouts[pageNum];
+        const currentRegions = typeof current === 'object' ? current.regions : null;
         
         return {
           ...doc,
           pageLayouts: {
             ...doc.pageLayouts,
-            [pageNum]: nextType
+            [pageNum]: currentRegions ? { type: newType, regions: currentRegions } : newType
           }
         }
       }
