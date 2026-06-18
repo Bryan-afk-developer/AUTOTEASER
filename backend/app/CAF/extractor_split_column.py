@@ -55,38 +55,64 @@ def extract_pairs_split_column(all_tokens, r_concept, r_amount, page_width, page
     concepts = [line_to_dict(line) for line in concept_lines]
     amounts = [line_to_dict(line) for line in amount_lines]
 
-    paired_rows = []
-    
-    # Match amounts to concepts by Y coordinate
-    # For every concept, find an amount that falls within its Y range (or close enough)
+    # Calculate all possible pairs and their y_diff
+    possible_matches = []
     for c in concepts:
-        matched_amount = None
-        best_diff = float('inf')
-        
         for a in amounts:
             y_diff = abs(c["y_center"] - a["y_center"])
-            # If the amount's center is within half the concept's height, it's a solid match
-            if y_diff < max(c["height"], a["height"]) * 0.8:
-                if y_diff < best_diff:
-                    best_diff = y_diff
-                    matched_amount = a
-                    
-        if matched_amount:
-            amounts.remove(matched_amount)
-            # Make a single 'row' list with both items for the evidence cropper
-            paired_rows.append([
-                {"text": c["text"], "bbox": c["bbox"], "is_concept": True},
-                {"text": matched_amount["text"], "bbox": matched_amount["bbox"], "is_amount": True}
-            ])
-        else:
-            paired_rows.append([
-                {"text": c["text"], "bbox": c["bbox"], "is_concept": True}
-            ])
-
-    # Any leftover amounts that didn't match a concept
+            # Relaxed cutoff: within 2.0x of the tallest box
+            if y_diff < max(c["height"], a["height"]) * 2.0:
+                possible_matches.append((y_diff, c, a))
+                
+    # Sort by smallest Y difference
+    possible_matches.sort(key=lambda x: x[0])
+    
+    matched_concepts = set()
+    matched_amounts = set()
+    
+    paired_rows = []
+    
+    # Greedily pick the BEST matches first
+    for diff, c, a in possible_matches:
+        c_id = id(c)
+        a_id = id(a)
+        if c_id not in matched_concepts and a_id not in matched_amounts:
+            matched_concepts.add(c_id)
+            matched_amounts.add(a_id)
+            paired_rows.append({
+                "concept": c,
+                "amount": a,
+                "y_center": (c["y_center"] + a["y_center"]) / 2
+            })
+            
+    # Add unmatched concepts
+    for c in concepts:
+        if id(c) not in matched_concepts:
+            paired_rows.append({
+                "concept": c,
+                "amount": None,
+                "y_center": c["y_center"]
+            })
+            
+    # Add unmatched amounts
     for a in amounts:
-        paired_rows.append([
-            {"text": a["text"], "bbox": a["bbox"], "is_amount": True}
-        ])
+        if id(a) not in matched_amounts:
+            paired_rows.append({
+                "concept": None,
+                "amount": a,
+                "y_center": a["y_center"]
+            })
+            
+    # Sort all rows top-to-bottom
+    paired_rows.sort(key=lambda r: r["y_center"])
+    
+    final_rows = []
+    for r in paired_rows:
+        row_out = []
+        if r["concept"]:
+            row_out.append({"text": r["concept"]["text"], "bbox": r["concept"]["bbox"], "is_concept": True})
+        if r["amount"]:
+            row_out.append({"text": r["amount"]["text"], "bbox": r["amount"]["bbox"], "is_amount": True})
+        final_rows.append(row_out)
 
-    return paired_rows
+    return final_rows
