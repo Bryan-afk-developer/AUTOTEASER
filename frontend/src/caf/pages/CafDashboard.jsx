@@ -15,7 +15,6 @@ export default function CafDashboard() {
   const [excelUrl, setExcelUrl] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [regionSelectorState, setRegionSelectorState] = useState(null)
-  const [useOcr, setUseOcr] = useState(true)
 
   const fileInputRef = useRef(null)
 
@@ -35,7 +34,8 @@ export default function CafDashboard() {
           selectedPages: [],
           status: 'uploaded',
           extractedData: null,
-          pageLayouts: {} // { 0: 'single_column', 1: 'two_column' }
+          pageLayouts: {}, // { 0: 'single_column', 1: 'two_column' }
+          useOcr: true
         }
       })
       
@@ -150,7 +150,7 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: doc.useOcr !== false })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -234,9 +234,20 @@ export default function CafDashboard() {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeDocument(doc.doc_id)} className="p-1.5 rounded-lg hover:bg-white/10 text-text-muted hover:text-rose-400 transition-colors">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-white transition-colors" title="Si está activo, usa Document AI. Si se desactiva, intenta extraer el texto de forma nativa más rápido.">
+                      <input 
+                        type="checkbox" 
+                        checked={doc.useOcr !== false} 
+                        onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, useOcr: e.target.checked } : d))}
+                        className="w-3 h-3 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50"
+                      />
+                      <span>Usar OCR</span>
+                    </label>
+                    <button onClick={() => removeDocument(doc.doc_id)} className="p-1.5 rounded-lg hover:bg-white/10 text-text-muted hover:text-rose-400 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="p-4">
@@ -340,16 +351,6 @@ export default function CafDashboard() {
               {isAnyProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               {isAnyProcessing ? 'Procesando documentos...' : 'Analizar Páginas Seleccionadas'}
             </button>
-            
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted hover:text-white transition-colors">
-              <input 
-                type="checkbox" 
-                checked={useOcr} 
-                onChange={(e) => setUseOcr(e.target.checked)}
-                className="w-4 h-4 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50"
-              />
-              <span>Usar OCR (Document AI) por defecto</span>
-            </label>
           </div>
           
           {hasProcessedDocs && (
