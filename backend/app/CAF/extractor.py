@@ -182,23 +182,31 @@ def _extract_with_document_ai(doc: fitz.Document, page_num: int, layout: dict = 
                     all_tokens.append({"text": text, "bbox": bbox})
                     
         # Filter tokens by layout regions
-        if layout and layout.get("type") == "two_column" and len(layout.get("regions", [])) >= 2:
-            regions = sorted(layout["regions"], key=lambda r: r["x"])
-            r1 = regions[0]
-            r2 = regions[1]
+        if layout and layout.get("regions"):
+            regions = layout["regions"]
             
             def is_inside(token_bbox, region):
                 cx = (token_bbox[0] + token_bbox[2]) / 2 / page_width
                 cy = (token_bbox[1] + token_bbox[3]) / 2 / page_height
                 return (region["x"] <= cx <= region["x"] + region["w"]) and (region["y"] <= cy <= region["y"] + region["h"])
                 
-            left_tokens = [t for t in all_tokens if is_inside(t["bbox"], r1)]
-            right_tokens = [t for t in all_tokens if is_inside(t["bbox"], r2)]
-            
-            t1 = _build_table_from_lines(left_tokens)
-            if t1: tables.append(t1)
-            t2 = _build_table_from_lines(right_tokens)
-            if t2: tables.append(t2)
+            if layout.get("type") == "two_column" and len(regions) >= 2:
+                regions = sorted(regions, key=lambda r: r["x"])
+                r1 = regions[0]
+                r2 = regions[1]
+                
+                left_tokens = [t for t in all_tokens if is_inside(t["bbox"], r1)]
+                right_tokens = [t for t in all_tokens if is_inside(t["bbox"], r2)]
+                
+                t1 = _build_table_from_lines(left_tokens)
+                if t1: tables.append(t1)
+                t2 = _build_table_from_lines(right_tokens)
+                if t2: tables.append(t2)
+            else:
+                r1 = regions[0]
+                filtered_tokens = [t for t in all_tokens if is_inside(t["bbox"], r1)]
+                t = _build_table_from_lines(filtered_tokens)
+                if t: tables.append(t)
         else:
             t = _build_table_from_lines(all_tokens)
             if t: tables.append(t)
