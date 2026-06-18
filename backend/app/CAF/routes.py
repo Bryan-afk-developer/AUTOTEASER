@@ -75,6 +75,7 @@ _restore_caf_docs()
 class ProcessRequest(BaseModel):
     pages: List[int]
     page_layouts: dict = {}  # e.g., {"0": "single_column", "1": "two_column"}
+    use_ocr: bool = True
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
@@ -98,7 +99,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         thumbnails = []
         for i in range(page_count):
             page = doc[i]
-            # Low resolution for thumbnails
+            # High resolution for thumbnails
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             thumbnails.append({
@@ -141,9 +142,9 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
     
     try:
         # Extract tables
-        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}")
+        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}")
         t0 = time.time()
-        result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts)
+        result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
         logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
         
         # Add visual evidence crops

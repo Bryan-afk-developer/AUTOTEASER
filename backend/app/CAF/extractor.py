@@ -9,13 +9,13 @@ from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
 
-def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int], page_layouts: dict = None) -> dict:
+def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int], page_layouts: dict = None, use_ocr: bool = True) -> dict:
     """
     Extracts tables from specific pages of a PDF.
     Strategy:
     1. Check if the page has native text.
-    2. If it has native text, use pdfplumber to extract tables and their bounding boxes.
-    3. If it has NO native text (scanned), use Document AI Form Parser.
+    2. If it has native text and use_ocr is False, use pdfplumber to extract tables and their bounding boxes.
+    3. If it has NO native text (scanned) or use_ocr is True, use Document AI Form Parser.
     Returns a unified format:
     [
         {
@@ -50,13 +50,18 @@ def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int], pag
             "page_height": page.rect.height
         }
 
-        if len(text) > 50:
+        # Extraer configuración de layout de la petición
+        layout_config = page_layouts.get(str(p_num), "single_column") if page_layouts else "single_column"
+        layout_type = layout_config["type"] if isinstance(layout_config, dict) else layout_config
+        regions = layout_config["regions"] if isinstance(layout_config, dict) else None
+
+        if not use_ocr and len(text) > 50:
             # Has native text -> use pdfplumber
             page_result["method"] = "pdfplumber"
             page_tables = _extract_with_pdfplumber(pdf_path, p_num)
             page_result["tables"] = page_tables
         else:
-            # Scanned -> use Document AI
+            # Scanned or explicitly requested OCR -> use Document AI
             page_result["method"] = "document_ai"
             page_tables = _extract_with_document_ai(doc, p_num, page_layouts.get(str(p_num)) if page_layouts else None)
             page_result["tables"] = page_tables

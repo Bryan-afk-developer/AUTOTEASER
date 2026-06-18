@@ -15,6 +15,7 @@ export default function CafDashboard() {
   const [excelUrl, setExcelUrl] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [regionSelectorState, setRegionSelectorState] = useState(null)
+  const [useOcr, setUseOcr] = useState(true)
 
   const fileInputRef = useRef(null)
 
@@ -53,6 +54,11 @@ export default function CafDashboard() {
   const togglePageSelection = (docId, pageNum) => {
     setDocuments(prev => prev.map(doc => {
       if (doc.doc_id === docId) {
+        // No deseleccionar si está en processing
+        if (doc.status === 'processing') {
+          return doc
+        }
+
         const isSelected = doc.selectedPages.includes(pageNum)
         
         if (!isSelected && doc.selectedPages.length >= 10) {
@@ -144,7 +150,7 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -324,15 +330,27 @@ export default function CafDashboard() {
             <span className="bg-primary-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span> 
             Analizar e Inspeccionar
           </h2>
-          
-          <button 
-            onClick={handleProcessAll}
-            disabled={isAnyProcessing || documents.every(d => d.selectedPages.length === 0)}
-            className="bg-primary-600 hover:bg-primary-500 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm shadow-glow disabled:opacity-50 transition-all mb-6"
-          >
-            {isAnyProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-            {isAnyProcessing ? 'Procesando documentos...' : 'Analizar Páginas Seleccionadas'}
-          </button>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+            <button 
+              onClick={handleProcessAll}
+              disabled={isAnyProcessing || documents.every(d => d.selectedPages.length === 0)}
+              className="bg-primary-600 hover:bg-primary-500 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm shadow-glow disabled:opacity-50 transition-all"
+            >
+              {isAnyProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              {isAnyProcessing ? 'Procesando documentos...' : 'Analizar Páginas Seleccionadas'}
+            </button>
+            
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted hover:text-white transition-colors">
+              <input 
+                type="checkbox" 
+                checked={useOcr} 
+                onChange={(e) => setUseOcr(e.target.checked)}
+                className="w-4 h-4 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50"
+              />
+              <span>Usar OCR (Document AI) por defecto</span>
+            </label>
+          </div>
           
           {hasProcessedDocs && (
             <div className="space-y-4">
