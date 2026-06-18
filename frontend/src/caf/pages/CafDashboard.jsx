@@ -431,7 +431,7 @@ export default function CafDashboard() {
           
           <div className="flex items-center gap-4">
             <button 
-              onClick={handleGenerateExcel}
+              onClick={() => handleGenerateExcel(null)}
               disabled={generating}
               className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:opacity-50 transition-all"
             >
