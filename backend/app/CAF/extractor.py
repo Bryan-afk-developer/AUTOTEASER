@@ -9,7 +9,7 @@ from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
 
-def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int]) -> dict:
+def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int], page_layouts: dict = None) -> dict:
     """
     Extracts tables from specific pages of a PDF.
     Strategy:
@@ -58,7 +58,7 @@ def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int]) -> 
         else:
             # Scanned -> use Document AI
             page_result["method"] = "document_ai"
-            page_tables = _extract_with_document_ai(doc, p_num)
+            page_tables = _extract_with_document_ai(doc, p_num, page_layouts.get(str(p_num)) if page_layouts else None)
             page_result["tables"] = page_tables
             
         results.append(page_result)
@@ -136,67 +136,108 @@ def _extract_with_pdfplumber(pdf_path: Path, page_num: int) -> list:
             
     return extracted_tables
 
-def _extract_with_document_ai(doc: fitz.Document, page_num: int) -> list:
-    """Extract tables using Google Document AI."""
+def _extract_with_document_ai(doc: fitz.Document, page_num: int, layout: dict = None) -> list:
     if not GCP_PROJECT_ID or not GCP_PROCESSOR_ID_OCR:
         logger.error("DocAI variables not set. Cannot process scanned page.")
         return []
 
-    # Render page to image
     page = doc[page_num]
-    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-    img_bytes = pix.tobytes("png")
-
     opts = {"api_endpoint": f"{GCP_LOCATION}-documentai.googleapis.com"}
     client = documentai.DocumentProcessorServiceClient(client_options=opts)
     name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
-
-    raw_document = documentai.RawDocument(content=img_bytes, mime_type="image/png")
-    request = documentai.ProcessRequest(name=name, raw_document=raw_document)
     
-    try:
-        result = client.process_document(request=request)
-        document = result.document
-    except Exception as e:
-        logger.error(f"DocAI Error on page {page_num}: {e}")
-        return []
-
-    extracted_tables = []
     page_width = page.rect.width
     page_height = page.rect.height
-
-    for doc_page in document.pages:
-        for table in doc_page.tables:
-            table_data = []
-            all_rows = list(table.header_rows) + list(table.body_rows)
-            for row in all_rows:
-                row_data = []
-                for cell in row.cells:
-                    # Extract text
-                    cell_text = ""
-                    for segment in cell.layout.text_anchor.text_segments:
-                        start = int(segment.start_index) if segment.start_index else 0
-                        end = int(segment.end_index)
-                        cell_text += document.text[start:end]
-                    cell_text = cell_text.strip()
+    
+    # Process the FULL PAGE to preserve Document AI context and avoid hallucinations.
+    # Limit max dimension to 4000px to avoid 400 errors and speed up processing.
+    scale = 300 / 72
+    if max(page_width, page_height) * scale > 4000:
+        scale = 4000 / max(page_width, page_height)
+        
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+    img_bytes = pix.tobytes("png")
+    
+    req = documentai.ProcessRequest(name=name, raw_document=documentai.RawDocument(content=img_bytes, mime_type="image/png"))
+    tables = []
+    
+    try:
+        res = client.process_document(request=req)
+        
+        # Extract all tokens from the full page
+        all_tokens = []
+        for p in res.document.pages:
+            for token in p.tokens:
+                text = "".join([res.document.text[int(s.start_index) if s.start_index else 0:int(s.end_index)] for s in token.layout.text_anchor.text_segments]).strip()
+                bbox = None
+                vertices = token.layout.bounding_poly.normalized_vertices
+                if vertices and len(vertices) >= 4 and text:
+                    xs = [v.x for v in vertices]
+                    ys = [v.y for v in vertices]
+                    x0 = min(xs) * page_width
+                    y0 = min(ys) * page_height
+                    x1 = max(xs) * page_width
+                    y1 = max(ys) * page_height
+                    bbox = [float(x0), float(y0), float(x1), float(y1)]
+                    all_tokens.append({"text": text, "bbox": bbox})
                     
-                    # Extract bounding box and convert from normalized to absolute coordinates
-                    bbox = None
-                    vertices = cell.layout.bounding_poly.normalized_vertices
-                    if vertices and len(vertices) >= 4:
-                        xs = [v.x for v in vertices]
-                        ys = [v.y for v in vertices]
-                        x0 = min(xs) * page_width
-                        y0 = min(ys) * page_height
-                        x1 = max(xs) * page_width
-                        y1 = max(ys) * page_height
-                        bbox = [float(x0), float(y0), float(x1), float(y1)]
-                        
-                    row_data.append({
-                        "text": cell_text,
-                        "bbox": bbox
-                    })
-                table_data.append(row_data)
-            extracted_tables.append(table_data)
+        # Filter tokens by layout regions
+        if layout and layout.get("type") == "two_column" and len(layout.get("regions", [])) >= 2:
+            regions = sorted(layout["regions"], key=lambda r: r["x"])
+            r1 = regions[0]
+            r2 = regions[1]
+            
+            def is_inside(token_bbox, region):
+                cx = (token_bbox[0] + token_bbox[2]) / 2 / page_width
+                cy = (token_bbox[1] + token_bbox[3]) / 2 / page_height
+                return (region["x"] <= cx <= region["x"] + region["w"]) and (region["y"] <= cy <= region["y"] + region["h"])
+                
+            left_tokens = [t for t in all_tokens if is_inside(t["bbox"], r1)]
+            right_tokens = [t for t in all_tokens if is_inside(t["bbox"], r2)]
+            
+            t1 = _build_table_from_lines(left_tokens)
+            if t1: tables.append(t1)
+            t2 = _build_table_from_lines(right_tokens)
+            if t2: tables.append(t2)
+        else:
+            t = _build_table_from_lines(all_tokens)
+            if t: tables.append(t)
+            
+    except Exception as e:
+        logger.error(f"DocAI Error on page {page_num}: {e}")
+        
+    return tables
 
-    return extracted_tables
+def _build_table_from_lines(lines_list):
+    if not lines_list:
+        return []
+        
+    lines_list.sort(key=lambda l: l['bbox'][1])
+    
+    rows = []
+    current_row = []
+    for item in lines_list:
+        if not current_row:
+            current_row.append(item)
+        else:
+            y0_current = min(c['bbox'][1] for c in current_row)
+            y1_current = max(c['bbox'][3] for c in current_row)
+            y0_item = item['bbox'][1]
+            y1_item = item['bbox'][3]
+            
+            overlap = max(0, min(y1_current, y1_item) - max(y0_current, y0_item))
+            h_item = y1_item - y0_item
+            h_current = y1_current - y0_current
+            
+            if overlap > 0 and overlap > min(h_item, h_current) * 0.3:
+                current_row.append(item)
+            else:
+                current_row.sort(key=lambda c: c['bbox'][0])
+                rows.append(current_row)
+                current_row = [item]
+                
+    if current_row:
+        current_row.sort(key=lambda c: c['bbox'][0])
+        rows.append(current_row)
+        
+    return rows

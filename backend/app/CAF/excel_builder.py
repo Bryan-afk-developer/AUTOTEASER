@@ -48,8 +48,8 @@ def _get_section(row_num, sheet_name):
 
 
 def _is_numeric(text):
-    """Checa si un texto parece un número (con comas, $, negativos, etc.)."""
-    cleaned = text.replace(",", "").replace("$", "").replace(" ", "").replace("-", "").replace(".", "")
+    """Checa si un texto parece un número (con comas, $, negativos, paréntesis, etc.)."""
+    cleaned = text.replace(",", "").replace("$", "").replace(" ", "").replace("-", "").replace(".", "").replace("(", "").replace(")", "")
     return cleaned.isdigit() and len(cleaned) > 0
 
 
@@ -116,59 +116,53 @@ def _extract_pairs_single_column(row):
     tokens = _tokenize_cells(row)
     if not tokens:
         return []
+        
+    # Si despues de tokenizar solo hay 1 token, intentamos separarlo por Regex
+    # Porque Document AI o el fallback lo metió todo en una sola línea/celda
+    if len(tokens) == 1:
+        import re
+        t = tokens[0]
+        m1 = re.match(r'^([\$0-9,\.\-\(\)]+)\s+(.+)$', t)
+        m2 = re.match(r'^(.+)\s+([\$0-9,\.\-\(\)]+)$', t)
+        if m1 and _is_numeric(m1.group(1)):
+            tokens = [m1.group(1), m1.group(2)]
+        elif m2 and _is_numeric(m2.group(2)):
+            tokens = [m2.group(1), m2.group(2)]
+            
     return _pair_tokens(tokens)
 
 
-def _extract_pairs_two_column(row, page_width):
+def _extract_pairs_two_column(row, page_width, regions=None):
     """
-    Estrategia DOBLE COLUMNA: divide las celdas en mitad izquierda y mitad derecha
-    usando las coordenadas X del bounding box, luego tokeniza cada mitad independientemente.
-    Esto resuelve balances donde Activo está a la izquierda y Pasivo a la derecha.
+    Since extractor.py physically crops the images, ALL cells in `row` 
+    belong to the SAME column. We just route the entire row's pairs to 
+    left or right based on its x-coordinate.
     """
-    midpoint = page_width / 2.0
+    first_cell = next((c for c in row if c and c.get("bbox")), None)
+    if not first_cell:
+        return [], []
+        
+    x0 = first_cell["bbox"][0]
+    split_line = page_width / 2.0
+    if regions and len(regions) >= 2:
+        sorted_regions = sorted(regions, key=lambda r: r["x"])
+        # Same split logic as extractor.py
+        r1 = sorted_regions[0]
+        r2 = sorted_regions[1]
+        r1_end = r1["x"] + r1["w"]
+        r2_start = r2["x"]
+        split_x_norm = r2_start - 0.015
+        if split_x_norm <= r1_end:
+            split_x_norm = (r1_end + r2_start) / 2.0
+        split_line = split_x_norm * page_width
 
-    left_cells = []
-    right_cells = []
-    no_bbox_cells = []
-
-    for c in row:
-        if not c or not str(c.get("text", "")).strip():
-            continue
-        bbox = c.get("bbox")
-        if bbox:
-            # Usar el centro X de la celda para clasificarla
-            center_x = (bbox[0] + bbox[2]) / 2.0
-            if center_x < midpoint:
-                left_cells.append(c)
-            else:
-                right_cells.append(c)
-        else:
-            no_bbox_cells.append(c)
-
-    # Si no hay bounding boxes, caer en modo lineal
-    if not left_cells and not right_cells:
-        return _extract_pairs_single_column(row)
-
-    # Si todo cayó a un solo lado, tratarlo como lineal también
-    if not left_cells or not right_cells:
-        all_cells = left_cells + right_cells + no_bbox_cells
-        tokens = _tokenize_cells(all_cells)
-        if not tokens:
-            return []
-        return _pair_tokens(tokens)
-
-    # Tokenizar cada mitad por separado
-    pairs = []
-
-    left_tokens = _tokenize_cells(sorted(left_cells, key=lambda c: c.get("bbox", [0])[0]))
-    if left_tokens:
-        pairs.extend(_pair_tokens(left_tokens))
-
-    right_tokens = _tokenize_cells(sorted(right_cells, key=lambda c: c.get("bbox", [0])[0]))
-    if right_tokens:
-        pairs.extend(_pair_tokens(right_tokens))
-
-    return pairs
+    # Parse the row using the robust single_column logic
+    pairs = _extract_pairs_single_column(row)
+    
+    if x0 < split_line:
+        return pairs, []
+    else:
+        return [], pairs
 
 
 def build_caf_excel(docs_data: list) -> bytes:
@@ -234,15 +228,26 @@ def build_caf_excel(docs_data: list) -> bytes:
         # ══════════════════════════════════════════════════════════
         # COLUMNAS A-E: Datos extraídos del PDF (una fila por dato)
         # ══════════════════════════════════════════════════════════
-        layout_type = doc.get("layout_type", "auto")
-        if layout_type == "auto":
-            layout_type = doc.get("extracted_data", {}).get("layout_type", "auto")
+        page_layouts = doc.get("page_layouts", {})
+        if not page_layouts and "extracted_data" in doc:
+            page_layouts = doc["extracted_data"].get("page_layouts", {})
 
         data_row = 2
         if "extracted_data" in doc and "pages" in doc["extracted_data"]:
             for page_data in doc["extracted_data"]["pages"]:
-                p_num = page_data.get("page_num", 0) + 1
+                p_index = page_data.get("page_num", 0)
+                p_num = p_index + 1
                 page_width = page_data.get("page_width", 600)
+                layout_val = page_layouts.get(str(p_index), "single_column")
+                layout_type = layout_val
+                regions = None
+                if isinstance(layout_val, dict):
+                    layout_type = layout_val.get("type", "single_column")
+                    regions = layout_val.get("regions", None)
+
+                page_left_pairs = []
+                page_right_pairs = []
+                page_single_pairs = []
 
                 for table in page_data.get("tables", []):
                     for row in table:
@@ -258,13 +263,44 @@ def build_caf_excel(docs_data: list) -> bytes:
 
                         # ── Decidir estrategia según layout ──
                         if layout_type == "two_column":
-                            pairs = _extract_pairs_two_column(row, page_width)
+                            l_pairs, r_pairs = _extract_pairs_two_column(row, page_width, regions)
+                            for c, m in l_pairs: page_left_pairs.append((c, m, evidence_b64))
+                            for c, m in r_pairs: page_right_pairs.append((c, m, evidence_b64))
                         else:
                             # single_column o auto → lineal
                             pairs = _extract_pairs_single_column(row)
+                            for c, m in pairs: page_single_pairs.append((c, m, evidence_b64))
 
-                        # ── Escribir cada par como fila en Excel ──
-                        for concepto, monto in pairs:
+                # Unir orfandades antes de escribir (si el OCR separó conceptos y montos en filas distintas)
+                def _cleanup_orphan_pairs(pairs_list):
+                    cleaned = []
+                    pending_concepts = []
+                    for c, m, ev in pairs_list:
+                        if c and not m:
+                            pending_concepts.append((c, ev))
+                        elif not c and m:
+                            if pending_concepts:
+                                pc, pev = pending_concepts.pop(0) # FIFO
+                                cleaned.append((pc, m, pev or ev))
+                            else:
+                                cleaned.append((c, m, ev))
+                        else:
+                            for pc, pev in pending_concepts:
+                                cleaned.append((pc, "", pev))
+                            pending_concepts = []
+                            cleaned.append((c, m, ev))
+                    for pc, pev in pending_concepts:
+                        cleaned.append((pc, "", pev))
+                    return cleaned
+
+                # Agrupar los pares para escribirlos: si es doble columna, primero la izquierda, luego la derecha
+                if layout_type == "two_column":
+                    all_page_pairs = _cleanup_orphan_pairs(page_left_pairs) + _cleanup_orphan_pairs(page_right_pairs)
+                else:
+                    all_page_pairs = _cleanup_orphan_pairs(page_single_pairs)
+
+                # ── Escribir cada par como fila en Excel ──
+                for concepto, monto, evidence_b64 in all_page_pairs:
                             if not concepto and not monto:
                                 continue
                             if not concepto and monto:

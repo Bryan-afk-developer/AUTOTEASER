@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
-import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify } from 'lucide-react'
+import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify, Crop } from 'lucide-react'
+import RegionSelector from '../components/RegionSelector'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -13,6 +14,7 @@ export default function CafDashboard() {
   const [generating, setGenerating] = useState(false)
   const [excelUrl, setExcelUrl] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
+  const [regionSelectorState, setRegionSelectorState] = useState(null)
 
   const fileInputRef = useRef(null)
 
@@ -32,7 +34,7 @@ export default function CafDashboard() {
           selectedPages: [],
           status: 'uploaded',
           extractedData: null,
-          layoutType: 'single_column'
+          pageLayouts: {} // { 0: 'single_column', 1: 'two_column' }
         }
       })
       
@@ -62,7 +64,13 @@ export default function CafDashboard() {
           ? doc.selectedPages.filter(p => p !== pageNum)
           : [...doc.selectedPages, pageNum].sort((a,b) => a-b)
           
-        return { ...doc, selectedPages: selected }
+        // Si se selecciona y no tiene layout asignado, poner default single_column
+        const newPageLayouts = { ...doc.pageLayouts }
+        if (!isSelected && !newPageLayouts[pageNum]) {
+          newPageLayouts[pageNum] = 'single_column'
+        }
+          
+        return { ...doc, selectedPages: selected, pageLayouts: newPageLayouts }
       }
       return doc
     }))
@@ -71,6 +79,52 @@ export default function CafDashboard() {
   const openPreview = (e, docId, pageNum) => {
     e.stopPropagation() // Evitar que se seleccione al abrir la vista previa
     setPreviewImage(`${API_BASE}/api/caf/document/${docId}/page/${pageNum}/image`)
+  }
+
+  const togglePageLayout = (e, docId, pageNum) => {
+    e.stopPropagation()
+    setDocuments(docs => docs.map(doc => {
+      if (doc.doc_id === docId) {
+        const current = doc.pageLayouts[pageNum] || 'single_column'
+        const currentType = typeof current === 'object' ? current.type : current
+        const nextType = currentType === 'single_column' ? 'two_column' : 'single_column'
+        
+        return {
+          ...doc,
+          pageLayouts: {
+            ...doc.pageLayouts,
+            [pageNum]: nextType
+          }
+        }
+      }
+      return doc
+    }))
+  }
+
+  const openRegionSelector = (docId, pageNum, imageUrl, initialRegions) => {
+    setRegionSelectorState({ docId, pageNum, imageUrl, initialRegions })
+  }
+
+  const handleSaveRegions = (regions) => {
+    if (!regionSelectorState) return;
+    const { docId, pageNum } = regionSelectorState;
+    
+    setDocuments(docs => docs.map(doc => {
+      if (doc.doc_id === docId) {
+        return {
+          ...doc,
+          pageLayouts: {
+            ...doc.pageLayouts,
+            [pageNum]: {
+              type: 'two_column',
+              regions: regions
+            }
+          }
+        }
+      }
+      return doc
+    }))
+    setRegionSelectorState(null);
   }
 
   const removeDocument = (docId) => {
@@ -91,7 +145,7 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, layout_type: doc.layoutType || 'single_column' })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -183,41 +237,23 @@ export default function CafDashboard() {
                 <div className="p-4">
                   <p className="text-xs text-text-muted mb-3">Selecciona las páginas del Balance y Estado de Resultados:</p>
                   
-                  {/* Layout selector */}
-                  <div className="flex items-center gap-3 mb-4 bg-surface/40 p-3 rounded-xl border border-border">
-                    <span className="text-xs font-semibold text-text-muted">Formato del documento:</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setDocuments(prev => prev.map(d => d.doc_id === doc.doc_id ? { ...d, layoutType: 'single_column' } : d))}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${doc.layoutType === 'single_column' ? 'bg-primary-600 text-white shadow-glow' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
-                      >
-                        <AlignJustify className="w-3.5 h-3.5" />
-                        Lineal
-                      </button>
-                      <button
-                        onClick={() => setDocuments(prev => prev.map(d => d.doc_id === doc.doc_id ? { ...d, layoutType: 'two_column' } : d))}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${doc.layoutType === 'two_column' ? 'bg-primary-600 text-white shadow-glow' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
-                      >
-                        <Columns className="w-3.5 h-3.5" />
-                        Doble Columna
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 max-h-[350px] overflow-y-auto pr-2 pb-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 max-h-[400px] overflow-y-auto pr-2 pb-2">
                     {doc.thumbnails.map((thumb) => {
                       const isSelected = doc.selectedPages.includes(thumb.page_num)
+                      const layoutConfig = doc.pageLayouts[thumb.page_num] || 'single_column'
+                      const layoutType = typeof layoutConfig === 'object' ? layoutConfig.type : layoutConfig
+                      const regions = typeof layoutConfig === 'object' ? layoutConfig.regions : null
+                      
                       return (
                         <div 
                           key={thumb.page_num} 
-                          onClick={() => togglePageSelection(doc.doc_id, thumb.page_num)}
-                          className={`relative cursor-pointer rounded-xl overflow-hidden border-4 transition-all group ${isSelected ? 'border-primary-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]' : 'border-transparent hover:border-white/20 bg-[#11111b]'}`}
+                          className={`relative rounded-xl overflow-hidden border-4 transition-all group ${isSelected ? 'border-primary-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]' : 'border-transparent hover:border-white/20 bg-[#11111b]'}`}
                         >
-                          {/* Contenedor de la imagen con hover state */}
-                          <div className="relative w-full aspect-[1/1.4] bg-white/5">
+                          {/* Contenedor de la imagen */}
+                          <div className="relative w-full aspect-[1/1.4] bg-white/5 cursor-pointer" onClick={() => togglePageSelection(doc.doc_id, thumb.page_num)}>
                             <img src={thumb.image} alt={`Pág ${thumb.page_num + 1}`} className={`w-full h-full object-cover transition-all duration-300 ${isSelected ? 'opacity-100' : 'opacity-70 group-hover:opacity-90'}`} />
                             
-                            {/* Overlay en hover (estilo iLovePDF) */}
+                            {/* Overlay en hover */}
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <button 
                                 onClick={(e) => openPreview(e, doc.doc_id, thumb.page_num)}
@@ -230,14 +266,43 @@ export default function CafDashboard() {
                           </div>
 
                           {/* Número de página */}
-                          <div className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-md ${isSelected ? 'bg-primary-500 text-white' : 'bg-black/70 text-white/70 backdrop-blur-md'}`}>
+                          <div className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-md pointer-events-none ${isSelected ? 'bg-primary-500 text-white' : 'bg-black/70 text-white/70 backdrop-blur-md'}`}>
                             {thumb.page_num + 1}
                           </div>
 
                           {/* Checkmark gigante si está seleccionado */}
                           {isSelected && (
-                            <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1 shadow-lg transform scale-110">
-                              <CheckCircle2 className="w-5 h-5" />
+                            <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1 shadow-lg pointer-events-none transform scale-110">
+                              <CheckCircle2 className="w-4 h-4" />
+                            </div>
+                          )}
+                          
+                          {/* Layout selector per page (solo visible si está seleccionado) */}
+                          {isSelected && (
+                            <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-black/80 backdrop-blur-md border-t border-white/10 flex flex-col gap-1">
+                              <button
+                                onClick={(e) => togglePageLayout(e, doc.doc_id, thumb.page_num)}
+                                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold transition-all ${layoutType === 'two_column' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
+                              >
+                                {layoutType === 'two_column' ? (
+                                  <><Columns className="w-3 h-3" /> DOBLE COLUMNA</>
+                                ) : (
+                                  <><AlignJustify className="w-3 h-3" /> LINEAL</>
+                                )}
+                              </button>
+                              
+                              {layoutType === 'two_column' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openRegionSelector(doc.doc_id, thumb.page_num, thumb.image, regions || []);
+                                  }}
+                                  className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${regions && regions.length > 0 ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
+                                >
+                                  <Crop className="w-3 h-3" /> 
+                                  {regions && regions.length > 0 ? 'Áreas Ajustadas' : 'Ajustar Áreas'}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -396,6 +461,16 @@ export default function CafDashboard() {
           </>
         )}
       </AnimatePresence>
+
+      {/* ── Region Selector Modal ── */}
+      {regionSelectorState && (
+        <RegionSelector
+          imageUrl={regionSelectorState.imageUrl}
+          initialRegions={regionSelectorState.initialRegions}
+          onSave={handleSaveRegions}
+          onCancel={() => setRegionSelectorState(null)}
+        />
+      )}
     </>
   )
 }
