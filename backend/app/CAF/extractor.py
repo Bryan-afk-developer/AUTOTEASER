@@ -56,9 +56,10 @@ def extract_tables_from_pages(pdf_path: str | Path, target_pages: list[int], pag
         regions = layout_config["regions"] if isinstance(layout_config, dict) else None
 
         if not use_ocr and len(text) > 50:
-            # Has native text -> use pdfplumber
-            page_result["method"] = "pdfplumber"
-            page_tables = _extract_with_pdfplumber(pdf_path, p_num)
+            # Has native text -> use local fast extraction
+            page_result["method"] = "native_text"
+            from app.CAF.extractor_native import extract_native_text
+            page_tables = extract_native_text(pdf_path, p_num)
             page_result["tables"] = page_tables
         else:
             # Scanned or explicitly requested OCR -> use Document AI
@@ -103,43 +104,7 @@ def _detect_year(text: str) -> str:
     # Usually the highest year mentioned is the reporting year
     return str(max(years))
 
-def _extract_with_pdfplumber(pdf_path: Path, page_num: int) -> list:
-    """Extract tables and cell bounding boxes using pdfplumber."""
-    extracted_tables = []
-    with pdfplumber.open(str(pdf_path)) as pdf:
-        if page_num >= len(pdf.pages):
-            return []
-        page = pdf.pages[page_num]
-        
-        # Get raw tables with cell bounding boxes
-        tables = page.find_tables()
-        for table in tables:
-            cells = table.cells
-            table_data = []
-            for row in table.rows:
-                row_data = []
-                for cell in row:
-                    if cell is None:
-                        row_data.append({"text": "", "bbox": None})
-                        continue
-                        
-                    x0, top, x1, bottom = cell
-                    # Crop the page to the cell's bbox to extract the exact text
-                    cell_crop = page.within_bbox((x0, top, x1, bottom))
-                    text = cell_crop.extract_text(layout=True)
-                    if text:
-                        text = text.strip()
-                    else:
-                        text = ""
-                    
-                    row_data.append({
-                        "text": text,
-                        "bbox": [float(x0), float(top), float(x1), float(bottom)]
-                    })
-                table_data.append(row_data)
-            extracted_tables.append(table_data)
-            
-    return extracted_tables
+
 
 def _extract_with_document_ai(doc: fitz.Document, page_num: int, layout: dict = None) -> list:
     if not GCP_PROJECT_ID or not GCP_PROCESSOR_ID_OCR:
