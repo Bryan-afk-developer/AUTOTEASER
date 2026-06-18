@@ -101,13 +101,13 @@ export default function CafDashboard() {
     }))
   }
 
-  const openRegionSelector = (docId, pageNum, imageUrl, initialRegions) => {
-    setRegionSelectorState({ docId, pageNum, imageUrl, initialRegions })
+  const openRegionSelector = (docId, pageNum, imageUrl, initialRegions, layoutType) => {
+    setRegionSelectorState({ docId, pageNum, imageUrl, initialRegions, layoutType })
   }
 
   const handleSaveRegions = (regions) => {
     if (!regionSelectorState) return;
-    const { docId, pageNum } = regionSelectorState;
+    const { docId, pageNum, layoutType } = regionSelectorState;
     
     setDocuments(docs => docs.map(doc => {
       if (doc.doc_id === docId) {
@@ -116,7 +116,7 @@ export default function CafDashboard() {
           pageLayouts: {
             ...doc.pageLayouts,
             [pageNum]: {
-              type: 'two_column',
+              type: layoutType || 'two_column',
               regions: regions
             }
           }
@@ -469,6 +469,7 @@ export default function CafDashboard() {
         <RegionSelector
           imageUrl={regionSelectorState.imageUrl}
           initialRegions={regionSelectorState.initialRegions}
+          layoutType={regionSelectorState.layoutType}
           onSave={handleSaveRegions}
           onCancel={() => setRegionSelectorState(null)}
         />
