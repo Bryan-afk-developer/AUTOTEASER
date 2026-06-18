@@ -266,6 +266,13 @@ def build_caf_excel(docs_data: list) -> bytes:
                             l_pairs, r_pairs = _extract_pairs_two_column(row, page_width, regions)
                             for c, m in l_pairs: page_left_pairs.append((c, m, evidence_b64))
                             for c, m in r_pairs: page_right_pairs.append((c, m, evidence_b64))
+                        elif layout_type == "split_column":
+                            concept_text = ""
+                            amount_text = ""
+                            for cell in row:
+                                if cell.get("is_concept"): concept_text = cell.get("text", "")
+                                elif cell.get("is_amount"): amount_text = cell.get("text", "")
+                            page_single_pairs.append((concept_text, amount_text, evidence_b64))
                         else:
                             # single_column o auto → lineal
                             pairs = _extract_pairs_single_column(row)

@@ -263,6 +263,8 @@ export default function CafDashboard() {
                                 <Maximize2 className="w-6 h-6" />
                               </button>
                             </div>
+                            
+                            {/* Removed duplicate layout selector */}
                           </div>
 
                           {/* Número de página */}
@@ -279,23 +281,23 @@ export default function CafDashboard() {
                           
                           {/* Layout selector per page (solo visible si está seleccionado) */}
                           {isSelected && (
-                            <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-black/80 backdrop-blur-md border-t border-white/10 flex flex-col gap-1">
-                              <button
-                                onClick={(e) => togglePageLayout(e, doc.doc_id, thumb.page_num)}
-                                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-bold transition-all ${layoutType === 'two_column' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
+                            <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-black/80 backdrop-blur-md border-t border-white/10 flex flex-col gap-1 z-30">
+                              <select 
+                                value={layoutType}
+                                onChange={(e) => updatePageLayout(doc.doc_id, thumb.page_num, e.target.value)}
+                                className="w-full bg-[#1e1e2e]/90 text-white text-[9px] border-none rounded py-1 pl-1 pr-4 appearance-none font-bold cursor-pointer outline-none focus:ring-1 focus:ring-primary-500"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                {layoutType === 'two_column' ? (
-                                  <><Columns className="w-3 h-3" /> DOBLE COLUMNA</>
-                                ) : (
-                                  <><AlignJustify className="w-3 h-3" /> LINEAL</>
-                                )}
-                              </button>
+                                <option value="single_column">LINEAL (Auto)</option>
+                                <option value="split_column">CONCEPTO / MONTO</option>
+                                <option value="two_column">2 COLUMNAS</option>
+                              </select>
                               
-                              {layoutType === 'two_column' && (
+                              {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column') && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openRegionSelector(doc.doc_id, thumb.page_num, thumb.image, regions || []);
+                                    openRegionSelector(doc.doc_id, thumb.page_num, thumb.image, regions || [], layoutType);
                                   }}
                                   className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${regions && regions.length > 0 ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
                                 >

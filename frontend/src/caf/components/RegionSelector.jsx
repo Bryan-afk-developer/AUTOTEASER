@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Save, Trash2, Info } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function RegionSelector({ imageUrl, initialRegions = [], onSave, onCancel }) {
+export default function RegionSelector({ imageUrl, initialRegions = [], layoutType = 'two_column', onSave, onCancel }) {
   const [regions, setRegions] = useState(initialRegions);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -21,7 +21,7 @@ export default function RegionSelector({ imageUrl, initialRegions = [], onSave, 
   };
 
   const handleMouseDown = (e) => {
-    if (regions.length >= 2) return; // Allow max 2 regions for two_column
+    if (regions.length >= 2) return; // Allow max 2 regions for two_column and split_column
     
     // Check if clicking on an existing region's delete button
     if (e.target.closest('button')) return;
@@ -73,14 +73,27 @@ export default function RegionSelector({ imageUrl, initialRegions = [], onSave, 
     setRegions(regions.filter((_, i) => i !== index));
   };
 
-  const renderRegionStyle = (region, isActive = false) => {
+  const renderRegionStyle = (region, isActive = false, idx = 0) => {
+    const isConcept = layoutType === 'split_column' && idx === 0;
+    const isAmount = layoutType === 'split_column' && idx === 1;
+    let borderColor = isActive ? '#3b82f6' : '#10b981';
+    let bgColor = isActive ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+    
+    if (isConcept) {
+      borderColor = '#a855f7'; // purple-500
+      bgColor = 'rgba(168, 85, 247, 0.2)';
+    } else if (isAmount) {
+      borderColor = '#3b82f6'; // blue-500
+      bgColor = 'rgba(59, 130, 246, 0.2)';
+    }
+
     return {
       left: `${region.x * 100}%`,
       top: `${region.y * 100}%`,
       width: `${region.w * 100}%`,
       height: `${region.h * 100}%`,
-      border: `2px solid ${isActive ? '#3b82f6' : '#10b981'}`,
-      backgroundColor: isActive ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+      border: `2px solid ${borderColor}`,
+      backgroundColor: bgColor,
       position: 'absolute',
       pointerEvents: isActive ? 'none' : 'auto'
     };
@@ -96,10 +109,12 @@ export default function RegionSelector({ imageUrl, initialRegions = [], onSave, 
         <div className="flex items-center justify-between p-4 border-b border-border bg-card">
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              Definir Columnas Manualmente
+              {layoutType === 'split_column' ? 'Definir Conceptos y Montos' : 'Definir Columnas Manualmente'}
             </h2>
             <p className="text-sm text-text-muted mt-1">
-              Dibuja 2 rectángulos sobre la imagen: uno para la columna izquierda (Activos) y otro para la derecha (Pasivos).
+              {layoutType === 'split_column' 
+                ? 'Dibuja 2 rectángulos: el primero para encerrar los CONCEPTOS y el segundo para los MONTOS.'
+                : 'Dibuja 2 rectángulos sobre la imagen: uno para la columna izquierda y otro para la derecha.'}
             </p>
           </div>
           <button 
@@ -134,11 +149,11 @@ export default function RegionSelector({ imageUrl, initialRegions = [], onSave, 
               {regions.map((region, idx) => (
                 <div 
                   key={idx} 
-                  style={renderRegionStyle(region)}
+                  style={renderRegionStyle(region, false, idx)}
                   className="group transition-all"
                 >
-                  <div className="absolute -top-3 left-0 bg-emerald-500 text-white text-[10px] font-bold px-1.5 rounded-t">
-                    Columna {idx + 1}
+                  <div className={`absolute -top-3 left-0 text-white text-[10px] font-bold px-1.5 rounded-t ${layoutType === 'split_column' ? (idx === 0 ? 'bg-purple-500' : 'bg-blue-500') : 'bg-emerald-500'}`}>
+                    {layoutType === 'split_column' ? (idx === 0 ? 'Conceptos' : 'Montos') : `Columna ${idx + 1}`}
                   </div>
                   <button
                     onClick={(e) => {

@@ -202,9 +202,15 @@ def _extract_with_document_ai(doc: fitz.Document, page_num: int, layout: dict = 
                 if t1: tables.append(t1)
                 t2 = _build_table_from_lines(right_tokens)
                 if t2: tables.append(t2)
+            elif layout.get("type") == "split_column" and len(regions) >= 2:
+                from app.CAF.extractor_split_column import extract_pairs_split_column
+                # Assumption: Region 0 is Concepts, Region 1 is Amounts (as enforced by frontend)
+                r_concept = regions[0]
+                r_amount = regions[1]
+                paired_rows = extract_pairs_split_column(all_tokens, r_concept, r_amount, page_width, page_height)
+                if paired_rows: tables.append(paired_rows)
             else:
-                r1 = regions[0]
-                filtered_tokens = [t for t in all_tokens if is_inside(t["bbox"], r1)]
+                filtered_tokens = [t for t in all_tokens if any(is_inside(t["bbox"], r) for r in regions)]
                 t = _build_table_from_lines(filtered_tokens)
                 if t: tables.append(t)
         else:
