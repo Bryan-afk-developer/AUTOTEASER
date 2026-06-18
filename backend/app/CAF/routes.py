@@ -210,6 +210,17 @@ async def generate_excel(doc_id: str):
 @router.get("/download/{doc_id}")
 async def download_excel(doc_id: str):
     if doc_id not in caf_docs:
+        # Fallback para excels generados en lote que sobrevivieron a un reinicio del servidor
+        output_filename = f"CAF_Analisis_Consolidado_{doc_id[:8]}.xlsx"
+        output_path = OUTPUT_DIR / output_filename
+        if output_path.exists():
+            return FileResponse(
+                path=str(output_path),
+                filename=output_filename,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        # Fallback para excels individuales
+        single_filename = f"Vaciado_Crudo_{doc_id}.xlsx" # Simplificado, puede no funcionar si no sabemos el nombre
         raise HTTPException(status_code=404, detail="Document not found")
         
     doc_info = caf_docs[doc_id]
