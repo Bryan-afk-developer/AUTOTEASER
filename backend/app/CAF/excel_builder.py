@@ -371,10 +371,20 @@ def build_caf_excel(docs_data: list) -> bytes:
         section_rows = {}  # Track where each section header and its items are
 
         for tpl_sheet in ["Balance", "Edo de resultados"]:
-            if tpl_sheet not in mapa or year not in mapa[tpl_sheet]:
+            if tpl_sheet not in mapa:
                 continue
 
-            concepts = mapa[tpl_sheet][year]
+            concepts_year = year
+            if concepts_year not in mapa[tpl_sheet]:
+                # Fallback al año más reciente disponible en el mapa
+                available_years = sorted([y for y in mapa[tpl_sheet].keys() if y.isdigit()], reverse=True)
+                if available_years:
+                    concepts_year = available_years[0]
+                    logger.warning(f"Año '{year}' no encontrado en mapa.json. Usando fallback '{concepts_year}'.")
+                else:
+                    continue
+
+            concepts = mapa[tpl_sheet][concepts_year]
 
             # Encabezado de sección principal
             hdr = ws[f"G{input_row}"]
