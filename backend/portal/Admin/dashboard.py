@@ -133,11 +133,21 @@ async def get_empresas():
     empresas_resp = sb.table("empresas").select("*").order("created_at", desc=True).execute()
     empresas = empresas_resp.data or []
 
-    # Para cada empresa, contar documentos por estado
+    # Traer todos los estados de todos los documentos en una sola consulta
+    docs_resp = sb.table("documentos_expediente").select("empresa_id, estado").execute()
+    todos_docs = docs_resp.data or []
+
+    # Agrupar por empresa
+    from collections import defaultdict
+    docs_por_empresa = defaultdict(list)
+    for doc in todos_docs:
+        docs_por_empresa[doc["empresa_id"]].append(doc)
+
+    # Para cada empresa, armar el resumen
     resultado = []
     for empresa in empresas:
-        docs_resp = sb.table("documentos_expediente").select("estado").eq("empresa_id", empresa["id"]).execute()
-        docs = docs_resp.data or []
+        empresa_id = empresa["id"]
+        docs = docs_por_empresa.get(empresa_id, [])
 
         conteo = {"PENDIENTE": 0, "APROBADO": 0, "RECHAZADO": 0, "FALTANTE": 0}
         for doc in docs:
@@ -146,7 +156,7 @@ async def get_empresas():
                 conteo[est] += 1
 
         resultado.append({
-            "id": empresa["id"],
+            "id": empresa_id,
             "nombre": empresa["nombre"],
             "rfc": empresa.get("rfc"),
             "created_at": empresa.get("created_at"),

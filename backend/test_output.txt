@@ -1,0 +1,152 @@
+CUENTA DE CHEQUES
+Estado de Cuenta
+HSBC
+CONSTRUCCIONES MOYUC, S.A. DE C.V.
+CALLE 71 NO 1003 POR 120 A Y 122
+COL AMPLIACION NUEVA MULSAY
+97249 MERIDA YUCATAN
+CR.00103
+C25.33-03729-00-BMT
+-01
+17100
+386
+NÚMERO DE CUENTA
+4033478678
+NÚMERO DE CLIENTE
+36683781
+RFC
+CMO000128Q59
+CLABE INTERBANCARIA
+021910040334786789
+RESUMEN DE CUENTAS
+► Saldo Inicial del
+Periodo
+▸ Depósitos/
+Abonos
+► Retiros/Cargos
+► Intereses Netos
+Sin Capital
+Informativo
+► IVA Informativo
+$ 0.01
+$ 219,000.00
+$ 218,999.99
+$0.00
+$ 278.28
+$ 0.02
+► Saldo Final del
+Periodo
+► Sucursal
+03729
+► Plaza
+33
+► Días Transcurridos en el mes
+30
+► Período del
+01/04/2025 al 30/04/2025
+La fecha de corte coincide con el período indicado
+Las tasas de interés son expresadas en términos anuales
+Cuenta
+4033478678
+Interés Aplicable
+0.00%
+CIFRAS EXPRESADAS EN PESOS MEXICANOS
+RESUMEN DE TU CUENTA DE CHEQUES
+Comisiones Cobradas en el Mes
+Saldo Promedio Mínimo Requerido
+Comisiones Cobradas
+$1,739.31
+Saldo Promedio en el Mes (promedio de los saldos diarios del periodo)
+Tasa Promedio Nominal
+Pago Interés Nominal en el Mes
+Pago de Interés Nominal en el Año
+IVA Cobrado
+ISR Retenido en el Mes
+ISR Retenido en el Año
+DETALLE MOVIMIENTOS CUENTA DE CHEQUES No. 4033478678
+Día
+Descripción
+Referencia/
+Serial
+08045211
+369891
+GAT Nominal
+0.00% Antes de Impuestos
+Retiro/Cargo
+GAT Real
+-3.71% Antes de Impuestos
+$ 1,739.31
+$ 30,000.00
+$ 26,424.85
+0.0000%
+$0.00
+$0.00
+$ 278.28
+$0.00
+$ 0.00
+013000000103000038613
+11771645
+628200
+14594617
+44321
+08045211
+697981
+14594617
+44321
+08045211
+659502
+14594617
+44321
+11771645
+04300003
+$ 862.00
+$ 137.92
+$ 54,245.40
+$ 54,245.60
+$ 54,245.40
+$ 54,246.00
+$ 877.31
+$ 140.36
+Depósito/Abono
+$ 57,000.00
+$ 55,000.00
+$ 52,000.00
+$ 55,000.00
+Saldo
+$ 57,000.01
+$ 56,138.01
+$ 56,000.09
+$ 1,754.69
+$ 56,754.69
+$ 2,509.09
+$ 54,509.09
+$ 263.69
+$ 55,263.69
+$ 1,017.69
+$ 140.38
+$ 0.02
+04 TRASPASO
+0025094
+04 C ADMINISTRACION RENTA
+04
+I.V.A.
+04040000
+07
+NETNM NOMINA 14 ABRIL
+14594617
+44321
+11 TRASPASO
+0025101
+08045211
+14 NETNM ΝΟΜΙΝΑ 15 ABRIL
+16 TRASPASO
+0025106
+21 NETNM NOMINA 16 ABRIL
+25 TRASPASO
+0025115
+28 NETNM ΝΟΜΙΝΑ 17 ABRIL
+30 C ADMINISTRACION RENTA
+30 I.V.A.
+CoDi: Operación procesada por CoDi®
+Emitido por: HSBC México S.A. Institución de Banca Múltiple, Grupo Financiero HSBC. RFC: HMI-950125KG8
+Paseo de la Reforma No. 347, Col. Cuauhtémoc, C.P. 06500, Alcaldía Cuauhtémoc, México, Ciudad de México Tel. 55 5721-3390 PAG. 1/6
