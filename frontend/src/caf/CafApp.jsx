@@ -9,11 +9,11 @@ export default function CafApp() {
 
   return (
     <div className="min-h-screen bg-background text-text-main font-sans flex relative">
-      
+
       {/* ── Sidebar overlay (mobile) ── */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden" 
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -99,7 +99,7 @@ export default function CafApp() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => window.location.href = '/portal'}
+            onClick={() => window.location.href = '/'}
             title="Expediente Rojo"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
@@ -118,7 +118,7 @@ export default function CafApp() {
 
       {/* ── Main Content Area ── */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen transition-all duration-300">
-        
+
         {/* Header */}
         <header className="glass-header flex items-center justify-between px-6 py-4 sticky top-0 z-20 border-b border-border">
           <div className="flex items-center gap-3">

@@ -47,13 +47,10 @@ def _restore_caf_docs():
 
             doc = fitz.open(str(pdf_file))
             page_count = len(doc)
-            thumbnails = []
-            for i in range(page_count):
-                page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2))
-                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
-                thumbnails.append({"page_num": i, "image": f"data:image/png;base64,{img_b64}"})
             doc.close()
+            
+            # Skip generating thumbnails on startup to avoid blocking the server
+            thumbnails = []
 
             caf_docs[doc_id] = {
                 "id": doc_id,
@@ -77,9 +74,12 @@ _restore_caf_docs()
 
 class ProcessRequest(BaseModel):
     pages: List[int]
+    page_layouts: dict = {}  # e.g., {"0": "single_column", "1": "two_column"}
+    use_ocr: bool = True
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
+    year_overrides: dict = {}
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -100,8 +100,8 @@ async def upload_pdf(file: UploadFile = File(...)):
         thumbnails = []
         for i in range(page_count):
             page = doc[i]
-            # Low resolution for thumbnails
-            pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2))
+            # High resolution for thumbnails
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             thumbnails.append({
                 "page_num": i,
@@ -139,20 +139,19 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
         
     doc_info = caf_docs[doc_id]
     doc_info["status"] = "processing"
+    doc_info["page_layouts"] = request.page_layouts
     
     try:
         # Extract tables
-        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}")
+        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}")
         t0 = time.time()
-        result = extract_tables_from_pages(doc_info["path"], request.pages)
+        result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
         logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
         
         # Add visual evidence crops
         for page_data in result["pages"]:
             for table in page_data["tables"]:
                 for row in table:
-                    # Crop evidence for the first cell of the row (or the whole row if we merge bboxes)
-                    # For simplicity, let's crop the bbox of the first valid cell, or a combined bbox of the row
                     valid_bboxes = [c["bbox"] for c in row if c.get("bbox")]
                     if valid_bboxes:
                         x0 = min(b[0] for b in valid_bboxes)
@@ -161,10 +160,11 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
                         y1 = max(b[3] for b in valid_bboxes)
                         
                         b64_img = crop_evidence(doc_info["path"], page_data["page_num"], [x0, y0, x1, y1])
-                        # Attach evidence to the first cell
                         if row:
                             row[0]["evidence_b64"] = b64_img
 
+        # Store layout mapping alongside extracted data
+        result["page_layouts"] = request.page_layouts
         doc_info["extracted_data"] = result
         doc_info["status"] = "processed"
         return {"success": True, "message": "Procesado correctamente"}
@@ -212,6 +212,17 @@ async def generate_excel(doc_id: str):
 @router.get("/download/{doc_id}")
 async def download_excel(doc_id: str):
     if doc_id not in caf_docs:
+        # Fallback para excels generados en lote que sobrevivieron a un reinicio del servidor
+        output_filename = f"CAF_Analisis_Consolidado_{doc_id[:8]}.xlsx"
+        output_path = OUTPUT_DIR / output_filename
+        if output_path.exists():
+            return FileResponse(
+                path=str(output_path),
+                filename=output_filename,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        # Fallback para excels individuales
+        single_filename = f"Vaciado_Crudo_{doc_id}.xlsx" # Simplificado, puede no funcionar si no sabemos el nombre
         raise HTTPException(status_code=404, detail="Document not found")
         
     doc_info = caf_docs[doc_id]
@@ -231,10 +242,12 @@ async def generate_batch_excel(request: GenerateBatchExcelRequest):
     for doc_id in request.doc_ids:
         if doc_id in caf_docs and caf_docs[doc_id].get("extracted_data"):
             doc_info = caf_docs[doc_id]
+            year = request.year_overrides.get(doc_id) or doc_info["extracted_data"].get("year", "Desconocido")
             docs_to_build.append({
-                "year": doc_info["extracted_data"].get("year", "Desconocido"),
+                "year": year,
                 "filename": doc_info["filename"],
-                "extracted_data": doc_info["extracted_data"]
+                "extracted_data": doc_info["extracted_data"],
+                "page_layouts": doc_info.get("page_layouts", {})
             })
             
     if not docs_to_build:
