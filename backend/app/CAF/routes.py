@@ -79,6 +79,7 @@ class ProcessRequest(BaseModel):
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
+    year_overrides: dict = {}
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -241,8 +242,9 @@ async def generate_batch_excel(request: GenerateBatchExcelRequest):
     for doc_id in request.doc_ids:
         if doc_id in caf_docs and caf_docs[doc_id].get("extracted_data"):
             doc_info = caf_docs[doc_id]
+            year = request.year_overrides.get(doc_id) or doc_info["extracted_data"].get("year", "Desconocido")
             docs_to_build.append({
-                "year": doc_info["extracted_data"].get("year", "Desconocido"),
+                "year": year,
                 "filename": doc_info["filename"],
                 "extracted_data": doc_info["extracted_data"],
                 "page_layouts": doc_info.get("page_layouts", {})

@@ -133,9 +133,20 @@ def _extract_pairs_single_column(row):
 
 
 def _extract_pairs_two_column(row, page_width, regions=None):
+    """
+    Since extractor.py physically crops the images, ALL cells in `row` 
+    belong to the SAME column. We just route the entire row's pairs to 
+    left or right based on its x-coordinate.
+    """
+    first_cell = next((c for c in row if c and c.get("bbox")), None)
+    if not first_cell:
+        return [], []
+        
+    x0 = first_cell["bbox"][0]
     split_line = page_width / 2.0
     if regions and len(regions) >= 2:
         sorted_regions = sorted(regions, key=lambda r: r["x"])
+        # Same split logic as extractor.py
         r1 = sorted_regions[0]
         r2 = sorted_regions[1]
         r1_end = r1["x"] + r1["w"]
@@ -145,22 +156,13 @@ def _extract_pairs_two_column(row, page_width, regions=None):
             split_x_norm = (r1_end + r2_start) / 2.0
         split_line = split_x_norm * page_width
 
-    left_cells = []
-    right_cells = []
-    for cell in row:
-        if not cell or not cell.get("bbox"):
-            continue
-        # Use center of cell to determine column
-        cx = (cell["bbox"][0] + cell["bbox"][2]) / 2.0
-        if cx < split_line:
-            left_cells.append(cell)
-        else:
-            right_cells.append(cell)
-
-    l_pairs = _extract_pairs_single_column(left_cells)
-    r_pairs = _extract_pairs_single_column(right_cells)
+    # Parse the row using the robust single_column logic
+    pairs = _extract_pairs_single_column(row)
     
-    return l_pairs, r_pairs
+    if x0 < split_line:
+        return pairs, []
+    else:
+        return [], pairs
 
 
 def build_caf_excel(docs_data: list) -> bytes:
