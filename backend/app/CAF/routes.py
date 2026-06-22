@@ -15,6 +15,7 @@ import time
 from app.CAF.extractor import extract_tables_from_pages
 from app.CAF.evidence_cropper import crop_evidence
 from app.CAF.excel_builder import build_caf_excel
+from app.CAF.extractor_dictaminado import extract_dictaminado
 
 router = APIRouter(prefix="/api/caf", tags=["AutoCAF v2"])
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class ProcessRequest(BaseModel):
     pages: List[int]
     page_layouts: dict = {}  # e.g., {"0": "single_column", "1": "two_column"}
     use_ocr: bool = True
+    doc_type: str = "financiero"
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
@@ -143,9 +145,14 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
     
     try:
         # Extract tables
-        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}")
+        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}, doc_type: {request.doc_type}")
         t0 = time.time()
-        result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
+        
+        if request.doc_type == "dictaminado":
+            result = extract_dictaminado(doc_info["path"], request.pages, request.page_layouts)
+        else:
+            result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
+            
         logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
         
         # Add visual evidence crops
