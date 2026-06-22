@@ -415,10 +415,10 @@ def build_caf_excel(docs_data: list) -> bytes:
             section_rows = {}  # Track where each section header and its items are
 
             for tpl_sheet in ["Balance", "Edo de resultados"]:
-                if tpl_sheet not in mapa or year not in mapa[tpl_sheet]:
+                if tpl_sheet not in mapa or current_year not in mapa[tpl_sheet]:
                     continue
 
-                concepts = mapa[tpl_sheet][year]
+                concepts = mapa[tpl_sheet][current_year]
 
                 # Encabezado de sección principal
                 hdr = ws[f"G{input_row}"]
