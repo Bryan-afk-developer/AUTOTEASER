@@ -324,7 +324,7 @@ export default function CafDashboard() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openRegionSelector(doc.doc_id, thumb.page_num, thumb.image, regions || [], layoutType);
+                                    openRegionSelector(doc.doc_id, thumb.page_num, `${API_BASE}/api/caf/document/${doc.doc_id}/page/${thumb.page_num}/image`, regions || [], layoutType);
                                   }}
                                   className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${regions && regions.length > 0 ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
                                 >
