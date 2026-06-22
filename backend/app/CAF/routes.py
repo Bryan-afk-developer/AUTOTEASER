@@ -15,7 +15,7 @@ import time
 from app.CAF.extractor import extract_tables_from_pages
 from app.CAF.evidence_cropper import crop_evidence
 from app.CAF.excel_builder import build_caf_excel
-from app.CAF.extractor_dictaminado import extract_dictaminado
+from app.CAF.Dictaminados.extractor_dictaminado import extract_dictaminado
 
 router = APIRouter(prefix="/api/caf", tags=["AutoCAF v2"])
 logger = logging.getLogger(__name__)
