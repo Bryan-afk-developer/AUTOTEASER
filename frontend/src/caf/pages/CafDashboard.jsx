@@ -37,7 +37,8 @@ export default function CafDashboard() {
           status: 'uploaded',
           extractedData: null,
           pageLayouts: {}, // { 0: 'single_column', 1: 'two_column' }
-          useOcr: true
+          useOcr: true,
+          docType: 'interno'
         }
       })
       
@@ -152,7 +153,12 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: doc.useOcr !== false })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { 
+          pages: doc.selectedPages, 
+          page_layouts: doc.pageLayouts, 
+          use_ocr: doc.useOcr !== false,
+          doc_type: doc.docType || 'interno'
+        })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -246,6 +252,15 @@ export default function CafDashboard() {
                     )}
                   </div>
                   <div className="flex items-center gap-4">
+                    <select
+                      value={doc.docType || 'interno'}
+                      onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, docType: e.target.value } : d))}
+                      className="bg-black/40 text-white text-xs border border-white/10 rounded-lg py-1 px-2 cursor-pointer outline-none focus:ring-1 focus:ring-primary-500 font-semibold"
+                    >
+                      <option value="interno">📄 E.F. Interno</option>
+                      <option value="dictaminado">🏛️ Dictaminado</option>
+                    </select>
+                    
                     <label className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-white transition-colors" title="Si está activo, usa Document AI. Si se desactiva, intenta extraer el texto de forma nativa más rápido.">
                       <input 
                         type="checkbox" 

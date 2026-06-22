@@ -76,6 +76,7 @@ class ProcessRequest(BaseModel):
     pages: List[int]
     page_layouts: dict = {}  # e.g., {"0": "single_column", "1": "two_column"}
     use_ocr: bool = True
+    doc_type: str = "interno"
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
@@ -142,11 +143,18 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
     doc_info["page_layouts"] = request.page_layouts
     
     try:
-        # Extract tables
-        logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}")
-        t0 = time.time()
-        result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
-        logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
+        if request.doc_type == "dictaminado":
+            from app.CAF.extractor_dictaminado import extract_dictaminado
+            logger.info(f"CAF: Processing Dictaminado {doc_info['filename']}, pages: {request.pages}")
+            t0 = time.time()
+            result = extract_dictaminado(doc_info["path"], request.pages, request.page_layouts)
+            logger.info(f"CAF: Dictaminado extraction done in {time.time()-t0:.2f}s")
+        else:
+            # Extract tables
+            logger.info(f"CAF: Processing {doc_info['filename']}, pages: {request.pages}, layouts: {request.page_layouts}, use_ocr: {request.use_ocr}")
+            t0 = time.time()
+            result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
+            logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
         
         # Add visual evidence crops
         for page_data in result["pages"]:
