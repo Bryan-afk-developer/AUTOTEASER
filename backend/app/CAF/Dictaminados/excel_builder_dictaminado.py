@@ -54,6 +54,52 @@ def _tokenize_cells(row) -> list:
     return tokens
 
 
+def _extract_pairs_from_native_cells(row) -> list:
+    """
+    For rows coming from DocAI native table detection (notas_dictaminado mode):
+    cells are already separated, so we directly map:
+      Cell 0 = Concepto
+      Cell -2 = Monto Año 1 (second to last)
+      Cell -1 = Monto Año 2 (last)
+    Skips header rows (where cells don't contain financial amounts).
+    """
+    if not row:
+        return []
+
+    # Get text values per cell
+    cell_texts = [c.get("text", "").strip() for c in row if c.get("text", "").strip()]
+
+    if len(cell_texts) < 2:
+        return []
+
+    # First cell = concepto (everything that's not numeric at the end)
+    # Last two numeric-looking cells = the two year amounts
+    amounts = []
+    concept_parts = []
+    for t in cell_texts:
+        if _is_numeric(t) or t in ("-", "$-", "$ -"):
+            amounts.append(t)
+        else:
+            concept_parts.append(t)
+
+    concepto = " ".join(concept_parts).strip()
+
+    if len(amounts) >= 2:
+        m1 = amounts[-2]
+        m2 = amounts[-1]
+    elif len(amounts) == 1:
+        m1 = amounts[0]
+        m2 = ""
+    else:
+        m1 = ""
+        m2 = ""
+
+    if not concepto and not m1 and not m2:
+        return []
+
+    return [(concepto, m1, m2)]
+
+
 def _extract_pairs_dictaminado(row) -> list:
     """
     Extrae pares (Concepto, Monto1, Monto2) de una fila de dictaminado.
@@ -260,8 +306,14 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # Extract Concept + amounts (last 2 numbers = the 2 years)
-                        d_pairs = _extract_pairs_dictaminado(row)
+                        # Extract Concept + amounts using the right strategy:
+                        # - notas_dictaminado: rows come from DocAI native tables (cells already clean)
+                        # - everything else: rows come from manual token grouping
+                        if layout_type == "notas_dictaminado":
+                            d_pairs = _extract_pairs_from_native_cells(row)
+                        else:
+                            d_pairs = _extract_pairs_dictaminado(row)
+                            
                         for concept, m1, m2 in d_pairs:
                             monto = m1 if year_idx == 0 else m2
                             if not concept and not monto:

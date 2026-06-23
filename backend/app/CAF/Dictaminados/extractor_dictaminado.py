@@ -9,14 +9,14 @@ from google.cloud import documentai
 logger = logging.getLogger(__name__)
 
 # Regex para detectar encabezados de nota: "NOTA 5", "NOTA 5.-", "NOTA 5-", etc.
-_NOTA_HEADER_RE = re.compile(r'^NOTA\s*(\d+)\b', re.IGNORECASE)
+_NOTA_HEADER_RE = re.compile(r'^NOTA\s*\d+', re.IGNORECASE)
 
 
 def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None) -> dict:
     """
     Extracción especializada para Estados Financieros Dictaminados.
     Usa Document AI para extraer los tokens y los agrupa en filas horizontales.
-    Soporta el layout 'notas_dictaminado' para extraer tablas de notas automáticamente.
+    En modo notas_dictaminado usa la detección nativa de tablas de DocAI.
     """
     logger.info(f"Extracting Dictaminado from {pdf_path} for pages {target_pages}")
 
@@ -51,25 +51,6 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
             )
             res = client.process_document(request=req)
 
-            all_tokens = []
-            for p in res.document.pages:
-                for token in p.tokens:
-                    text = "".join([
-                        res.document.text[int(s.start_index) if s.start_index else 0:int(s.end_index)]
-                        for s in token.layout.text_anchor.text_segments
-                    ]).strip()
-                    vertices = token.layout.bounding_poly.normalized_vertices
-                    if vertices and len(vertices) >= 4 and text:
-                        xs = [v.x for v in vertices]
-                        ys = [v.y for v in vertices]
-                        bbox = [
-                            float(min(xs) * page_width),
-                            float(min(ys) * page_height),
-                            float(max(xs) * page_width),
-                            float(max(ys) * page_height),
-                        ]
-                        all_tokens.append({"text": text, "bbox": bbox})
-
             # Determine layout type for this page
             layout_val = None
             if page_layouts:
@@ -83,23 +64,24 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
             elif isinstance(layout_val, str):
                 layout_type = layout_val
 
-            # Filter tokens by regions if provided
-            if regions:
-                def is_inside(token_bbox, r):
-                    cx = (token_bbox[0] + token_bbox[2]) / 2 / page_width
-                    cy = (token_bbox[1] + token_bbox[3]) / 2 / page_height
-                    return (r["x"] <= cx <= r["x"] + r["w"]) and (r["y"] <= cy <= r["y"] + r["h"])
-                filtered_tokens = [t for t in all_tokens if any(is_inside(t["bbox"], r) for r in regions)]
-            else:
-                filtered_tokens = all_tokens
-
-            # Build rows from tokens
-            all_rows = _build_table_from_lines(filtered_tokens)
-
             if layout_type == "notas_dictaminado":
-                # Special mode: auto-detect "NOTA X" headers and tag rows below them
-                tables = _extract_nota_tables(all_rows, page_width)
+                # ── NOTAS MODE: use DocAI native table + block detection ──────
+                tables = _extract_notas_with_native_tables(res, page_width, page_height)
             else:
+                # ── STANDARD DICTAMINADO MODE: manual token grouping ──────────
+                all_tokens = _extract_tokens(res, page_width, page_height)
+
+                # Filter by regions if provided
+                if regions:
+                    def is_inside(token_bbox, r):
+                        cx = (token_bbox[0] + token_bbox[2]) / 2 / page_width
+                        cy = (token_bbox[1] + token_bbox[3]) / 2 / page_height
+                        return (r["x"] <= cx <= r["x"] + r["w"]) and (r["y"] <= cy <= r["y"] + r["h"])
+                    filtered_tokens = [t for t in all_tokens if any(is_inside(t["bbox"], r) for r in regions)]
+                else:
+                    filtered_tokens = all_tokens
+
+                all_rows = _build_table_from_lines(filtered_tokens)
                 tables = [all_rows] if all_rows else []
 
             results.append({
@@ -112,7 +94,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
             })
 
         except Exception as e:
-            logger.error(f"Error processing page {p_num} for dictaminado: {e}")
+            logger.error(f"Error processing page {p_num} for dictaminado: {e}", exc_info=True)
 
     doc.close()
 
@@ -123,101 +105,178 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
     }
 
 
-def _extract_nota_tables(all_rows: list, page_width: float) -> list:
-    """
-    Dado un conjunto de filas de tokens, detecta los encabezados de nota
-    (ej. 'NOTA 5.- CUENTAS POR COBRAR') y marca las filas que están en tablas
-    debajo de ellos con un campo especial 'nota_header'.
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTAS MODE: uses DocAI native tables
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Retorna una lista de tablas. Cada tabla es una lista de filas donde la
-    primera fila puede tener el campo is_nota_header=True.
+def _extract_notas_with_native_tables(res, page_width: float, page_height: float) -> list:
     """
-    current_nota_label = None
-    current_nota_rows = []
+    Usa la detección nativa de tablas de Document AI y los bloques de texto
+    para asociar cada tabla a su encabezado NOTA X correspondiente.
+
+    Retorna lista de tablas (cada tabla = lista de filas).
+    """
+    full_text = res.document.text
+
+    # 1. Collect all NOTA headers with their Y positions from blocks/paragraphs
+    nota_headers = []  # list of (y_norm, label)
+    for docai_page in res.document.pages:
+        for block in docai_page.blocks:
+            block_text = _layout_text(block.layout, full_text).strip()
+            if _NOTA_HEADER_RE.match(block_text):
+                verts = block.layout.bounding_poly.normalized_vertices
+                if verts:
+                    y = min(v.y for v in verts)
+                    nota_headers.append((y, block_text.replace("\n", " ")))
+
+    nota_headers.sort(key=lambda x: x[0])
+    logger.info(f"Found {len(nota_headers)} NOTA headers: {[n[1] for n in nota_headers]}")
+
+    # 2. Collect all DocAI tables with their Y positions
+    docai_tables = []  # list of (y_norm, rows)
+    for docai_page in res.document.pages:
+        for table in docai_page.tables:
+            verts = table.layout.bounding_poly.normalized_vertices
+            table_y = min(v.y for v in verts) if verts else 0
+
+            rows = []
+            # Process header rows (often "Tipo de inventario | 2024 | 2023")
+            for hrow in table.header_rows:
+                cells = _extract_row_cells(hrow, full_text, page_width, page_height)
+                if cells:
+                    rows.append(cells)
+
+            # Process body rows
+            for brow in table.body_rows:
+                cells = _extract_row_cells(brow, full_text, page_width, page_height)
+                if cells:
+                    rows.append(cells)
+
+            if rows:
+                docai_tables.append((table_y, rows))
+
+    docai_tables.sort(key=lambda x: x[0])
+    logger.info(f"Found {len(docai_tables)} DocAI tables on this page")
+
+    if not nota_headers and not docai_tables:
+        return []
+
+    # 3. Associate each table to the nearest NOTA header ABOVE it
     result_tables = []
 
-    for row in all_rows:
-        if not row:
-            continue
+    for table_y, rows in docai_tables:
+        # Find the last NOTA header whose Y is above this table
+        matching_nota = None
+        for nota_y, nota_label in nota_headers:
+            if nota_y < table_y:
+                matching_nota = nota_label
+            else:
+                break
 
-        full_row_text = " ".join(t.get("text", "") for t in row)
-        nota_match = _NOTA_HEADER_RE.match(full_row_text.strip())
+        # Pack with the header
+        if matching_nota:
+            header_row = [{"text": matching_nota, "bbox": None, "is_nota_header": True}]
+            result_tables.append([header_row] + rows)
+        else:
+            # No NOTA header found above this table, include anyway without header
+            result_tables.append(rows)
 
-        if nota_match:
-            # Save previous nota section
-            if current_nota_label and current_nota_rows:
-                result_tables.append(_pack_nota_table(current_nota_label, current_nota_rows))
-            nota_title = full_row_text.strip()
-            current_nota_label = nota_title
-            current_nota_rows = []
-        elif current_nota_label:
-            # Only accept rows that look like table data:
-            # 1. Must contain at least ONE real financial amount (>=4 digits or has comma separators)
-            # 2. Must NOT be a long prose paragraph (if the row has >8 non-numeric tokens, skip it)
-            financial_amounts = [t for t in row if _is_financial_amount(t.get("text", ""))]
-            
-            # Count non-numeric tokens (words)
-            word_tokens = [t for t in row if not _is_numeric_token(t.get("text", "")) and len(t.get("text", "")) > 1]
-            
-            # A paragraph row will have many word tokens and few/no financial amounts
-            is_paragraph = len(word_tokens) >= 6 and len(financial_amounts) == 0
-            
-            if financial_amounts and not is_paragraph:
-                current_nota_rows.append(row)
+    # 4. If some NOTA headers had no tables below them (e.g. NOTA 7 with just text),
+    #    add them as standalone headers so they still appear in the Excel
+    tables_per_nota = set()
+    for table_y, rows in docai_tables:
+        for nota_y, nota_label in nota_headers:
+            if nota_y < table_y:
+                tables_per_nota.add(nota_label)
 
-    # Flush last section
-    if current_nota_label and current_nota_rows:
-        result_tables.append(_pack_nota_table(current_nota_label, current_nota_rows))
+    for nota_y, nota_label in nota_headers:
+        if nota_label not in tables_per_nota:
+            header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
+            result_tables.append([header_row])
 
-    # Fallback: if no notas were found, return raw rows as a single table
-    if not result_tables:
-        return [all_rows]
-
+    # Sort result_tables by their first row's position (approximate by order of insertion)
+    # Actually they're already in Y order since we process docai_tables in order
     return result_tables
 
 
-def _pack_nota_table(nota_label: str, rows: list) -> list:
-    """
-    Crea una representación de tabla para una nota.
-    La primera 'fila' es el header de la nota (is_nota_header=True).
-    Las filas restantes son las filas de datos de la tabla.
-    """
-    # Insert a synthetic header row marking this as a nota header
-    header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
-    return [header_row] + rows
+def _extract_row_cells(row, full_text: str, page_width: float, page_height: float) -> list:
+    """Extracts cells from a DocAI table row into our token format."""
+    cells = []
+    for cell in row.cells:
+        text = _layout_text(cell.layout, full_text).strip().replace("\n", " ")
+        if not text:
+            continue
+        verts = cell.layout.bounding_poly.normalized_vertices
+        bbox = None
+        if verts and len(verts) >= 4:
+            xs = [v.x * page_width for v in verts]
+            ys = [v.y * page_height for v in verts]
+            bbox = [float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys))]
+        cells.append({"text": text, "bbox": bbox})
+    return cells
 
 
-def _is_financial_amount(text: str) -> bool:
-    """
-    Returns True only for real financial amounts:
-    - Has comma separators (e.g. 1,423,292)
-    - Starts with $ sign
-    - Is a large number (4+ digits, >= 1000)
-    Explicitly rejects years (2020-2026) and small numbers.
-    """
-    t = text.strip()
-    if t.startswith('$'):
-        return True
-    if ',' in t:
-        # Could be 1,423,292 - clean and check
-        cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
-        if cleaned.replace('.', '', 1).isdigit() and len(cleaned.replace('.', '')) >= 4:
-            return True
-    # Plain number with >= 4 digits that is NOT a year
-    cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
-    if cleaned.replace('.', '', 1).isdigit():
-        val = float(cleaned) if cleaned else 0
-        # Reject years 1990-2030
-        if 1990 <= val <= 2030:
-            return False
-        # Accept if 4+ digits (>= 1000)
-        return val >= 1000
-    return False
+def _layout_text(layout, full_text: str) -> str:
+    """Extracts the text of a DocAI layout element."""
+    result = ""
+    for segment in layout.text_anchor.text_segments:
+        start = int(segment.start_index) if segment.start_index else 0
+        end = int(segment.end_index)
+        result += full_text[start:end]
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Standard helpers (shared with other layouts)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_tokens(res, page_width: float, page_height: float) -> list:
+    """Extracts all tokens from a DocAI response."""
+    all_tokens = []
+    for p in res.document.pages:
+        for token in p.tokens:
+            text = "".join([
+                res.document.text[int(s.start_index) if s.start_index else 0:int(s.end_index)]
+                for s in token.layout.text_anchor.text_segments
+            ]).strip()
+            vertices = token.layout.bounding_poly.normalized_vertices
+            if vertices and len(vertices) >= 4 and text:
+                xs = [v.x for v in vertices]
+                ys = [v.y for v in vertices]
+                bbox = [
+                    float(min(xs) * page_width),
+                    float(min(ys) * page_height),
+                    float(max(xs) * page_width),
+                    float(max(ys) * page_height),
+                ]
+                all_tokens.append({"text": text, "bbox": bbox})
+    return all_tokens
 
 
 def _is_numeric_token(text: str) -> bool:
     cleaned = re.sub(r'[\$,\s\(\)\-]', '', text)
     return bool(cleaned) and cleaned.replace('.', '', 1).isdigit()
+
+
+def _is_financial_amount(text: str) -> bool:
+    """Returns True only for real financial amounts (≥1000 or with $)."""
+    t = text.strip()
+    if t.startswith('$'):
+        return True
+    if ',' in t:
+        cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
+        if cleaned.replace('.', '', 1).isdigit() and len(cleaned.replace('.', '')) >= 4:
+            return True
+    cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
+    if cleaned.replace('.', '', 1).isdigit():
+        try:
+            val = float(cleaned)
+        except ValueError:
+            return False
+        if 1990 <= val <= 2030:
+            return False
+        return val >= 1000
+    return False
 
 
 def _build_table_from_lines(lines_list):
