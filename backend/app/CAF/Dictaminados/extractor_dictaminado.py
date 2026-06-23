@@ -1,5 +1,6 @@
 import logging
 import re
+import base64
 from pathlib import Path
 import fitz
 
@@ -66,7 +67,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 
             if layout_type == "notas_dictaminado":
                 # ── NOTAS MODE: use DocAI native table + block detection ──────
-                tables = _extract_notas_with_native_tables(res, page_width, page_height)
+                tables = _extract_notas_with_native_tables(res, page_width, page_height, fitz_page=page)
             else:
                 # ── STANDARD DICTAMINADO MODE: manual token grouping ──────────
                 all_tokens = _extract_tokens(res, page_width, page_height)
@@ -109,10 +110,13 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 # NOTAS MODE: uses DocAI native tables
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_notas_with_native_tables(res, page_width: float, page_height: float) -> list:
+def _extract_notas_with_native_tables(res, page_width: float, page_height: float, fitz_page=None) -> list:
     """
     Usa la detección nativa de tablas de Document AI y los bloques de texto
     para asociar cada tabla a su encabezado NOTA X correspondiente.
+
+    Para notas que son solo texto (sin tabla), captura un recorte de la página
+    usando fitz y lo guarda como imagen base64 para mostrarlo en el Excel.
 
     Retorna lista de tablas (cada tabla = lista de filas).
     """
@@ -140,14 +144,6 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             table_y = min(v.y for v in verts) if verts else 0
 
             rows = []
-            # Skip header rows (they contain year labels like "2024 | 2023", not data)
-            # We mark them but don't add to rows - they just confuse the extraction
-            # Optionally uncomment to include them:
-            # for hrow in table.header_rows:
-            #     cells = _extract_row_cells(hrow, full_text, page_width, page_height)
-            #     if cells:
-            #         rows.append([{**c, "is_table_header": True} for c in cells])
-
             # Process body rows only
             for brow in table.body_rows:
                 cells = _extract_row_cells(brow, full_text, page_width, page_height)
@@ -183,21 +179,45 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             # No NOTA header found above this table, include anyway without header
             result_tables.append(rows)
 
-    # 4. If some NOTA headers had no tables below them (e.g. NOTA 7 with just text),
-    #    add them as standalone headers so they still appear in the Excel
+    # 4. Text-only notas (no table below them): capture a page screenshot of that region
     tables_per_nota = set()
     for table_y, rows in docai_tables:
         for nota_y, nota_label in nota_headers:
             if nota_y < table_y:
                 tables_per_nota.add(nota_label)
 
-    for nota_y, nota_label in nota_headers:
+    for i, (nota_y, nota_label) in enumerate(nota_headers):
         if nota_label not in tables_per_nota:
             header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
-            result_tables.append([header_row])
 
-    # Sort result_tables by their first row's position (approximate by order of insertion)
-    # Actually they're already in Y order since we process docai_tables in order
+            # Capture screenshot of the nota text region
+            screenshot_b64 = None
+            if fitz_page is not None:
+                try:
+                    # Y region: from this nota header to the next nota header (or +25% of page)
+                    y_start_norm = nota_y
+                    if i + 1 < len(nota_headers):
+                        y_end_norm = nota_headers[i + 1][0]
+                    else:
+                        y_end_norm = min(nota_y + 0.30, 1.0)
+
+                    y_start_px = max(0, y_start_norm * page_height - 4)
+                    y_end_px   = min(page_height, y_end_norm * page_height + 4)
+
+                    clip = fitz.Rect(0, y_start_px, page_width, y_end_px)
+                    pix = fitz_page.get_pixmap(clip=clip, dpi=150)
+                    screenshot_b64 = base64.b64encode(pix.tobytes("png")).decode()
+                    logger.info(f"Captured screenshot for text-only {nota_label}: y={y_start_norm:.2f}→{y_end_norm:.2f}")
+                except Exception as e:
+                    logger.warning(f"Could not capture screenshot for {nota_label}: {e}")
+
+            # Build the table: just header + one image row
+            if screenshot_b64:
+                image_row = [{"text": "", "bbox": None, "is_nota_image": True, "image_b64": screenshot_b64}]
+                result_tables.append([header_row, image_row])
+            else:
+                result_tables.append([header_row])
+
     return result_tables
 
 

@@ -241,6 +241,47 @@ def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int,
     ws.row_dimensions[row_num].height = max(20, img_height)
 
 
+def _write_nota_image_row(ws, row_num: int, img_b64: str, p_num: int):
+    """
+    Escribe una fila de imagen para notas que son solo texto (sin tabla).
+    Inserta la captura de pantalla de la sección de texto en la columna D
+    con fondo azul celeste, haciendo la fila suficientemente alta.
+    """
+    for col in ["A", "B", "C", "D", "E"]:
+        cell = ws[f"{col}{row_num}"]
+        cell.fill = NOTA_ROW_FILL
+        cell.border = THIN
+
+    ws[f"C{row_num}"].value = p_num
+    ws[f"C{row_num}"].alignment = Alignment(horizontal="center")
+
+    img_height_pt = 80  # default tall height
+    if img_b64:
+        try:
+            img_data = base64.b64decode(img_b64)
+            pil_img = PILImage.open(io.BytesIO(img_data))
+            orig_w, orig_h = pil_img.size
+            # Scale to fit within a wide cell (columns A-D = ~400px wide, tall allowed)
+            max_w, max_h = 760, 120
+            ratio = min(max_w / orig_w, max_h / orig_h)
+            new_w = int(orig_w * ratio)
+            new_h = int(orig_h * ratio)
+            pil_img = pil_img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
+
+            tmp = io.BytesIO()
+            pil_img.save(tmp, format="PNG")
+            tmp.seek(0)
+
+            xl_img = OpenpyxlImage(tmp)
+            xl_img.anchor = f"A{row_num}"
+            ws.add_image(xl_img)
+            img_height_pt = max(80, new_h * 0.75)
+        except Exception as e:
+            logger.warning(f"Could not insert nota image at row {row_num}: {e}")
+
+    ws.row_dimensions[row_num].height = img_height_pt
+
+
 def _write_evidence_image(ws, col: str, row_num: int, ev_b64: str) -> float:
     """Inserta imagen de evidencia en la celda, retorna altura de imagen."""
     img_height = 20
@@ -412,6 +453,13 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                                     nota_tables[current_nota_num].append(("__NOTA_HEADER__", nota_label, None, None, None))
                             continue
 
+                        # Check if this is a text-only nota screenshot row
+                        if row and row[0].get("is_nota_image"):
+                            img_b64 = row[0].get("image_b64")
+                            if current_nota_num and img_b64:
+                                nota_tables[current_nota_num].append(("__NOTA_IMAGE__", img_b64, p_num, None, None))
+                            continue
+
                         # Evidence from any cell in this row
                         evidence_b64 = None
                         for cell_data in row:
@@ -461,6 +509,9 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             if item[0] == "__NOTA_HEADER__":
                                 _write_nota_header(ws, data_row, item[1])
                                 data_row += 1
+                            elif item[0] == "__NOTA_IMAGE__":
+                                _write_nota_image_row(ws, data_row, item[1], item[2])
+                                data_row += 1
                             else:
                                 is_last = (idx == len(items) - 1)
                                 _write_nota_data_row(ws, data_row, item[1], item[2], item[3], item[4], is_last)
@@ -472,6 +523,9 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                 for idx, item in enumerate(items):
                     if item[0] == "__NOTA_HEADER__":
                         _write_nota_header(ws, data_row, item[1])
+                        data_row += 1
+                    elif item[0] == "__NOTA_IMAGE__":
+                        _write_nota_image_row(ws, data_row, item[1], item[2])
                         data_row += 1
                     else:
                         is_last = (idx == len(items) - 1)
