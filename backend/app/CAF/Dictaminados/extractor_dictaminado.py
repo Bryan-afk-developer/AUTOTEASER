@@ -1,115 +1,201 @@
 import logging
-import time
+import re
 from pathlib import Path
 import fitz
-import json
-import re
 
 from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 from google.cloud import documentai
 
 logger = logging.getLogger(__name__)
 
-def extract_dictaminado(pdf_path: str | Path, target_pages: list[int], page_layouts: dict = None) -> dict:
+# Regex para detectar encabezados de nota: "NOTA 5", "NOTA 5.-", "NOTA 5-", etc.
+_NOTA_HEADER_RE = re.compile(r'^NOTA\s*(\d+)\b', re.IGNORECASE)
+
+
+def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None) -> dict:
     """
     Extracción especializada para Estados Financieros Dictaminados.
     Usa Document AI para extraer los tokens y los agrupa en filas horizontales.
-    Retorna doc_type='dictaminado' para que el excel_builder sepa procesarlo.
+    Soporta el layout 'notas_dictaminado' para extraer tablas de notas automáticamente.
     """
     logger.info(f"Extracting Dictaminado from {pdf_path} for pages {target_pages}")
-    
+
     if not GCP_PROJECT_ID or not GCP_PROCESSOR_ID_OCR:
         logger.error("DocAI variables not set. Cannot process dictaminado.")
         return {"pages": [], "year": "Desconocido", "doc_type": "dictaminado"}
-        
+
     doc = fitz.open(pdf_path)
-    
+
     opts = {"api_endpoint": f"{GCP_LOCATION}-documentai.googleapis.com"}
     client = documentai.DocumentProcessorServiceClient(client_options=opts)
     name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
-    
+
     results = []
-    
+
     for p_num in target_pages:
         try:
             page = doc[p_num]
             page_width = page.rect.width
             page_height = page.rect.height
-            
+
             scale = 300 / 72
             if max(page_width, page_height) * scale > 4000:
                 scale = 4000 / max(page_width, page_height)
-                
+
             pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
             img_bytes = pix.tobytes("png")
-            
-            req = documentai.ProcessRequest(name=name, raw_document=documentai.RawDocument(content=img_bytes, mime_type="image/png"))
+
+            req = documentai.ProcessRequest(
+                name=name,
+                raw_document=documentai.RawDocument(content=img_bytes, mime_type="image/png")
+            )
             res = client.process_document(request=req)
-            
+
             all_tokens = []
             for p in res.document.pages:
                 for token in p.tokens:
-                    text = "".join([res.document.text[int(s.start_index) if s.start_index else 0:int(s.end_index)] for s in token.layout.text_anchor.text_segments]).strip()
-                    bbox = None
+                    text = "".join([
+                        res.document.text[int(s.start_index) if s.start_index else 0:int(s.end_index)]
+                        for s in token.layout.text_anchor.text_segments
+                    ]).strip()
                     vertices = token.layout.bounding_poly.normalized_vertices
                     if vertices and len(vertices) >= 4 and text:
                         xs = [v.x for v in vertices]
                         ys = [v.y for v in vertices]
-                        x0 = min(xs) * page_width
-                        y0 = min(ys) * page_height
-                        x1 = max(xs) * page_width
-                        y1 = max(ys) * page_height
-                        bbox = [float(x0), float(y0), float(x1), float(y1)]
+                        bbox = [
+                            float(min(xs) * page_width),
+                            float(min(ys) * page_height),
+                            float(max(xs) * page_width),
+                            float(max(ys) * page_height),
+                        ]
                         all_tokens.append({"text": text, "bbox": bbox})
-            
-            # Use regions if provided, otherwise use all tokens
-            regions = None
+
+            # Determine layout type for this page
+            layout_val = None
             if page_layouts:
-                layout = page_layouts.get(str(p_num))
-                if isinstance(layout, dict) and layout.get("regions"):
-                    regions = layout["regions"]
-            
+                layout_val = page_layouts.get(str(p_num))
+
+            layout_type = "dictaminado"
+            regions = None
+            if isinstance(layout_val, dict):
+                layout_type = layout_val.get("type", "dictaminado")
+                regions = layout_val.get("regions")
+            elif isinstance(layout_val, str):
+                layout_type = layout_val
+
+            # Filter tokens by regions if provided
             if regions:
                 def is_inside(token_bbox, r):
                     cx = (token_bbox[0] + token_bbox[2]) / 2 / page_width
                     cy = (token_bbox[1] + token_bbox[3]) / 2 / page_height
                     return (r["x"] <= cx <= r["x"] + r["w"]) and (r["y"] <= cy <= r["y"] + r["h"])
-                
                 filtered_tokens = [t for t in all_tokens if any(is_inside(t["bbox"], r) for r in regions)]
             else:
                 filtered_tokens = all_tokens
-                
+
             # Build rows from tokens
-            tables = []
-            table_row = _build_table_from_lines(filtered_tokens)
-            if table_row:
-                tables.append(table_row)
-                
+            all_rows = _build_table_from_lines(filtered_tokens)
+
+            if layout_type == "notas_dictaminado":
+                # Special mode: auto-detect "NOTA X" headers and tag rows below them
+                tables = _extract_nota_tables(all_rows, page_width)
+            else:
+                tables = [all_rows] if all_rows else []
+
             results.append({
                 "page_num": p_num,
                 "method": "document_ai_dictaminado",
+                "layout_type": layout_type,
                 "tables": tables,
                 "page_width": page_width,
-                "page_height": page_height
+                "page_height": page_height,
             })
-            
+
         except Exception as e:
             logger.error(f"Error processing page {p_num} for dictaminado: {e}")
-            
+
     doc.close()
-    
+
     return {
-        "pages": results, 
-        "year": "Desconocido", 
-        "doc_type": "dictaminado"
+        "pages": results,
+        "year": "Desconocido",
+        "doc_type": "dictaminado",
     }
+
+
+def _extract_nota_tables(all_rows: list, page_width: float) -> list:
+    """
+    Dado un conjunto de filas de tokens, detecta los encabezados de nota
+    (ej. 'NOTA 5.- CUENTAS POR COBRAR') y marca las filas que están en tablas
+    debajo de ellos con un campo especial 'nota_header'.
+
+    Retorna una lista de tablas. Cada tabla es una lista de filas donde la
+    primera fila puede tener el campo is_nota_header=True.
+    """
+    current_nota_label = None
+    current_nota_rows = []
+    result_tables = []
+
+    for row in all_rows:
+        if not row:
+            continue
+
+        # Check if this row is a NOTA header
+        # A row is a nota header if the first token matches the NOTA pattern
+        first_text = row[0].get("text", "") if row else ""
+        full_row_text = " ".join(t.get("text", "") for t in row)
+        nota_match = _NOTA_HEADER_RE.match(full_row_text.strip())
+
+        if nota_match:
+            # Save previous nota section
+            if current_nota_label and current_nota_rows:
+                result_tables.append(_pack_nota_table(current_nota_label, current_nota_rows))
+
+            # Start new nota
+            # Extract full nota title (join all tokens in this header row)
+            nota_num = nota_match.group(1)
+            nota_title = full_row_text.strip()
+            current_nota_label = nota_title
+            current_nota_rows = []
+        else:
+            # Only add rows that look like table data (at least one numeric token)
+            has_numeric = any(_is_numeric_token(t.get("text", "")) for t in row)
+            if has_numeric and current_nota_label:
+                current_nota_rows.append(row)
+
+    # Flush last section
+    if current_nota_label and current_nota_rows:
+        result_tables.append(_pack_nota_table(current_nota_label, current_nota_rows))
+
+    # Fallback: if no notas were found, return raw rows as a single table
+    if not result_tables:
+        return [all_rows]
+
+    return result_tables
+
+
+def _pack_nota_table(nota_label: str, rows: list) -> list:
+    """
+    Crea una representación de tabla para una nota.
+    La primera 'fila' es el header de la nota (is_nota_header=True).
+    Las filas restantes son las filas de datos de la tabla.
+    """
+    # Insert a synthetic header row marking this as a nota header
+    header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
+    return [header_row] + rows
+
+
+def _is_numeric_token(text: str) -> bool:
+    cleaned = re.sub(r'[\$,\s\(\)\-]', '', text)
+    return bool(cleaned) and cleaned.replace('.', '', 1).isdigit()
+
 
 def _build_table_from_lines(lines_list):
     if not lines_list:
         return []
-        
+
     lines_list.sort(key=lambda l: l['bbox'][1])
-    
+
     rows = []
     current_row = []
     for item in lines_list:
@@ -120,21 +206,20 @@ def _build_table_from_lines(lines_list):
             y1_current = max(c['bbox'][3] for c in current_row)
             y0_item = item['bbox'][1]
             y1_item = item['bbox'][3]
-            
+
             overlap = max(0, min(y1_current, y1_item) - max(y0_current, y0_item))
             h_item = y1_item - y0_item
             h_current = y1_current - y0_current
-            
-            # Require at least 30% overlap to be on the same line
+
             if overlap > 0 and overlap > min(h_item, h_current) * 0.3:
                 current_row.append(item)
             else:
                 current_row.sort(key=lambda c: c['bbox'][0])
                 rows.append(current_row)
                 current_row = [item]
-                
+
     if current_row:
         current_row.sort(key=lambda c: c['bbox'][0])
         rows.append(current_row)
-        
+
     return rows

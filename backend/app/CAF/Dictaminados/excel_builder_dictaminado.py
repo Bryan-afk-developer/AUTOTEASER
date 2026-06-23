@@ -9,15 +9,20 @@ import base64
 
 logger = logging.getLogger(__name__)
 
-# Constants (Shared styles, usually imported or defined here)
-HEADER_FONT = Font(bold=True, color="FFFFFF")
-HEADER_FILL = PatternFill("solid", fgColor="4CAF50")
-INPUT_FILL = PatternFill("solid", fgColor="FFF9C4")
+# ── Styles ────────────────────────────────────────────────────────────────────
+HEADER_FONT   = Font(bold=True, color="FFFFFF")
+HEADER_FILL   = PatternFill("solid", fgColor="4CAF50")
+INPUT_FILL    = PatternFill("solid", fgColor="FFF9C4")
+NOTA_FILL     = PatternFill("solid", fgColor="1565C0")   # azul oscuro para headers de nota
+NOTA_FONT     = Font(bold=True, color="FFFFFF", size=10)
 THIN = Border(
     left=Side(style='thin'), right=Side(style='thin'),
-    top=Side(style='thin'), bottom=Side(style='thin')
+    top=Side(style='thin'), bottom=Side(style='thin'),
 )
-_OCR_NOISE = {".", ",", "-", "_", "|", "/", "\\", ":", ";", "I", "l"}
+_OCR_NOISE = {".", ",", "_", "|", "/", "\\", ":", ";", "I", "l"}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_numeric(text: str) -> bool:
     cleaned = re.sub(r'[\$,\s\(\)]', '', str(text))
@@ -27,71 +32,163 @@ def _is_numeric(text: str) -> bool:
     except ValueError:
         return False
 
-def _tokenize_cells(row):
-    """Separa el texto de la celda por líneas (si las hay) de izquierda a derecha."""
+
+def _tokenize_cells(row) -> list:
+    """Extrae tokens de las celdas de una fila, de izquierda a derecha."""
     tokens = []
     lines_per_cell = []
-    
     for c in row:
         if not c or not c.get("text"):
             continue
         cell_lines = [line.strip() for line in str(c["text"]).strip().split('\n')]
         lines_per_cell.append(cell_lines)
-        
+
     if not lines_per_cell:
         return []
-        
+
     max_lines = max(len(lines) for lines in lines_per_cell)
     for i in range(max_lines):
         for cell_lines in lines_per_cell:
             if i < len(cell_lines) and cell_lines[i]:
                 tokens.append(cell_lines[i])
-                
     return tokens
 
-def _extract_pairs_dictaminado(row):
-    """Busca agrupar [Concepto, Monto1, Monto2]. Retorna lista de (Concepto, Monto1, Monto2)."""
+
+def _extract_pairs_dictaminado(row) -> list:
+    """
+    Extrae pares (Concepto, Monto1, Monto2) de una fila de dictaminado.
+
+    REGLA CLAVE: Los dictaminados tienen columnas como:
+        Concepto | (Nota Ref) | Monto Año 1 | Monto Año 2
+    El número de nota (ej. "9") queda en medio de los textos.
+    Para no confundirlo con un monto financiero, SIEMPRE tomamos
+    los ÚLTIMOS DOS números de la fila como Monto1 y Monto2.
+    """
     tokens = _tokenize_cells(row)
-    if not tokens: return []
-    
-    pairs = []
-    current_concept = []
-    amounts = []
-    
+    if not tokens:
+        return []
+
+    # Separar todos los textos y todos los numéricos
+    texts = []
+    all_numbers = []
     for t in tokens:
-        if t in _OCR_NOISE: continue
+        if t in _OCR_NOISE:
+            continue
         if _is_numeric(t) or t == "-":
-            amounts.append(t)
+            all_numbers.append(t)
         else:
-            if amounts:
-                c = " ".join(current_concept).strip()
-                m1 = amounts[0] if len(amounts) > 0 else ""
-                m2 = amounts[1] if len(amounts) > 1 else ""
-                pairs.append((c, m1, m2))
-                current_concept = [t]
-                amounts = []
-            else:
-                current_concept.append(t)
-                
-    if current_concept or amounts:
-        c = " ".join(current_concept).strip()
-        m1 = amounts[0] if len(amounts) > 0 else ""
-        m2 = amounts[1] if len(amounts) > 1 else ""
-        pairs.append((c, m1, m2))
-        
-    return pairs
+            texts.append(t)
+
+    # Los últimos dos son los montos financieros; cualquier número antes es referencia de nota
+    if len(all_numbers) >= 2:
+        m1 = all_numbers[-2]
+        m2 = all_numbers[-1]
+    elif len(all_numbers) == 1:
+        m1 = all_numbers[-1]
+        m2 = ""
+    else:
+        m1 = ""
+        m2 = ""
+
+    concepto = " ".join(texts).strip()
+
+    if not concepto and not m1:
+        return []
+
+    return [(concepto, m1, m2)]
+
+
+def _write_evidence_image(ws, col: str, row_num: int, ev_b64: str) -> float:
+    """Inserta imagen de evidencia en la celda, retorna altura de imagen."""
+    img_height = 20
+    if not ev_b64:
+        return img_height
+    try:
+        img_data = base64.b64decode(ev_b64)
+        pil_img = PILImage.open(io.BytesIO(img_data))
+        orig_w, orig_h = pil_img.size
+        max_w, max_h = 400, 60
+        ratio = min(max_w / orig_w, max_h / orig_h)
+        if ratio < 1:
+            new_w = int(orig_w * ratio)
+            new_h = int(orig_h * ratio)
+            pil_img = pil_img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
+        else:
+            new_w, new_h = orig_w, orig_h
+
+        tmp = io.BytesIO()
+        pil_img.save(tmp, format="PNG")
+        tmp.seek(0)
+        xl_img = OpenpyxlImage(tmp)
+        xl_img.width = new_w
+        xl_img.height = new_h
+        ws.add_image(xl_img, f"{col}{row_num}")
+        img_height = max(img_height, new_h * 0.75 + 5)
+    except Exception as e:
+        logger.error(f"Error insertando imagen de evidencia: {e}")
+    return img_height
+
+
+def _write_nota_header(ws, row_num: int, nota_label: str):
+    """Escribe el header de una nota como celda fusionada A+B con color azul."""
+    a = ws[f"A{row_num}"]
+    a.value = nota_label
+    a.font = NOTA_FONT
+    a.fill = NOTA_FILL
+    a.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+    a.border = THIN
+
+    b = ws[f"B{row_num}"]
+    b.fill = NOTA_FILL
+    b.border = THIN
+
+    ws.merge_cells(f"A{row_num}:B{row_num}")
+    ws.row_dimensions[row_num].height = 18
+
+
+def _write_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b64):
+    """Escribe una fila de datos en las columnas A-E."""
+    ws[f"A{row_num}"].value = concept
+    ws[f"A{row_num}"].border = THIN
+
+    b_cell = ws[f"B{row_num}"]
+    b_cell.value = monto
+    b_cell.alignment = Alignment(horizontal="right")
+    b_cell.border = THIN
+    if monto and '(' in str(monto) and ')' in str(monto):
+        b_cell.font = Font(color="FF0000")
+
+    c_cell = ws[f"C{row_num}"]
+    c_cell.value = p_num
+    c_cell.alignment = Alignment(horizontal="center")
+    c_cell.border = THIN
+
+    ws[f"D{row_num}"].border = THIN
+    img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
+
+    e = ws[f"E{row_num}"]
+    e.fill = INPUT_FILL
+    e.alignment = Alignment(horizontal="right", vertical="center")
+    e.number_format = '#,##0.00'
+    e.border = THIN
+
+    ws.row_dimensions[row_num].height = max(20, img_height)
+
+
+# ── Main public function ──────────────────────────────────────────────────────
 
 def inject_dictaminado_sheets(doc, wb, mapa):
     """
     Inyecta DOS hojas en el workbook, una por cada año detectado en el dictaminado.
+    Soporta tanto el modo normal como el modo notas_dictaminado.
     """
     year_str = str(doc.get("year", "")).strip()
-    
+
     if "," in year_str:
         years = [y.strip() for y in year_str.split(",") if y.strip()]
     else:
         years = [year_str]
-        
+
     if not years or not any(years) or years[0] == "Desconocido":
         m = re.search(r'\b(20[1-2]\d)\b', doc.get("filename", ""))
         if m:
@@ -99,7 +196,6 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         else:
             years = [f"Desc_{uuid.uuid4().hex[:4]}"]
 
-    # Generar una hoja por cada año
     for year_idx, current_year in enumerate(years):
         sheet_name = current_year
         orig = sheet_name
@@ -110,15 +206,15 @@ def inject_dictaminado_sheets(doc, wb, mapa):
 
         ws = wb.create_sheet(title=sheet_name)
 
-        # HEADERS (A-E y G-H)
-        headers = {
-            "A": ("Cuenta Extraída", 28),
+        # ── Column headers A-E + G-H ──────────────────────────────────────────
+        col_headers = {
+            "A": ("Cuenta Extraída", 32),
             "B": ("Monto Extraído", 18),
             "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
             "E": ("Input / Ajuste", 18),
         }
-        for col, (title, width) in headers.items():
+        for col, (title, width) in col_headers.items():
             cell = ws[f"{col}1"]
             cell.value = title
             cell.font = HEADER_FONT
@@ -127,7 +223,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        ws.column_dimensions["F"].width = 3  # separador
+        ws.column_dimensions["F"].width = 3
         for col, (title, width) in {"G": ("Concepto", 32), "H": ("Importe (Input)", 18)}.items():
             cell = ws[f"{col}1"]
             cell.value = title
@@ -137,112 +233,46 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # ── EXTRACCIÓN DE DATOS ──
-        page_single_pairs = []
+        # ── Write extracted data rows ─────────────────────────────────────────
+        data_row = 2
+
         if "extracted_data" in doc and "pages" in doc["extracted_data"]:
             for page_data in doc["extracted_data"]["pages"]:
-                p_index = page_data.get("page_num", 0)
-                p_num = p_index + 1
+                p_num = page_data.get("page_num", 0) + 1
+                layout_type = page_data.get("layout_type", "dictaminado")
 
                 for table in page_data.get("tables", []):
                     for row in table:
-                        if not row: continue
+                        if not row:
+                            continue
 
-                        # Extraer la imagen de evidencia de la fila completa
+                        # Check if first cell is a nota header (injected by extractor)
+                        if row and row[0].get("is_nota_header"):
+                            nota_label = row[0].get("text", "NOTA")
+                            _write_nota_header(ws, data_row, nota_label)
+                            data_row += 1
+                            continue
+
+                        # Evidence from any cell in this row
                         evidence_b64 = None
                         for cell_data in row:
                             if cell_data and cell_data.get("evidence_b64"):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # Dictaminado Layout always extracts Concept, Monto1, Monto2
+                        # Extract Concept + amounts (last 2 numbers = the 2 years)
                         d_pairs = _extract_pairs_dictaminado(row)
-                        for c, m1, m2 in d_pairs:
-                            m = m1 if year_idx == 0 else m2
-                            page_single_pairs.append((c, m, evidence_b64, p_num))
+                        for concept, m1, m2 in d_pairs:
+                            monto = m1 if year_idx == 0 else m2
+                            if not concept and not monto:
+                                continue
+                            _write_data_row(ws, data_row, concept, monto, p_num, evidence_b64)
+                            data_row += 1
 
-        # Unir orfandades
-        def _cleanup_orphan_pairs(pairs_list):
-            cleaned = []
-            pending_concepts = []
-            for c, m, ev, p_num in pairs_list:
-                if c and not m:
-                    pending_concepts.append((c, ev, p_num))
-                elif not c and m:
-                    if pending_concepts:
-                        pc, pev, pp_num = pending_concepts.pop(0)
-                        cleaned.append((pc, m, pev or ev, pp_num))
-                    else:
-                        cleaned.append((c, m, ev, p_num))
-                else:
-                    for pc, pev, pp_num in pending_concepts:
-                        cleaned.append((pc, "", pev, pp_num))
-                    pending_concepts = []
-                    cleaned.append((c, m, ev, p_num))
-            for pc, pev, pp_num in pending_concepts:
-                cleaned.append((pc, "", pev, pp_num))
-            return cleaned
-
-        cleaned_pairs = _cleanup_orphan_pairs(page_single_pairs)
-
-        data_row = 2
-        for (c, m, ev, p_num) in cleaned_pairs:
-            ws[f"A{data_row}"] = c
-            ws[f"A{data_row}"].border = THIN
-
-            b_cell = ws[f"B{data_row}"]
-            b_cell.value = m
-            b_cell.alignment = Alignment(horizontal="right")
-            b_cell.border = THIN
-            if m and '(' in m and ')' in m:
-                b_cell.font = Font(color="FF0000")
-
-            c_cell = ws[f"C{data_row}"]
-            c_cell.value = p_num
-            c_cell.alignment = Alignment(horizontal="center")
-            c_cell.border = THIN
-
-            ws[f"D{data_row}"].border = THIN
-            img_height = 20
-            if ev:
-                try:
-                    img_data = base64.b64decode(ev)
-                    pil_img = PILImage.open(io.BytesIO(img_data))
-                    orig_w, orig_h = pil_img.size
-                    max_w, max_h = 400, 60
-                    ratio = min(max_w/orig_w, max_h/orig_h)
-                    if ratio < 1:
-                        new_w = int(orig_w * ratio)
-                        new_h = int(orig_h * ratio)
-                        pil_img = pil_img.resize((new_w, new_h), PILImage.Resampling.LANCZOS)
-                    else:
-                        new_w, new_h = orig_w, orig_h
-
-                    temp_img_io = io.BytesIO()
-                    pil_img.save(temp_img_io, format="PNG")
-                    temp_img_io.seek(0)
-                    xl_img = OpenpyxlImage(temp_img_io)
-                    xl_img.width = new_w
-                    xl_img.height = new_h
-
-                    ws.add_image(xl_img, f"D{data_row}")
-                    img_height = max(img_height, new_h * 0.75 + 5)
-                except Exception as e:
-                    logger.error(f"Error insertando imagen de evidencia: {e}")
-
-            e = ws[f"E{data_row}"]
-            e.fill = INPUT_FILL
-            e.alignment = Alignment(horizontal="right", vertical="center")
-            e.number_format = '#,##0.00'
-            e.border = THIN
-
-            ws.row_dimensions[data_row].height = max(20, img_height)
-            data_row += 1
-
-        # ── INPUTS ESTRUCTURADOS DEL MAPA ──
+        # ── Structured map (G-H columns) ──────────────────────────────────────
         input_row = 2
         section_rows = {}
-        
+
         for tpl_sheet in ["Balance", "Edo de resultados"]:
             if tpl_sheet not in mapa or current_year not in mapa[tpl_sheet]:
                 continue
@@ -290,26 +320,23 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                     section_rows[section.upper()] = {
                         "header_row": header_row_index,
                         "first_item": first_item_index,
-                        "last_item": last_item_index
+                        "last_item": last_item_index,
                     }
 
             ws[f"G{input_row}"].border = THIN
             ws[f"H{input_row}"].border = THIN
             input_row += 1
 
-        # Inyectar fórmulas
-        SUM_FONT = Font(bold=True, color="FFFFFF", size=10)
+        # ── Formulas + verification block ─────────────────────────────────────
+        SUM_FONT          = Font(bold=True, color="FFFFFF", size=10)
         COMPROBACION_FILL = PatternFill("solid", fgColor="1565C0")
         COMPROBACION_FONT = Font(bold=True, color="FFFFFF", size=11)
-        RESULT_FILL = PatternFill("solid", fgColor="E8F5E9")
-        RESULT_FONT = Font(bold=True, color="1B5E20", size=10)
+        RESULT_FILL       = PatternFill("solid", fgColor="E8F5E9")
+        RESULT_FONT       = Font(bold=True, color="1B5E20", size=10)
 
         for sec_name, sec_info in section_rows.items():
-            hr = sec_info["header_row"]
-            fi = sec_info["first_item"]
-            li = sec_info["last_item"]
-            h_cell = ws[f"H{hr}"]
-            h_cell.value = f"=SUM(H{fi}:H{li})"
+            h_cell = ws[f"H{sec_info['header_row']}"]
+            h_cell.value = f"=SUM(H{sec_info['first_item']}:H{sec_info['last_item']})"
             h_cell.font = SUM_FONT
             h_cell.number_format = '#,##0.00'
             h_cell.alignment = Alignment(horizontal="right", vertical="center")
@@ -324,26 +351,25 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         j1.fill = COMPROBACION_FILL
         j1.alignment = Alignment(horizontal="center", vertical="center")
         j1.border = THIN
-        k1 = ws["K1"]
-        k1.fill = COMPROBACION_FILL
-        k1.border = THIN
+        ws["K1"].fill = COMPROBACION_FILL
+        ws["K1"].border = THIN
         ws.merge_cells("J1:K1")
 
-        ac_row = section_rows.get("ACTIVO CIRCULANTE", {}).get("header_row")
-        af_row = section_rows.get("ACTIVO FIJO", {}).get("header_row")
-        ad_row = section_rows.get("ACTIVO DIFERIDO", {}).get("header_row")
-        pc_row = section_rows.get("PASIVO CIRCULANTE", {}).get("header_row")
-        plp_row = section_rows.get("PASIVO LARGO PLAZO", {}).get("header_row")
-        cc_row = section_rows.get("CAPITAL CONTABLE", {}).get("header_row")
+        ac_row  = section_rows.get("ACTIVO CIRCULANTE",  {}).get("header_row")
+        af_row  = section_rows.get("ACTIVO FIJO",         {}).get("header_row")
+        ad_row  = section_rows.get("ACTIVO DIFERIDO",     {}).get("header_row")
+        pc_row  = section_rows.get("PASIVO CIRCULANTE",   {}).get("header_row")
+        plp_row = section_rows.get("PASIVO LARGO PLAZO",  {}).get("header_row")
+        cc_row  = section_rows.get("CAPITAL CONTABLE",    {}).get("header_row")
 
-        verification_rows = [
-            ("Total Activos", f"=H{ac_row}+H{af_row}+H{ad_row}" if ac_row and af_row and ad_row else ""),
-            ("Total Pasivos", f"=H{pc_row}+H{plp_row}" if pc_row and plp_row else ""),
-            ("Capital Contable", f"=H{cc_row}" if cc_row else ""),
+        verification = [
+            ("Total Activos",            f"=H{ac_row}+H{af_row}+H{ad_row}" if ac_row and af_row and ad_row else ""),
+            ("Total Pasivos",            f"=H{pc_row}+H{plp_row}"           if pc_row and plp_row         else ""),
+            ("Capital Contable",         f"=H{cc_row}"                       if cc_row                     else ""),
             ("Activo-(Pasivo+Capital)", "=K2-(K3+K4)"),
         ]
 
-        for i, (label, formula) in enumerate(verification_rows, start=2):
+        for i, (label, formula) in enumerate(verification, start=2):
             j = ws[f"J{i}"]
             j.value = label
             j.font = Font(bold=True, size=10)
