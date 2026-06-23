@@ -142,19 +142,44 @@ def _extract_pairs_dictaminado(row) -> list:
     El número de nota (ej. "9") queda en medio de los textos.
     Para no confundirlo con un monto financiero, SIEMPRE tomamos
     los ÚLTIMOS DOS números de la fila como Monto1 y Monto2.
+
+    CASO ESPECIAL: "Nota 6" → el "6" se clasifica como numérico pero
+    debe quedar en el concepto para que el match de notas funcione.
+    Detectamos esto: si un número es entero pequeño (1-30) y el token
+    anterior es "nota" o similar, lo dejamos en el concepto.
     """
     tokens = _tokenize_cells(row)
     if not tokens:
         return []
 
-    # Separar todos los textos y todos los numéricos
+    # Separar textos y numéricos, PERO preservando números de referencia a notas
     texts = []
     all_numbers = []
-    for t in tokens:
+
+    for i, t in enumerate(tokens):
         if t in _OCR_NOISE:
             continue
+
         if _is_numeric(t) or t == "-":
-            all_numbers.append(t)
+            # Check if this number is a nota reference (small integer after "nota")
+            is_nota_ref = False
+            try:
+                val = float(t.replace(",", "").replace("$", "").strip())
+                # Small integer = likely nota ref, not a financial amount
+                if val == int(val) and 1 <= val <= 50:
+                    # Look backwards in collected texts for "nota" nearby
+                    recent_text = " ".join(texts[-3:]).lower()
+                    if "nota" in recent_text or recent_text.strip().endswith("("):
+                        is_nota_ref = True
+            except (ValueError, AttributeError):
+                pass
+
+            if is_nota_ref:
+                texts.append(t)  # keep in concept: "INVENTARIOS ( Nota 6 )"
+            elif t == "-":
+                all_numbers.append(t)
+            else:
+                all_numbers.append(t)
         else:
             texts.append(t)
 
@@ -170,9 +195,6 @@ def _extract_pairs_dictaminado(row) -> list:
         m2 = ""
 
     concepto = " ".join(texts).strip()
-
-    if not concepto and not m1:
-        return []
 
     return [(concepto, m1, m2)]
 
