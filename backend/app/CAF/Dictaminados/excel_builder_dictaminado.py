@@ -15,6 +15,8 @@ HEADER_FILL   = PatternFill("solid", fgColor="4CAF50")
 INPUT_FILL    = PatternFill("solid", fgColor="FFF9C4")
 NOTA_FILL     = PatternFill("solid", fgColor="1565C0")   # azul oscuro para headers de nota
 NOTA_FONT     = Font(bold=True, color="FFFFFF", size=10)
+NOTA_ROW_FILL = PatternFill("solid", fgColor="DDEEFF")   # azul celeste suave para filas de nota
+NOTA_END_FILL = PatternFill("solid", fgColor="B3D4F5")   # azul un poco más intenso para cierre
 THIN = Border(
     left=Side(style='thin'), right=Side(style='thin'),
     top=Side(style='thin'), bottom=Side(style='thin'),
@@ -199,6 +201,46 @@ def _extract_pairs_dictaminado(row) -> list:
     return [(concepto, m1, m2)]
 
 
+def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b64, is_last: bool = False):
+    """
+    Escribe una fila de datos de nota con fondo azul celeste.
+    La última fila tiene un azul ligeramente más intenso para marcar el cierre del bloque.
+    """
+    fill = NOTA_END_FILL if is_last else NOTA_ROW_FILL
+
+    a = ws[f"A{row_num}"]
+    a.value = concept
+    a.fill = fill
+    a.border = THIN
+    a.alignment = Alignment(horizontal="left", indent=2)
+
+    b = ws[f"B{row_num}"]
+    b.value = monto
+    b.fill = fill
+    b.alignment = Alignment(horizontal="right")
+    b.border = THIN
+    if monto and '(' in str(monto) and ')' in str(monto):
+        b.font = Font(color="FF0000")
+
+    c = ws[f"C{row_num}"]
+    c.value = p_num
+    c.fill = fill
+    c.alignment = Alignment(horizontal="center")
+    c.border = THIN
+
+    ws[f"D{row_num}"].fill = fill
+    ws[f"D{row_num}"].border = THIN
+    img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
+
+    e = ws[f"E{row_num}"]
+    e.fill = INPUT_FILL
+    e.alignment = Alignment(horizontal="right", vertical="center")
+    e.number_format = '#,##0.00'
+    e.border = THIN
+
+    ws.row_dimensions[row_num].height = max(20, img_height)
+
+
 def _write_evidence_image(ws, col: str, row_num: int, ev_b64: str) -> float:
     """Inserta imagen de evidencia en la celda, retorna altura de imagen."""
     img_height = 20
@@ -360,9 +402,14 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                                 current_nota_num = m.group(1)
                                 if current_nota_num not in nota_tables:
                                     nota_tables[current_nota_num] = []
-                            # We still want to print the header in Excel
+                            # Only add the header ONCE per nota number to avoid duplicates
                             if current_nota_num:
-                                nota_tables[current_nota_num].append(("__NOTA_HEADER__", nota_label, None, None, None))
+                                already_has_header = any(
+                                    item[0] == "__NOTA_HEADER__"
+                                    for item in nota_tables[current_nota_num]
+                                )
+                                if not already_has_header:
+                                    nota_tables[current_nota_num].append(("__NOTA_HEADER__", nota_label, None, None, None))
                             continue
 
                         # Evidence from any cell in this row
@@ -408,24 +455,27 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                     ref_num = m.group(1)
                     if ref_num in nota_tables and ref_num not in used_notas:
                         used_notas.add(ref_num)
-                        # Insert the nota table immediately below
-                        for item in nota_tables[ref_num]:
+                        # Insert the nota table immediately below, with light blue styling
+                        items = nota_tables[ref_num]
+                        for idx, item in enumerate(items):
                             if item[0] == "__NOTA_HEADER__":
                                 _write_nota_header(ws, data_row, item[1])
                                 data_row += 1
                             else:
-                                _write_data_row(ws, data_row, item[1], item[2], item[3], item[4])
+                                is_last = (idx == len(items) - 1)
+                                _write_nota_data_row(ws, data_row, item[1], item[2], item[3], item[4], is_last)
                                 data_row += 1
                                 
         # Write any unused notas at the bottom
         for nota_num, items in nota_tables.items():
             if nota_num not in used_notas:
-                for item in items:
+                for idx, item in enumerate(items):
                     if item[0] == "__NOTA_HEADER__":
                         _write_nota_header(ws, data_row, item[1])
                         data_row += 1
                     else:
-                        _write_data_row(ws, data_row, item[1], item[2], item[3], item[4])
+                        is_last = (idx == len(items) - 1)
+                        _write_nota_data_row(ws, data_row, item[1], item[2], item[3], item[4], is_last)
                         data_row += 1
 
         # ── Structured map (G-H columns) ──────────────────────────────────────
