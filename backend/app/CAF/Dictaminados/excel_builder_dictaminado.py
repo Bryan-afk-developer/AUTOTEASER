@@ -21,6 +21,29 @@ THIN = Border(
 )
 _OCR_NOISE = {".", ",", "_", "|", "/", "\\", ":", ";", "I", "l"}
 
+# Secciones del Balance según fila en la plantilla
+BALANCE_SECTIONS = [
+    (range(9, 19),  "ACTIVO CIRCULANTE",  "1A7A4A"),
+    (range(24, 32), "ACTIVO FIJO",         "2E7D32"),
+    (range(37, 40), "ACTIVO DIFERIDO",     "388E3C"),
+    (range(52, 58), "PASIVO CIRCULANTE",   "C62828"),
+    (range(64, 66), "PASIVO LARGO PLAZO",  "E53935"),
+    (range(74, 79), "CAPITAL CONTABLE",    "6A1B9A"),
+]
+EDO_SECTIONS = [
+    (range(7, 9),   "INGRESOS",            "1A7A4A"),
+    (range(8, 12),  "COSTOS Y GASTOS",     "C62828"),
+    (range(15, 18), "RESULTADO FINANCIERO","1565C0"),
+    (range(20, 22), "OTROS",               "6D4C41"),
+    (range(24, 25), "IMPUESTOS",           "4E342E"),
+    (range(29, 30), "DEPRECIACIÓN",        "37474F"),
+]
+
+def _get_section(row_num, sheet_name):
+    for rng, label, color in (BALANCE_SECTIONS if sheet_name == "Balance" else EDO_SECTIONS):
+        if row_num in rng:
+            return label, color
+    return None, None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -289,14 +312,18 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # ── Write extracted data rows ─────────────────────────────────────────
-        data_row = 2
-
+        # ── Collect Extracted Data Rows ─────────────────────────────────────────
+        main_rows = []
+        nota_tables = {} # key: nota number string, value: list of row tuples
+        
         if "extracted_data" in doc and "pages" in doc["extracted_data"]:
             for page_data in doc["extracted_data"]["pages"]:
                 p_num = page_data.get("page_num", 0) + 1
                 layout_type = page_data.get("layout_type", "dictaminado")
 
+                # Track current nota table we are building
+                current_nota_num = None
+                
                 for table in page_data.get("tables", []):
                     for row in table:
                         if not row:
@@ -305,8 +332,15 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                         # Check if first cell is a nota header (injected by extractor)
                         if row and row[0].get("is_nota_header"):
                             nota_label = row[0].get("text", "NOTA")
-                            _write_nota_header(ws, data_row, nota_label)
-                            data_row += 1
+                            # Extract nota number
+                            m = re.search(r'NOTA\s*(\d+)', nota_label, re.IGNORECASE)
+                            if m:
+                                current_nota_num = m.group(1)
+                                if current_nota_num not in nota_tables:
+                                    nota_tables[current_nota_num] = []
+                            # We still want to print the header in Excel
+                            if current_nota_num:
+                                nota_tables[current_nota_num].append(("__NOTA_HEADER__", nota_label, None, None, None))
                             continue
 
                         # Evidence from any cell in this row
@@ -316,9 +350,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # Extract Concept + amounts using the right strategy:
-                        # - notas_dictaminado: rows come from DocAI native tables (cells already clean)
-                        # - everything else: rows come from manual token grouping
+                        # Extract Concept + amounts
                         if layout_type == "notas_dictaminado":
                             d_pairs = _extract_pairs_from_native_cells(row)
                         else:
@@ -328,8 +360,51 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             monto = m1 if year_idx == 0 else m2
                             if not concept and not monto:
                                 continue
-                            _write_data_row(ws, data_row, concept, monto, p_num, evidence_b64)
-                            data_row += 1
+                                
+                            row_data = (concept, monto, p_num, evidence_b64)
+                            if current_nota_num:
+                                nota_tables[current_nota_num].append(("__DATA__",) + row_data)
+                            else:
+                                main_rows.append(row_data)
+                    
+                    # Reset current nota table after finishing a table
+                    current_nota_num = None
+
+        # ── Interleave and Write Data Rows ────────────────────────────────────
+        data_row = 2
+        used_notas = set()
+
+        for (concept, monto, p_num, evidence_b64) in main_rows:
+            # Write the main row
+            _write_data_row(ws, data_row, concept, monto, p_num, evidence_b64)
+            data_row += 1
+            
+            # Check if this concept references a nota
+            if concept:
+                m = re.search(r'\bnota\s*(\d+)\b', concept, re.IGNORECASE)
+                if m:
+                    ref_num = m.group(1)
+                    if ref_num in nota_tables and ref_num not in used_notas:
+                        used_notas.add(ref_num)
+                        # Insert the nota table immediately below
+                        for item in nota_tables[ref_num]:
+                            if item[0] == "__NOTA_HEADER__":
+                                _write_nota_header(ws, data_row, item[1])
+                                data_row += 1
+                            else:
+                                _write_data_row(ws, data_row, item[1], item[2], item[3], item[4])
+                                data_row += 1
+                                
+        # Write any unused notas at the bottom
+        for nota_num, items in nota_tables.items():
+            if nota_num not in used_notas:
+                for item in items:
+                    if item[0] == "__NOTA_HEADER__":
+                        _write_nota_header(ws, data_row, item[1])
+                        data_row += 1
+                    else:
+                        _write_data_row(ws, data_row, item[1], item[2], item[3], item[4])
+                        data_row += 1
 
         # ── Structured map (G-H columns) ──────────────────────────────────────
         input_row = 2
@@ -352,38 +427,63 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             ws.merge_cells(f"G{input_row}:H{input_row}")
             input_row += 1
 
-            for section, items in concepts.items():
-                s_hdr = ws[f"G{input_row}"]
-                s_hdr.value = section.upper()
-                s_hdr.font = Font(bold=True, size=10)
-                s_hdr.fill = PatternFill("solid", fgColor="E0E0E0")
-                s_hdr.border = THIN
-                ws[f"H{input_row}"].fill = PatternFill("solid", fgColor="E0E0E0")
-                ws[f"H{input_row}"].border = THIN
+            current_section = None
+            current_section_header_row = None
+            current_section_first_item = None
 
-                header_row_index = input_row
-                input_row += 1
-                first_item_index = input_row
+            for concept_name, target_cell in concepts.items():
+                row_match = re.search(r'\d+', target_cell)
+                if not row_match:
+                    continue
+                tpl_row = int(row_match.group())
 
-                for item in items:
-                    c_cell = ws[f"G{input_row}"]
-                    c_cell.value = item
-                    c_cell.border = THIN
+                sec_label, sec_color = _get_section(tpl_row, tpl_sheet)
+                if sec_label and sec_label != current_section:
+                    # Save previous section range
+                    if current_section and current_section_first_item:
+                        section_rows[current_section] = {
+                            "header_row": current_section_header_row,
+                            "first_item": current_section_first_item,
+                            "last_item": input_row - 1
+                        }
 
-                    val_cell = ws[f"H{input_row}"]
-                    val_cell.fill = INPUT_FILL
-                    val_cell.number_format = '#,##0.00'
-                    val_cell.border = THIN
-                    val_cell.alignment = Alignment(horizontal="right", vertical="center")
+                    g = ws[f"G{input_row}"]
+                    g.value = sec_label
+                    g.font = Font(bold=True, color="FFFFFF", size=10)
+                    g.fill = PatternFill("solid", fgColor=sec_color)
+                    g.alignment = Alignment(horizontal="left", vertical="center")
+                    g.border = THIN
+                    ws[f"H{input_row}"].fill = PatternFill("solid", fgColor=sec_color)
+                    ws[f"H{input_row}"].border = THIN
+                    current_section_header_row = input_row
                     input_row += 1
+                    current_section = sec_label
+                    current_section_first_item = input_row
 
-                last_item_index = input_row - 1
-                if first_item_index <= last_item_index:
-                    section_rows[section.upper()] = {
-                        "header_row": header_row_index,
-                        "first_item": first_item_index,
-                        "last_item": last_item_index,
-                    }
+                # Nombre del concepto
+                c_cell = ws[f"G{input_row}"]
+                c_cell.value = concept_name.replace("_", " ").title()
+                c_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                c_cell.border = THIN
+
+                val_cell = ws[f"H{input_row}"]
+                val_cell.fill = INPUT_FILL
+                val_cell.number_format = '#,##0.00'
+                val_cell.border = THIN
+                val_cell.alignment = Alignment(horizontal="right", vertical="center")
+                
+                # Formula en la plantilla no la inyectamos porque los dictaminados son multi-sheet 
+                # (o podriamos inyectar si sabemos la hoja destino, pero por simplicidad de inputs se omite)
+                
+                input_row += 1
+
+            # Save last section
+            if current_section and current_section_first_item:
+                section_rows[current_section] = {
+                    "header_row": current_section_header_row,
+                    "first_item": current_section_first_item,
+                    "last_item": input_row - 1
+                }
 
             ws[f"G{input_row}"].border = THIN
             ws[f"H{input_row}"].border = THIN
