@@ -140,13 +140,15 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             table_y = min(v.y for v in verts) if verts else 0
 
             rows = []
-            # Process header rows (often "Tipo de inventario | 2024 | 2023")
-            for hrow in table.header_rows:
-                cells = _extract_row_cells(hrow, full_text, page_width, page_height)
-                if cells:
-                    rows.append(cells)
+            # Skip header rows (they contain year labels like "2024 | 2023", not data)
+            # We mark them but don't add to rows - they just confuse the extraction
+            # Optionally uncomment to include them:
+            # for hrow in table.header_rows:
+            #     cells = _extract_row_cells(hrow, full_text, page_width, page_height)
+            #     if cells:
+            #         rows.append([{**c, "is_table_header": True} for c in cells])
 
-            # Process body rows
+            # Process body rows only
             for brow in table.body_rows:
                 cells = _extract_row_cells(brow, full_text, page_width, page_height)
                 if cells:

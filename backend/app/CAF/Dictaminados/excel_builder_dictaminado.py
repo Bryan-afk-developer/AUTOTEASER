@@ -56,45 +56,55 @@ def _tokenize_cells(row) -> list:
 
 def _extract_pairs_from_native_cells(row) -> list:
     """
-    For rows coming from DocAI native table detection (notas_dictaminado mode):
-    cells are already separated, so we directly map:
-      Cell 0 = Concepto
-      Cell -2 = Monto Año 1 (second to last)
-      Cell -1 = Monto Año 2 (last)
-    Skips header rows (where cells don't contain financial amounts).
+    For rows coming from DocAI native table detection (notas_dictaminado mode).
+
+    CLAVE: Usa POSICIÓN de celda, no detección numérica:
+      - cells[0]     = Concepto (primera celda, siempre texto)
+      - cells[-2]    = Monto Año 1 (penúltima = año más reciente)
+      - cells[-1]    = Monto Año 2 (última = año anterior)
+
+    Esto es más robusto porque DocAI ya separó las celdas correctamente.
+    Omite filas de un solo token (totalmente vacías o solo símbolo).
     """
     if not row:
         return []
 
-    # Get text values per cell
-    cell_texts = [c.get("text", "").strip() for c in row if c.get("text", "").strip()]
-
-    if len(cell_texts) < 2:
+    # Get only non-empty cells
+    cells = [c for c in row if c.get("text", "").strip()]
+    if len(cells) < 2:
         return []
 
-    # First cell = concepto (everything that's not numeric at the end)
-    # Last two numeric-looking cells = the two year amounts
-    amounts = []
-    concept_parts = []
-    for t in cell_texts:
-        if _is_numeric(t) or t in ("-", "$-", "$ -"):
-            amounts.append(t)
-        else:
-            concept_parts.append(t)
+    if len(cells) == 2:
+        # Concept + 1 amount (e.g. single-year table or total row)
+        concepto = cells[0]["text"].strip()
+        m1 = cells[1]["text"].strip()
+        # Skip if it looks like a year header (m1 is a year like "2024")
+        try:
+            if 1990 <= float(m1.replace(",", "")) <= 2030:
+                return []
+        except (ValueError, AttributeError):
+            pass
+        return [(concepto, m1, "")]
 
-    concepto = " ".join(concept_parts).strip()
+    # 3+ cells: concept = join of all except last 2, amounts = last 2
+    concept_cells = cells[:-2]
+    m1_cell = cells[-2]
+    m2_cell = cells[-1]
 
-    if len(amounts) >= 2:
-        m1 = amounts[-2]
-        m2 = amounts[-1]
-    elif len(amounts) == 1:
-        m1 = amounts[0]
-        m2 = ""
-    else:
-        m1 = ""
-        m2 = ""
+    concepto = " ".join(c["text"].strip() for c in concept_cells if c["text"].strip())
+    m1 = m1_cell["text"].strip()
+    m2 = m2_cell["text"].strip()
 
-    if not concepto and not m1 and not m2:
+    # Skip header-like rows where last cells are years (e.g. "2024" | "2023")
+    try:
+        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1))
+        v2 = float(re.sub(r'[\$,\s\(\)]', '', m2))
+        if 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
+            return []
+    except (ValueError, AttributeError):
+        pass
+
+    if not concepto and not m1:
         return []
 
     return [(concepto, m1, m2)]
