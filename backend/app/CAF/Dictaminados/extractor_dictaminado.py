@@ -140,9 +140,6 @@ def _extract_nota_tables(all_rows: list, page_width: float) -> list:
         if not row:
             continue
 
-        # Check if this row is a NOTA header
-        # A row is a nota header if the first token matches the NOTA pattern
-        first_text = row[0].get("text", "") if row else ""
         full_row_text = " ".join(t.get("text", "") for t in row)
         nota_match = _NOTA_HEADER_RE.match(full_row_text.strip())
 
@@ -150,17 +147,22 @@ def _extract_nota_tables(all_rows: list, page_width: float) -> list:
             # Save previous nota section
             if current_nota_label and current_nota_rows:
                 result_tables.append(_pack_nota_table(current_nota_label, current_nota_rows))
-
-            # Start new nota
-            # Extract full nota title (join all tokens in this header row)
-            nota_num = nota_match.group(1)
             nota_title = full_row_text.strip()
             current_nota_label = nota_title
             current_nota_rows = []
-        else:
-            # Only add rows that look like table data (at least one numeric token)
-            has_numeric = any(_is_numeric_token(t.get("text", "")) for t in row)
-            if has_numeric and current_nota_label:
+        elif current_nota_label:
+            # Only accept rows that look like table data:
+            # 1. Must contain at least ONE real financial amount (>=4 digits or has comma separators)
+            # 2. Must NOT be a long prose paragraph (if the row has >8 non-numeric tokens, skip it)
+            financial_amounts = [t for t in row if _is_financial_amount(t.get("text", ""))]
+            
+            # Count non-numeric tokens (words)
+            word_tokens = [t for t in row if not _is_numeric_token(t.get("text", "")) and len(t.get("text", "")) > 1]
+            
+            # A paragraph row will have many word tokens and few/no financial amounts
+            is_paragraph = len(word_tokens) >= 6 and len(financial_amounts) == 0
+            
+            if financial_amounts and not is_paragraph:
                 current_nota_rows.append(row)
 
     # Flush last section
@@ -183,6 +185,34 @@ def _pack_nota_table(nota_label: str, rows: list) -> list:
     # Insert a synthetic header row marking this as a nota header
     header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
     return [header_row] + rows
+
+
+def _is_financial_amount(text: str) -> bool:
+    """
+    Returns True only for real financial amounts:
+    - Has comma separators (e.g. 1,423,292)
+    - Starts with $ sign
+    - Is a large number (4+ digits, >= 1000)
+    Explicitly rejects years (2020-2026) and small numbers.
+    """
+    t = text.strip()
+    if t.startswith('$'):
+        return True
+    if ',' in t:
+        # Could be 1,423,292 - clean and check
+        cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
+        if cleaned.replace('.', '', 1).isdigit() and len(cleaned.replace('.', '')) >= 4:
+            return True
+    # Plain number with >= 4 digits that is NOT a year
+    cleaned = re.sub(r'[\$,\s\(\)\-]', '', t)
+    if cleaned.replace('.', '', 1).isdigit():
+        val = float(cleaned) if cleaned else 0
+        # Reject years 1990-2030
+        if 1990 <= val <= 2030:
+            return False
+        # Accept if 4+ digits (>= 1000)
+        return val >= 1000
+    return False
 
 
 def _is_numeric_token(text: str) -> bool:
