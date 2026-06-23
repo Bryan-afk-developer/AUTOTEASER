@@ -152,7 +152,9 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: doc.useOcr !== false })
+        const docType = doc.docType || 'financiero';
+        const useOcr = docType === 'dictaminado' ? true : (doc.useOcr !== false);
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr, doc_type: docType })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -246,12 +248,22 @@ export default function CafDashboard() {
                     )}
                   </div>
                   <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-white transition-colors" title="Si está activo, usa Document AI. Si se desactiva, intenta extraer el texto de forma nativa más rápido.">
+                    <select
+                      value={doc.docType || 'financiero'}
+                      onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, docType: e.target.value, useOcr: e.target.value === 'dictaminado' ? true : d.useOcr } : d))}
+                      className="bg-surface border border-border rounded text-xs px-2 py-1 text-white outline-none focus:ring-1 focus:ring-primary-500"
+                    >
+                      <option value="financiero">Estado Financiero</option>
+                      <option value="dictaminado">Dictaminado</option>
+                    </select>
+
+                    <label className={`flex items-center gap-2 cursor-pointer text-xs transition-colors ${doc.docType === 'dictaminado' ? 'text-text-muted/50' : 'text-text-muted hover:text-white'}`} title={doc.docType === 'dictaminado' ? "Los dictaminados siempre usan OCR" : "Si está activo, usa Document AI."}>
                       <input 
                         type="checkbox" 
-                        checked={doc.useOcr !== false} 
+                        checked={doc.docType === 'dictaminado' ? true : (doc.useOcr !== false)} 
+                        disabled={doc.docType === 'dictaminado'}
                         onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, useOcr: e.target.checked } : d))}
-                        className="w-3 h-3 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50"
+                        className="w-3 h-3 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50 disabled:opacity-50"
                       />
                       <span>Usar OCR</span>
                     </label>
@@ -318,6 +330,9 @@ export default function CafDashboard() {
                                 <option value="single_column">LINEAL (Auto)</option>
                                 <option value="split_column">CONCEPTO / MONTO</option>
                                 <option value="two_column">2 COLUMNAS</option>
+                                {doc.docType === 'dictaminado' && (
+                                  <option value="notas_dictaminado">📋 NOTAS (Página completa)</option>
+                                )}
                               </select>
                               
                               {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column') && (
@@ -331,6 +346,11 @@ export default function CafDashboard() {
                                   <Crop className="w-3 h-3" /> 
                                   {regions && regions.length > 0 ? 'Áreas Ajustadas' : 'Ajustar Áreas'}
                                 </button>
+                              )}
+                              {layoutType === 'notas_dictaminado' && (
+                                <div className="w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300">
+                                  🔍 Auto-detecta NOTAS
+                                </div>
                               )}
                             </div>
                           )}
@@ -526,16 +546,35 @@ export default function CafDashboard() {
                   <div className="space-y-4 mt-4">
                     {missingYearDocs.map(doc => (
                       <div key={doc.doc_id} className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-white/80">{doc.filename}</label>
-                        <input 
-                          type="number" 
-                          min="2000" 
-                          max="2100"
-                          placeholder="Ej. 2024"
-                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
-                          value={yearOverrides[doc.doc_id] || ''}
-                          onChange={(e) => setYearOverrides(prev => ({ ...prev, [doc.doc_id]: e.target.value }))}
-                        />
+                        <label className="text-xs font-semibold text-white/80">{doc.filename} {doc.docType === 'dictaminado' ? '(Dictaminado)' : ''}</label>
+                        {doc.docType === 'dictaminado' ? (
+                          <div className="flex gap-2">
+                            <input 
+                              type="number" 
+                              placeholder="Año Reciente (Ej. 2024)"
+                              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                              value={yearOverrides[`${doc.doc_id}_1`] || ''}
+                              onChange={(e) => setYearOverrides(prev => ({ ...prev, [`${doc.doc_id}_1`]: e.target.value }))}
+                            />
+                            <input 
+                              type="number" 
+                              placeholder="Año Anterior (Ej. 2023)"
+                              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                              value={yearOverrides[`${doc.doc_id}_2`] || ''}
+                              onChange={(e) => setYearOverrides(prev => ({ ...prev, [`${doc.doc_id}_2`]: e.target.value }))}
+                            />
+                          </div>
+                        ) : (
+                          <input 
+                            type="number" 
+                            min="2000" 
+                            max="2100"
+                            placeholder="Ej. 2024"
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                            value={yearOverrides[doc.doc_id] || ''}
+                            onChange={(e) => setYearOverrides(prev => ({ ...prev, [doc.doc_id]: e.target.value }))}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -549,12 +588,22 @@ export default function CafDashboard() {
                     </button>
                     <button 
                       onClick={() => {
-                        const allFilled = missingYearDocs.every(d => yearOverrides[d.doc_id]?.trim());
+                        const allFilled = missingYearDocs.every(d => {
+                          if (d.docType === 'dictaminado') {
+                            return yearOverrides[`${d.doc_id}_1`]?.trim() && yearOverrides[`${d.doc_id}_2`]?.trim();
+                          }
+                          return yearOverrides[d.doc_id]?.trim();
+                        });
                         if (!allFilled) {
-                          alert("Por favor ingresa el año para todos los documentos listados.");
+                          alert("Por favor ingresa el/los año(s) correspondientes para todos los documentos listados.");
                           return;
                         }
                         const overrides = { ...yearOverrides };
+                        missingYearDocs.forEach(d => {
+                          if (d.docType === 'dictaminado') {
+                            overrides[d.doc_id] = `${overrides[`${d.doc_id}_1`]}, ${overrides[`${d.doc_id}_2`]}`;
+                          }
+                        });
                         setMissingYearDocs(null);
                         handleGenerateExcel(overrides);
                       }}
