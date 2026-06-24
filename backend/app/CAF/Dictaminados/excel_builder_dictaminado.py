@@ -195,76 +195,33 @@ def _extract_pairs_from_native_cells(row, current_table_headers=None) -> list:
         concepto = " ".join(c["text"].strip() for c in cells[:first_num_idx])
         
     data_cells = cells[first_num_idx:]
-    pairs = []
     
-    # Si hay más de 2 datos numéricos, pivoteamos (recortamos) la tabla hacia abajo
-    if len(data_cells) > 2 and len(data_cells) % 2 == 0:
-        # Probablemente simétrico (Año 1 y Año 2)
-        half = len(data_cells) // 2
-        for i in range(half):
-            m1 = _clean_monto_ocr(data_cells[i]["text"].strip())
-            m2 = _clean_monto_ocr(data_cells[i + half]["text"].strip())
-            
-            if m1 or m2:
-                # Omitir encabezados de años
-                try:
-                    v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
-                    v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
-                    if m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
-                        continue
-                except (ValueError, AttributeError):
-                    pass
-                    
-                suffix = ""
-                if current_table_headers and len(current_table_headers) == len(cells):
-                    # Usar el header original si coincide el tamaño
-                    h_idx = first_num_idx + i
-                    if h_idx < len(current_table_headers):
-                        h_val = current_table_headers[h_idx]
-                        if h_val: suffix = f" ({h_val})"
-                
-                if not suffix:
-                    suffix = f" (Dato {i+1})" if half > 1 else ""
-                
-                pairs.append((f"{concepto}{suffix}", m1, m2))
-    else:
-        # 1 o 2 celdas, o impar (no simétrico)
-        # Si son 2, es el comportamiento normal
-        if len(data_cells) == 2:
-            m1 = _clean_monto_ocr(data_cells[0]["text"].strip())
-            m2 = _clean_monto_ocr(data_cells[1]["text"].strip())
-            try:
-                v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
-                v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
-                if not (m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030):
-                    if m1 or m2: pairs.append((concepto, m1, m2))
-            except (ValueError, AttributeError):
-                if m1 or m2: pairs.append((concepto, m1, m2))
+    amounts = []
+    for c in data_cells:
+        m = _clean_monto_ocr(c["text"].strip())
+        if m:
+            amounts.append(m)
         else:
-            # Impar, sacamos uno por renglón
-            for i, c in enumerate(data_cells):
-                m1 = _clean_monto_ocr(c["text"].strip())
-                if m1:
-                    try:
-                        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
-                        if 1990 <= v1 <= 2030:
-                            continue
-                    except (ValueError, AttributeError):
-                        pass
-                        
-                    suffix = ""
-                    if current_table_headers and len(current_table_headers) == len(cells):
-                        h_idx = first_num_idx + i
-                        if h_idx < len(current_table_headers):
-                            h_val = current_table_headers[h_idx]
-                            if h_val: suffix = f" ({h_val})"
-                    
-                    if not suffix:
-                        suffix = f" (Dato {i+1})" if len(data_cells) > 1 else ""
-                        
-                    pairs.append((f"{concepto}{suffix}", m1, ""))
-                    
-    return pairs
+            amounts.append("")
+            
+    # Check if this row is just year headers (e.g. 2025, 2024)
+    if all(m == "" for m in amounts):
+        return []
+        
+    try:
+        years_only = True
+        for m in amounts:
+            if m and m != "-":
+                val = float(re.sub(r'[\$,\s\(\)]', '', m))
+                if not (1990 <= val <= 2030):
+                    years_only = False
+                    break
+        if years_only and sum(1 for m in amounts if m) >= 2:
+            return []
+    except (ValueError, AttributeError):
+        pass
+
+    return [(concepto, *amounts)]
 
 
 def _extract_pairs_dictaminado(row) -> list:
@@ -333,7 +290,7 @@ def _extract_pairs_dictaminado(row) -> list:
     return [(concepto, m1, m2)]
 
 
-def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b64, is_last: bool = False):
+def _write_nota_data_row(ws, row_num: int, concept: str, amounts: list, p_num: int, ev_b64, is_last: bool = False):
     """
     Escribe una fila de datos de nota con fondo azul celeste.
     La última fila tiene un azul ligeramente más intenso para marcar el cierre del bloque.
@@ -342,35 +299,33 @@ def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int,
 
     a = ws[f"A{row_num}"]
     a.value = concept
+    a.font = Font(color="000000")
     a.fill = fill
+    a.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
     a.border = THIN
-    a.alignment = Alignment(horizontal="left", indent=2)
 
-    b = ws[f"B{row_num}"]
-    b.value = monto
-    b.fill = fill
-    b.alignment = Alignment(horizontal="right")
-    b.border = THIN
-    if monto and '(' in str(monto) and ')' in str(monto):
-        b.font = Font(color="FF0000")
+    col_idx = 2
+    for m in amounts:
+        col_letter = get_column_letter(col_idx)
+        b = ws[f"{col_letter}{row_num}"]
+        b.value = m
+        b.fill = fill
+        b.alignment = Alignment(horizontal="right", vertical="center")
+        b.border = THIN
+        col_idx += 1
 
-    c = ws[f"C{row_num}"]
-    c.value = p_num
+    c = ws[f"J{row_num}"]
+    c.value = p_num if p_num else ""
     c.fill = fill
-    c.alignment = Alignment(horizontal="center")
+    c.alignment = Alignment(horizontal="center", vertical="center")
     c.border = THIN
 
-    ws[f"D{row_num}"].fill = fill
-    ws[f"D{row_num}"].border = THIN
-    img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
-
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
+    e = ws[f"L{row_num}"]
+    e.fill = fill
     e.border = THIN
 
-    ws.row_dimensions[row_num].height = max(20, img_height)
+    img_height = _write_evidence_image(ws, "K", row_num, ev_b64)
+    ws.row_dimensions[row_num].height = img_height
 
 
 def _write_nota_image_row(ws, row_num: int, img_b64: str, p_num: int):
@@ -462,33 +417,30 @@ def _write_nota_header(ws, row_num: int, nota_label: str):
     ws.row_dimensions[row_num].height = 18
 
 
-def _write_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b64):
-    """Escribe una fila de datos en las columnas A-E."""
+def _write_data_row(ws, row_num: int, concept: str, amounts: list, p_num: int, ev_b64):
+    """Escribe una fila de datos en las columnas A hasta J+."""
     ws[f"A{row_num}"].value = concept
     ws[f"A{row_num}"].border = THIN
 
-    b_cell = ws[f"B{row_num}"]
-    b_cell.value = monto
-    b_cell.alignment = Alignment(horizontal="right")
-    b_cell.border = THIN
-    if monto and '(' in str(monto) and ')' in str(monto):
-        b_cell.font = Font(color="FF0000")
+    col_idx = 2 # Start at B
+    for m in amounts:
+        col_letter = get_column_letter(col_idx)
+        b_cell = ws[f"{col_letter}{row_num}"]
+        b_cell.value = m
+        b_cell.alignment = Alignment(horizontal="right")
+        b_cell.border = THIN
+        col_idx += 1
 
-    c_cell = ws[f"C{row_num}"]
-    c_cell.value = p_num
+    # J = Pagina, K = Evidencia, L = Ajuste
+    c_cell = ws[f"J{row_num}"]
+    c_cell.value = p_num if p_num else ""
     c_cell.alignment = Alignment(horizontal="center")
     c_cell.border = THIN
 
-    ws[f"D{row_num}"].border = THIN
-    img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
-
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
-    e.border = THIN
-
-    ws.row_dimensions[row_num].height = max(20, img_height)
+    ws[f"L{row_num}"].border = THIN # Empty Ajuste cell
+    
+    img_height = _write_evidence_image(ws, "K", row_num, ev_b64)
+    ws.row_dimensions[row_num].height = img_height
 
 
 # ── Main public function ──────────────────────────────────────────────────────
@@ -524,11 +476,18 @@ def inject_dictaminado_sheets(doc, wb, mapa):
 
         # ── Column headers A-E + G-H ──────────────────────────────────────────
         col_headers = {
-            "A": ("Cuenta Extraída", 32),
-            "B": ("Monto Extraído", 18),
-            "C": ("Página", 8),
-            "D": ("Evidencia Visual", 55),
-            "E": ("Input / Ajuste", 18),
+            "A": ("Cuenta Extraída", 35),
+            "B": ("Monto 1", 18),
+            "C": ("Monto 2", 18),
+            "D": ("Monto 3", 18),
+            "E": ("Monto 4", 18),
+            "F": ("Monto 5", 18),
+            "G": ("Monto 6", 18),
+            "H": ("Monto 7", 18),
+            "I": ("Monto 8", 18),
+            "J": ("Página", 10),
+            "K": ("Evidencia Visual", 25),
+            "L": ("Input / Ajuste", 18),
         }
         for col, (title, width) in col_headers.items():
             cell = ws[f"{col}1"]
@@ -539,8 +498,8 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        ws.column_dimensions["F"].width = 3
-        for col, (title, width) in {"G": ("Concepto", 32), "H": ("Importe (Input)", 18)}.items():
+        ws.column_dimensions["M"].width = 3
+        for col, (title, width) in {"N": ("Concepto", 32), "O": ("Importe (Input)", 18)}.items():
             cell = ws[f"{col}1"]
             cell.value = title
             cell.font = HEADER_FONT
@@ -568,27 +527,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             continue
                             
                         # Check if this row is a table header extracted from DocAI
-                        is_header = row[0].get("is_table_header", False)
-                        
-                        # Fallback: If DocAI missed it, a row with ONLY text and NO financial amounts is likely a header.
-                        if not is_header and len(row) > 1 and not row[0].get("is_nota_header") and not row[0].get("is_nota_image"):
-                            has_amount = False
-                            for c in row:
-                                m = _clean_monto_ocr(c.get("text", "").strip())
-                                if m:
-                                    try:
-                                        v = float(re.sub(r'[\$,\s\(\)]', '', m)) if m != "-" else 0
-                                        # Years (2024, 2025) are allowed in headers
-                                        if not (1990 <= v <= 2030):
-                                            has_amount = True
-                                            break
-                                    except (ValueError, AttributeError):
-                                        has_amount = True
-                                        break
-                            if not has_amount:
-                                is_header = True
-                                
-                        if is_header:
+                        if row[0].get("is_table_header"):
                             current_table_headers = [c.get("text", "").strip().replace('\n', ' ') for c in row]
                             continue
 
@@ -636,7 +575,8 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             if not concept and not monto:
                                 continue
                                 
-                            row_data = (concept, monto, p_num, evidence_b64)
+                            amounts = [m1, m2] if m2 else [m1]
+                            row_data = (concept, amounts, p_num, evidence_b64)
                             if current_nota_num:
                                 nota_tables[current_nota_num].append(("__DATA__",) + row_data)
                             else:
@@ -696,14 +636,16 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         
         # Flatten all extracted data for fuzzy matching
         flat_data = []
-        for (concept, monto, p_num, ev) in main_rows:
+        for (concept, amounts, p_num, ev) in main_rows:
+            monto = amounts[0] if amounts else ""
             if concept and monto:
                 flat_data.append((concept, monto))
         for nota_num, items in nota_tables.items():
             for item in items:
                 if item[0] == "__DATA__":
                     concept = item[1]
-                    monto = item[2]
+                    amounts = item[2]
+                    monto = amounts[0] if amounts else ""
                     if concept and monto:
                         flat_data.append((concept, monto))
 
@@ -713,15 +655,15 @@ def inject_dictaminado_sheets(doc, wb, mapa):
 
             concepts = mapa[tpl_sheet][current_year]
 
-            hdr = ws[f"G{input_row}"]
+            hdr = ws[f"N{input_row}"]
             hdr.value = f"── {tpl_sheet.upper()} ──"
             hdr.font = Font(bold=True, color="FFFFFF", size=11)
             hdr.fill = HEADER_FILL
             hdr.alignment = Alignment(horizontal="center", vertical="center")
             hdr.border = THIN
-            ws[f"H{input_row}"].fill = HEADER_FILL
-            ws[f"H{input_row}"].border = THIN
-            ws.merge_cells(f"G{input_row}:H{input_row}")
+            ws[f"O{input_row}"].fill = HEADER_FILL
+            ws[f"O{input_row}"].border = THIN
+            ws.merge_cells(f"N{input_row}:O{input_row}")
             input_row += 1
 
             current_section = None
@@ -744,27 +686,27 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             "last_item": input_row - 1
                         }
 
-                    g = ws[f"G{input_row}"]
+                    g = ws[f"N{input_row}"]
                     g.value = sec_label
                     g.font = Font(bold=True, color="FFFFFF", size=10)
                     g.fill = PatternFill("solid", fgColor=sec_color)
                     g.alignment = Alignment(horizontal="left", vertical="center")
                     g.border = THIN
-                    ws[f"H{input_row}"].fill = PatternFill("solid", fgColor=sec_color)
-                    ws[f"H{input_row}"].border = THIN
+                    ws[f"O{input_row}"].fill = PatternFill("solid", fgColor=sec_color)
+                    ws[f"O{input_row}"].border = THIN
                     current_section_header_row = input_row
                     input_row += 1
                     current_section = sec_label
                     current_section_first_item = input_row
 
                 # Nombre del concepto
-                c_cell = ws[f"G{input_row}"]
+                c_cell = ws[f"N{input_row}"]
                 display_concept = concept_name.replace("_", " ").title()
                 c_cell.value = display_concept
                 c_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                 c_cell.border = THIN
 
-                val_cell = ws[f"H{input_row}"]
+                val_cell = ws[f"O{input_row}"]
                 val_cell.fill = INPUT_FILL
                 val_cell.number_format = '#,##0.00'
                 val_cell.border = THIN
@@ -777,7 +719,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                 
                 # Inyectar fórmula en la plantilla para que apunte a esta hoja de dictaminado
                 if tpl_sheet in wb.sheetnames and target_cell:
-                    wb[tpl_sheet][target_cell] = f"='{sheet_name}'!H{input_row}"
+                    wb[tpl_sheet][target_cell] = f"='{sheet_name}'!O{input_row}"
                 
                 input_row += 1
 
@@ -789,8 +731,8 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                     "last_item": input_row - 1
                 }
 
-            ws[f"G{input_row}"].border = THIN
-            ws[f"H{input_row}"].border = THIN
+            ws[f"N{input_row}"].border = THIN
+            ws[f"O{input_row}"].border = THIN
             input_row += 1
 
         # ── Formulas + verification block ─────────────────────────────────────
@@ -801,25 +743,25 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         RESULT_FONT       = Font(bold=True, color="1B5E20", size=10)
 
         for sec_name, sec_info in section_rows.items():
-            h_cell = ws[f"H{sec_info['header_row']}"]
-            h_cell.value = f"=SUM(H{sec_info['first_item']}:H{sec_info['last_item']})"
+            h_cell = ws[f"O{sec_info['header_row']}"]
+            h_cell.value = f"=SUM(O{sec_info['first_item']}:O{sec_info['last_item']})"
             h_cell.font = SUM_FONT
             h_cell.number_format = '#,##0.00'
             h_cell.alignment = Alignment(horizontal="right", vertical="center")
 
-        ws.column_dimensions["I"].width = 3
-        ws.column_dimensions["J"].width = 26
-        ws.column_dimensions["K"].width = 20
+        ws.column_dimensions["P"].width = 3
+        ws.column_dimensions["Q"].width = 26
+        ws.column_dimensions["R"].width = 20
 
-        j1 = ws["J1"]
+        j1 = ws["Q1"]
         j1.value = "COMPROBACION"
         j1.font = COMPROBACION_FONT
         j1.fill = COMPROBACION_FILL
         j1.alignment = Alignment(horizontal="center", vertical="center")
         j1.border = THIN
-        ws["K1"].fill = COMPROBACION_FILL
-        ws["K1"].border = THIN
-        ws.merge_cells("J1:K1")
+        ws["R1"].fill = COMPROBACION_FILL
+        ws["R1"].border = THIN
+        ws.merge_cells("Q1:R1")
 
         ac_row  = section_rows.get("ACTIVO CIRCULANTE",  {}).get("header_row")
         af_row  = section_rows.get("ACTIVO FIJO",         {}).get("header_row")
@@ -829,21 +771,21 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         cc_row  = section_rows.get("CAPITAL CONTABLE",    {}).get("header_row")
 
         verification = [
-            ("Total Activos",            f"=H{ac_row}+H{af_row}+H{ad_row}" if ac_row and af_row and ad_row else ""),
-            ("Total Pasivos",            f"=H{pc_row}+H{plp_row}"           if pc_row and plp_row         else ""),
-            ("Capital Contable",         f"=H{cc_row}"                       if cc_row                     else ""),
-            ("Activo-(Pasivo+Capital)", "=K2-(K3+K4)"),
+            ("Total Activos",            f"=O{ac_row}+O{af_row}+O{ad_row}" if ac_row and af_row and ad_row else ""),
+            ("Total Pasivos",            f"=O{pc_row}+O{plp_row}"           if pc_row and plp_row         else ""),
+            ("Capital Contable",         f"=O{cc_row}"                       if cc_row                     else ""),
+            ("Activo-(Pasivo+Capital)", "=R2-(R3+R4)"),
         ]
 
         for i, (label, formula) in enumerate(verification, start=2):
-            j = ws[f"J{i}"]
+            j = ws[f"Q{i}"]
             j.value = label
             j.font = Font(bold=True, size=10)
             j.alignment = Alignment(horizontal="left", vertical="center")
             j.border = THIN
             j.fill = RESULT_FILL
 
-            k = ws[f"K{i}"]
+            k = ws[f"R{i}"]
             k.value = formula
             k.font = RESULT_FONT
             k.number_format = '#,##0.00'
@@ -851,13 +793,13 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             k.border = THIN
             k.fill = RESULT_FILL
 
-        ws["J6"].value = "Resultado:"
-        ws["J6"].font = Font(bold=True, size=10)
-        ws["J6"].alignment = Alignment(horizontal="left", vertical="center")
-        ws["J6"].border = THIN
-        ws["K6"].value = '=IF(ABS(K5)<0.01,"SI CUADRA","NO CUADRA")'
-        ws["K6"].font = Font(bold=True, size=11)
-        ws["K6"].alignment = Alignment(horizontal="center", vertical="center")
-        ws["K6"].border = THIN
+        ws["Q6"].value = "Resultado:"
+        ws["Q6"].font = Font(bold=True, size=10)
+        ws["Q6"].alignment = Alignment(horizontal="left", vertical="center")
+        ws["Q6"].border = THIN
+        ws["R6"].value = '=IF(ABS(R5)<0.01,"SI CUADRA","NO CUADRA")'
+        ws["R6"].font = Font(bold=True, size=11)
+        ws["R6"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["R6"].border = THIN
 
     return wb
