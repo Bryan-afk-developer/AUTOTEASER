@@ -6,6 +6,8 @@ from openpyxl.drawing.image import Image as OpenpyxlImage
 from PIL import Image as PILImage
 import io
 import base64
+import unicodedata
+from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +43,69 @@ EDO_SECTIONS = [
     (range(29, 30), "DEPRECIACIÓN",        "37474F"),
 ]
 
-def _get_section(row_num, sheet_name):
-    for rng, label, color in (BALANCE_SECTIONS if sheet_name == "Balance" else EDO_SECTIONS):
+def _get_section(row_num: int, sheet_name: str) -> tuple[str, str]:
+    """Retorna (Label, ColorHex) según la fila del template donde caiga."""
+    sections = BALANCE_SECTIONS if sheet_name == "Balance" else EDO_SECTIONS
+    for (rng, label, color) in sections:
         if row_num in rng:
             return label, color
     return None, None
+
+
+def _clean_text(text: str) -> str:
+    """Elimina acentos, puntuación extra y convierte a minúsculas para comparaciones."""
+    if not text:
+        return ""
+    text = str(text).lower()
+    text = ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+    text = re.sub(r'[^a-z0-9\s]', '', text)
+    return text.strip()
+
+
+def _parse_monto(monto_str: str) -> float:
+    """Convierte un string de monto a float (manejando $, comas y paréntesis para negativos)."""
+    if not monto_str:
+        return 0.0
+    val_str = str(monto_str).strip()
+    is_negative = '(' in val_str and ')' in val_str
+    
+    # Remove all non-numeric chars except digits and decimal point
+    clean_str = re.sub(r'[^\d\.]', '', val_str)
+    if not clean_str:
+        return 0.0
+    
+    try:
+        val = float(clean_str)
+        return -val if is_negative else val
+    except ValueError:
+        return 0.0
+
+
+def _find_best_match(target: str, flat_data: list, threshold: float = 0.8) -> str:
+    """
+    Busca la mejor coincidencia del 'target' en 'flat_data' (lista de tuplas (concepto, monto)).
+    Retorna el monto si la coincidencia supera el threshold, o None.
+    """
+    if not target or not flat_data:
+        return None
+        
+    target_clean = _clean_text(target)
+    best_score = 0.0
+    best_monto = None
+    
+    for concept, monto in flat_data:
+        concept_clean = _clean_text(concept)
+        if not concept_clean:
+            continue
+            
+        score = SequenceMatcher(None, target_clean, concept_clean).ratio()
+        if score > best_score:
+            best_score = score
+            best_monto = monto
+            
+    if best_score >= threshold:
+        return best_monto
+    return None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -535,6 +595,19 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         # ── Structured map (G-H columns) ──────────────────────────────────────
         input_row = 2
         section_rows = {}
+        
+        # Flatten all extracted data for fuzzy matching
+        flat_data = []
+        for (concept, monto, p_num, ev) in main_rows:
+            if concept and monto:
+                flat_data.append((concept, monto))
+        for nota_num, items in nota_tables.items():
+            for item in items:
+                if item[0] == "__DATA__":
+                    concept = item[1]
+                    monto = item[2]
+                    if concept and monto:
+                        flat_data.append((concept, monto))
 
         for tpl_sheet in ["Balance", "Edo de resultados"]:
             if tpl_sheet not in mapa or current_year not in mapa[tpl_sheet]:
@@ -588,7 +661,8 @@ def inject_dictaminado_sheets(doc, wb, mapa):
 
                 # Nombre del concepto
                 c_cell = ws[f"G{input_row}"]
-                c_cell.value = concept_name.replace("_", " ").title()
+                display_concept = concept_name.replace("_", " ").title()
+                c_cell.value = display_concept
                 c_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                 c_cell.border = THIN
 
@@ -597,6 +671,11 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                 val_cell.number_format = '#,##0.00'
                 val_cell.border = THIN
                 val_cell.alignment = Alignment(horizontal="right", vertical="center")
+                
+                # Auto-fill using fuzzy match
+                best_monto_str = _find_best_match(display_concept, flat_data, threshold=0.8)
+                if best_monto_str:
+                    val_cell.value = _parse_monto(best_monto_str)
                 
                 # Formula en la plantilla no la inyectamos porque los dictaminados son multi-sheet 
                 # (o podriamos inyectar si sabemos la hoja destino, pero por simplicidad de inputs se omite)
