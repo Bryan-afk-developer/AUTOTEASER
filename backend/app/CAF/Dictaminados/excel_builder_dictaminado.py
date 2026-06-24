@@ -159,7 +159,7 @@ def _tokenize_cells(row) -> list:
     return tokens
 
 
-def _extract_pairs_from_native_cells(row) -> list:
+def _extract_pairs_from_native_cells(row, current_table_headers=None) -> list:
     """
     For rows coming from DocAI native table detection (notas_dictaminado mode).
 
@@ -215,7 +215,17 @@ def _extract_pairs_from_native_cells(row) -> list:
                 except (ValueError, AttributeError):
                     pass
                     
-                suffix = f" (Dato {i+1})" if half > 1 else ""
+                suffix = ""
+                if current_table_headers and len(current_table_headers) == len(cells):
+                    # Usar el header original si coincide el tamaño
+                    h_idx = first_num_idx + i
+                    if h_idx < len(current_table_headers):
+                        h_val = current_table_headers[h_idx]
+                        if h_val: suffix = f" ({h_val})"
+                
+                if not suffix:
+                    suffix = f" (Dato {i+1})" if half > 1 else ""
+                
                 pairs.append((f"{concepto}{suffix}", m1, m2))
     else:
         # 1 o 2 celdas, o impar (no simétrico)
@@ -241,7 +251,17 @@ def _extract_pairs_from_native_cells(row) -> list:
                             continue
                     except (ValueError, AttributeError):
                         pass
-                    suffix = f" (Dato {i+1})" if len(data_cells) > 1 else ""
+                        
+                    suffix = ""
+                    if current_table_headers and len(current_table_headers) == len(cells):
+                        h_idx = first_num_idx + i
+                        if h_idx < len(current_table_headers):
+                            h_val = current_table_headers[h_idx]
+                            if h_val: suffix = f" ({h_val})"
+                    
+                    if not suffix:
+                        suffix = f" (Dato {i+1})" if len(data_cells) > 1 else ""
+                        
                     pairs.append((f"{concepto}{suffix}", m1, ""))
                     
     return pairs
@@ -542,8 +562,14 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                 current_nota_num = None
                 
                 for table in page_data.get("tables", []):
+                    current_table_headers = []
                     for row in table:
                         if not row:
+                            continue
+                            
+                        # Check if this row is a table header extracted from DocAI
+                        if row[0].get("is_table_header"):
+                            current_table_headers = [c.get("text", "").strip().replace('\n', ' ') for c in row]
                             continue
 
                         # Check if first cell is a nota header (injected by extractor)
@@ -581,7 +607,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
 
                         # Extract Concept + amounts
                         if layout_type == "notas_dictaminado":
-                            d_pairs = _extract_pairs_from_native_cells(row)
+                            d_pairs = _extract_pairs_from_native_cells(row, current_table_headers=current_table_headers)
                         else:
                             d_pairs = _extract_pairs_dictaminado(row)
                             

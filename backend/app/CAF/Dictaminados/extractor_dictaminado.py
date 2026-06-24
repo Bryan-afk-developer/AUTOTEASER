@@ -155,7 +155,16 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             table_y = min(v.y for v in verts) if verts else 0
 
             rows = []
-            # Process body rows only
+            
+            # Process header rows to capture column names (Costo, Depreciación, etc.)
+            for hrow in table.header_rows:
+                cells = _extract_row_cells(hrow, full_text, page_width, page_height)
+                if cells:
+                    for c in cells:
+                        c["is_table_header"] = True
+                    rows.append(cells)
+                    
+            # Process body rows
             for brow in table.body_rows:
                 cells = _extract_row_cells(brow, full_text, page_width, page_height)
                 if cells:
