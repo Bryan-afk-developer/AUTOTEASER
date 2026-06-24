@@ -568,7 +568,27 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             continue
                             
                         # Check if this row is a table header extracted from DocAI
-                        if row[0].get("is_table_header"):
+                        is_header = row[0].get("is_table_header", False)
+                        
+                        # Fallback: If DocAI missed it, a row with ONLY text and NO financial amounts is likely a header.
+                        if not is_header and len(row) > 1 and not row[0].get("is_nota_header") and not row[0].get("is_nota_image"):
+                            has_amount = False
+                            for c in row:
+                                m = _clean_monto_ocr(c.get("text", "").strip())
+                                if m:
+                                    try:
+                                        v = float(re.sub(r'[\$,\s\(\)]', '', m)) if m != "-" else 0
+                                        # Years (2024, 2025) are allowed in headers
+                                        if not (1990 <= v <= 2030):
+                                            has_amount = True
+                                            break
+                                    except (ValueError, AttributeError):
+                                        has_amount = True
+                                        break
+                            if not has_amount:
+                                is_header = True
+                                
+                        if is_header:
                             current_table_headers = [c.get("text", "").strip().replace('\n', ' ') for c in row]
                             continue
 
