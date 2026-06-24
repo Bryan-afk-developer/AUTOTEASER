@@ -570,12 +570,14 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                         else:
                             d_pairs = _extract_pairs_dictaminado(row)
                             
-                        for concept, m1, m2 in d_pairs:
-                            monto = m1 if year_idx == 0 else m2
-                            if not concept and not monto:
+                        for d_pair in d_pairs:
+                            concept = d_pair[0]
+                            amounts = list(d_pair[1:])
+                            
+                            monto = amounts[0] if year_idx == 0 and len(amounts) > 0 else (amounts[1] if len(amounts) > 1 else "")
+                            if not concept and not any(amounts):
                                 continue
                                 
-                            amounts = [m1, m2] if m2 else [m1]
                             row_data = (concept, amounts, p_num, evidence_b64)
                             if current_nota_num:
                                 nota_tables[current_nota_num].append(("__DATA__",) + row_data)
