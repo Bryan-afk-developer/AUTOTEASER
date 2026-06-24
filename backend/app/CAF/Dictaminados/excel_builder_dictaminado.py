@@ -179,51 +179,72 @@ def _extract_pairs_from_native_cells(row) -> list:
     if len(cells) < 2:
         return []
 
-    if len(cells) == 2:
-        # Concept + 1 amount (e.g. single-year table or total row)
-        concepto = cells[0]["text"].strip()
-        raw_m1 = cells[1]["text"].strip()
-        m1 = _clean_monto_ocr(raw_m1)
-        
-        if not m1:
-            return [] # Discard row if it has no numeric amount
+    # Encontrar la primera celda que tiene un monto numérico válido
+    first_num_idx = -1
+    for i, c in enumerate(cells):
+        if _clean_monto_ocr(c["text"].strip()):
+            first_num_idx = i
+            break
             
-        # Skip if it looks like a year header (m1 is a year like "2024")
-        try:
-            if 1990 <= float(m1.replace(",", "")) <= 2030:
-                return []
-        except (ValueError, AttributeError):
-            pass
-        return [(concepto, m1, "")]
-
-    # 3+ cells: concept = join of all except last 2, amounts = last 2
-    concept_cells = cells[:-2]
-    m1_cell = cells[-2]
-    m2_cell = cells[-1]
-
-    concepto = " ".join(c["text"].strip() for c in concept_cells if c["text"].strip())
-    raw_m1 = m1_cell["text"].strip()
-    raw_m2 = m2_cell["text"].strip()
+    if first_num_idx == -1:
+        return [] # No hay números en toda la fila, descartar
+        
+    if first_num_idx == 0:
+        concepto = "Dato"
+    else:
+        concepto = " ".join(c["text"].strip() for c in cells[:first_num_idx])
+        
+    data_cells = cells[first_num_idx:]
+    pairs = []
     
-    m1 = _clean_monto_ocr(raw_m1)
-    m2 = _clean_monto_ocr(raw_m2)
-    
-    if not m1 and not m2:
-        return [] # Discard row if neither cell has a numeric amount (filters out text-block noise)
-
-    # Skip header-like rows where last cells are years (e.g. "2024" | "2023")
-    try:
-        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
-        v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
-        if m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
-            return []
-    except (ValueError, AttributeError):
-        pass
-
-    if not concepto and not m1:
-        return []
-
-    return [(concepto, m1, m2)]
+    # Si hay más de 2 datos numéricos, pivoteamos (recortamos) la tabla hacia abajo
+    if len(data_cells) > 2 and len(data_cells) % 2 == 0:
+        # Probablemente simétrico (Año 1 y Año 2)
+        half = len(data_cells) // 2
+        for i in range(half):
+            m1 = _clean_monto_ocr(data_cells[i]["text"].strip())
+            m2 = _clean_monto_ocr(data_cells[i + half]["text"].strip())
+            
+            if m1 or m2:
+                # Omitir encabezados de años
+                try:
+                    v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
+                    v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
+                    if m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
+                        continue
+                except (ValueError, AttributeError):
+                    pass
+                    
+                suffix = f" (Dato {i+1})" if half > 1 else ""
+                pairs.append((f"{concepto}{suffix}", m1, m2))
+    else:
+        # 1 o 2 celdas, o impar (no simétrico)
+        # Si son 2, es el comportamiento normal
+        if len(data_cells) == 2:
+            m1 = _clean_monto_ocr(data_cells[0]["text"].strip())
+            m2 = _clean_monto_ocr(data_cells[1]["text"].strip())
+            try:
+                v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
+                v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
+                if not (m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030):
+                    if m1 or m2: pairs.append((concepto, m1, m2))
+            except (ValueError, AttributeError):
+                if m1 or m2: pairs.append((concepto, m1, m2))
+        else:
+            # Impar, sacamos uno por renglón
+            for i, c in enumerate(data_cells):
+                m1 = _clean_monto_ocr(c["text"].strip())
+                if m1:
+                    try:
+                        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
+                        if 1990 <= v1 <= 2030:
+                            continue
+                    except (ValueError, AttributeError):
+                        pass
+                    suffix = f" (Dato {i+1})" if len(data_cells) > 1 else ""
+                    pairs.append((f"{concepto}{suffix}", m1, ""))
+                    
+    return pairs
 
 
 def _extract_pairs_dictaminado(row) -> list:
