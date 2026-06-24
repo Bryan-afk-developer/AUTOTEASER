@@ -125,7 +125,8 @@ def _clean_monto_ocr(text: str) -> str:
     if not text:
         return ""
     # Busca el primer bloque que parezca un número financiero: $, números, comas, puntos, paréntesis.
-    m = re.search(r'(?:[\$\(]\s*)?[\d,\.]+(?:\s*\))?', text)
+    # Exige al menos un dígito (\d) para no hacer match con puros puntos o comas.
+    m = re.search(r'(?:[\$\(]\s*)?(?:[\d,\.]*\d[\d,\.]*)(?:\s*\))?', text)
     if m:
         return m.group(0).strip()
     
