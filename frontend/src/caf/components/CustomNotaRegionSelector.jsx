@@ -2,30 +2,33 @@ import React, { useState, useRef } from 'react';
 import { X, Save, Trash2, Plus, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const SLOTS = [
-  { key: 'concept', label: 'Conceptos', emoji: '🟣', border: '#a855f7', bg: 'rgba(168,85,247,0.2)' },
-  { key: 'val1',    label: 'Valor 1',   emoji: '🟢', border: '#22c55e', bg: 'rgba(34,197,94,0.2)' },
-  { key: 'val2',    label: 'Valor 2',   emoji: '🔵', border: '#3b82f6', bg: 'rgba(59,130,246,0.2)' },
+const CONCEPT_SLOT = { label: 'Conceptos', emoji: '🟣', border: '#a855f7', bg: 'rgba(168,85,247,0.2)' };
+const VALUE_COLORS = [
+  { emoji: '🟢', border: '#22c55e', bg: 'rgba(34,197,94,0.2)' },
+  { emoji: '🔵', border: '#3b82f6', bg: 'rgba(59,130,246,0.2)' },
+  { emoji: '🟠', border: '#f97316', bg: 'rgba(249,115,22,0.2)' },
+  { emoji: '🔴', border: '#ef4444', bg: 'rgba(239,68,68,0.2)' },
+  { emoji: '🟡', border: '#eab308', bg: 'rgba(234,179,8,0.2)' },
+  { emoji: '🟤', border: '#8b5cf6', bg: 'rgba(139,92,246,0.2)' },
 ];
 
-const emptyGroup = () => ({ notaNum: '', conceptRegion: null, val1Region: null, val2Region: null });
+const emptyGroup = () => ({ notaNum: '', conceptRegion: null, valueRegions: [null, null] });
 
 export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = [], onSave, onCancel }) {
-  // We expect initialSubTables to be an array of objects: 
-  // { nota_num: "9", concept_region: {...}, val1_region: {...}, val2_region: {...} }
-  
   const mapInitialToState = (initial) => {
       if (!initial || initial.length === 0) return [emptyGroup()];
       return initial.map(t => ({
           notaNum: t.nota_num || '',
           conceptRegion: t.concept_region || null,
-          val1Region: t.val1_region || null,
-          val2Region: t.val2_region || null
+          // Support old format or new array format
+          valueRegions: t.value_regions 
+              ? t.value_regions 
+              : [t.val1_region || null, t.val2_region || null]
       }));
   }
 
   const [subTables, setSubTables] = useState(mapInitialToState(initialSubTables));
-  const [drawingTarget, setDrawingTarget] = useState(null); // { groupIdx, slot }
+  const [drawingTarget, setDrawingTarget] = useState(null); // { groupIdx, type: 'concept' | 'value', valIdx?: number }
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentRegion, setCurrentRegion] = useState(null);
@@ -65,26 +68,40 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
     if (!isDrawing || !currentRegion || !drawingTarget) return;
     setIsDrawing(false);
     if (currentRegion.w > 0.02 && currentRegion.h > 0.02) {
-      const { groupIdx, slot } = drawingTarget;
-      setSubTables(prev => prev.map((t, i) =>
-        i === groupIdx ? { ...t, [`${slot}Region`]: { ...currentRegion } } : t
-      ));
+      const { groupIdx, type, valIdx } = drawingTarget;
+      setSubTables(prev => prev.map((t, i) => {
+        if (i !== groupIdx) return t;
+        if (type === 'concept') return { ...t, conceptRegion: { ...currentRegion } };
+        
+        const newVals = [...t.valueRegions];
+        newVals[valIdx] = { ...currentRegion };
+        return { ...t, valueRegions: newVals };
+      }));
     }
     setCurrentRegion(null);
     setDrawingTarget(null);
   };
 
   const addGroup = () => setSubTables(prev => [...prev, emptyGroup()]);
-
   const removeGroup = (idx) => setSubTables(prev => prev.filter((_, i) => i !== idx));
+  const updateNotaNum = (idx, val) => setSubTables(prev => prev.map((t, i) => i === idx ? { ...t, notaNum: val } : t));
 
-  const updateNotaNum = (idx, val) =>
-    setSubTables(prev => prev.map((t, i) => i === idx ? { ...t, notaNum: val } : t));
+  const addValueRegion = (idx) => setSubTables(prev => prev.map((t, i) => i === idx ? { ...t, valueRegions: [...t.valueRegions, null] } : t));
+  
+  const clearConcept = (groupIdx) => setSubTables(prev => prev.map((t, i) => i === groupIdx ? { ...t, conceptRegion: null } : t));
+  const clearValue = (groupIdx, valIdx) => setSubTables(prev => prev.map((t, i) => {
+      if (i !== groupIdx) return t;
+      const newVals = [...t.valueRegions];
+      newVals[valIdx] = null;
+      return { ...t, valueRegions: newVals };
+  }));
+  const removeValueColumn = (groupIdx, valIdx) => setSubTables(prev => prev.map((t, i) => {
+      if (i !== groupIdx) return t;
+      const newVals = t.valueRegions.filter((_, j) => j !== valIdx);
+      return { ...t, valueRegions: newVals };
+  }));
 
-  const clearSlot = (groupIdx, slot) =>
-    setSubTables(prev => prev.map((t, i) => i === groupIdx ? { ...t, [`${slot}Region`]: null } : t));
-
-  const isGroupComplete = (g) => g.notaNum.trim() && g.conceptRegion && (g.val1Region || g.val2Region);
+  const isGroupComplete = (g) => g.notaNum.trim() && g.conceptRegion && g.valueRegions.some(v => v !== null);
   const isValid = subTables.length > 0 && subTables.every(isGroupComplete);
   const completedCount = subTables.filter(isGroupComplete).length;
 
@@ -94,13 +111,17 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
       sub_tables: subTables.map(t => ({
         nota_num: t.notaNum.trim(),
         concept_region: t.conceptRegion,
-        val1_region: t.val1Region,
-        val2_region: t.val2Region,
+        value_regions: t.valueRegions.filter(v => v !== null),
       })),
     });
   };
 
-  const activeSlotColor = drawingTarget ? SLOTS.find(s => s.key === drawingTarget.slot) : null;
+  const getActiveColorInfo = () => {
+      if (!drawingTarget) return null;
+      if (drawingTarget.type === 'concept') return CONCEPT_SLOT;
+      return VALUE_COLORS[drawingTarget.valIdx % VALUE_COLORS.length];
+  }
+  const activeSlotColor = getActiveColorInfo();
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -109,22 +130,21 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
         animate={{ opacity: 1, scale: 1 }}
         className="bg-surface border border-border rounded-xl shadow-2xl flex flex-col w-full max-w-6xl h-[95vh] overflow-hidden"
       >
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border bg-card shrink-0">
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              📊 Notas Personalizadas
+              📊 Notas Personalizadas Multi-columna
               {drawingTarget && (
                 <span
                   style={{ backgroundColor: activeSlotColor?.border }}
                   className="text-xs font-semibold px-2 py-0.5 rounded-full text-white animate-pulse"
                 >
-                  Dibujando {activeSlotColor?.label} → Tabla {drawingTarget.groupIdx + 1}
+                  Dibujando {drawingTarget.type === 'concept' ? 'Conceptos' : `Valor ${drawingTarget.valIdx + 1}`} → Tabla {drawingTarget.groupIdx + 1}
                 </span>
               )}
             </h2>
             <p className="text-sm text-text-muted mt-0.5">
-              Escribe el número de nota → elige qué dibujar → arrastra en la imagen. Agrega tantas tablas como necesites.
+              Dibuja los Conceptos y N columnas de valores separadas. Cada valor se emparejará en una fila independiente.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -140,7 +160,7 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Left Panel */}
-          <div className="w-72 flex-shrink-0 border-r border-border bg-card overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">
+          <div className="w-80 flex-shrink-0 border-r border-border bg-card overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">
             <div className="text-[10px] text-text-muted font-semibold uppercase tracking-widest px-1">Tablas de Nota</div>
 
             {subTables.map((group, gIdx) => {
@@ -150,7 +170,6 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
                   key={gIdx}
                   className={`bg-surface border rounded-lg p-3 space-y-2.5 transition-colors ${complete ? 'border-emerald-500/40' : 'border-border'}`}
                 >
-                  {/* Group header */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white flex items-center gap-1.5">
                       Tabla {gIdx + 1}
@@ -163,7 +182,6 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
                     )}
                   </div>
 
-                  {/* Nota number */}
                   <div>
                     <label className="text-[10px] text-text-muted uppercase tracking-wider">Número de Nota</label>
                     <input
@@ -176,44 +194,78 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
                     />
                   </div>
 
-                  {/* Slot buttons */}
-                  <div className="space-y-1.5">
-                    {SLOTS.map(slot => {
-                      const regionKey = `${slot.key}Region`;
-                      const hasRegion = !!group[regionKey];
-                      const isActive = drawingTarget?.groupIdx === gIdx && drawingTarget?.slot === slot.key;
-                      return (
-                        <div key={slot.key} className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setDrawingTarget(isActive ? null : { groupIdx: gIdx, slot: slot.key })}
-                            style={{
-                              borderColor: isActive ? slot.border : hasRegion ? slot.border + '80' : 'transparent',
-                              backgroundColor: isActive ? slot.bg : hasRegion ? slot.bg.replace('0.2', '0.08') : 'rgba(255,255,255,0.04)',
-                            }}
-                            className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded border text-xs font-medium text-white transition-all hover:opacity-90"
-                          >
-                            <span>{slot.emoji}</span>
-                            <span>{slot.label}</span>
-                            <span className="ml-auto">
-                              {isActive
-                                ? <span className="text-yellow-300 animate-pulse text-[9px]">Dibujando...</span>
-                                : hasRegion
-                                  ? <span className="text-emerald-400 text-[9px] font-bold">✓ OK</span>
-                                  : <span className="text-text-muted/40 text-[9px]">Vacío</span>
-                              }
-                            </span>
-                          </button>
-                          {hasRegion && (
-                            <button
-                              onClick={() => clearSlot(gIdx, slot.key)}
-                              className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      );
+                  <div className="space-y-1.5 mt-2">
+                    {/* Concept Slot */}
+                    <div className="flex items-center gap-1.5">
+                        <button
+                        onClick={() => setDrawingTarget(drawingTarget?.groupIdx === gIdx && drawingTarget?.type === 'concept' ? null : { groupIdx: gIdx, type: 'concept' })}
+                        style={{
+                            borderColor: (drawingTarget?.groupIdx === gIdx && drawingTarget?.type === 'concept') ? CONCEPT_SLOT.border : group.conceptRegion ? CONCEPT_SLOT.border + '80' : 'transparent',
+                            backgroundColor: (drawingTarget?.groupIdx === gIdx && drawingTarget?.type === 'concept') ? CONCEPT_SLOT.bg : group.conceptRegion ? CONCEPT_SLOT.bg.replace('0.2', '0.08') : 'rgba(255,255,255,0.04)',
+                        }}
+                        className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded border text-xs font-medium text-white transition-all hover:opacity-90"
+                        >
+                        <span>{CONCEPT_SLOT.emoji}</span>
+                        <span>Conceptos</span>
+                        <span className="ml-auto">
+                            {(drawingTarget?.groupIdx === gIdx && drawingTarget?.type === 'concept')
+                            ? <span className="text-yellow-300 animate-pulse text-[9px]">Dibujando...</span>
+                            : group.conceptRegion
+                                ? <span className="text-emerald-400 text-[9px] font-bold">✓ OK</span>
+                                : <span className="text-text-muted/40 text-[9px]">Vacío</span>
+                            }
+                        </span>
+                        </button>
+                        {group.conceptRegion && (
+                        <button onClick={() => clearConcept(gIdx)} className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"><X className="w-3 h-3" /></button>
+                        )}
+                    </div>
+
+                    <div className="border-t border-white/5 my-2"></div>
+                    <div className="text-[10px] text-text-muted mb-1 font-semibold">COLUMNAS DE VALORES</div>
+
+                    {/* Value Slots */}
+                    {group.valueRegions.map((valRegion, vIdx) => {
+                        const isActive = drawingTarget?.groupIdx === gIdx && drawingTarget?.type === 'value' && drawingTarget?.valIdx === vIdx;
+                        const hasRegion = !!valRegion;
+                        const slotColor = VALUE_COLORS[vIdx % VALUE_COLORS.length];
+                        
+                        return (
+                            <div key={vIdx} className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => setDrawingTarget(isActive ? null : { groupIdx: gIdx, type: 'value', valIdx: vIdx })}
+                                    style={{
+                                        borderColor: isActive ? slotColor.border : hasRegion ? slotColor.border + '80' : 'transparent',
+                                        backgroundColor: isActive ? slotColor.bg : hasRegion ? slotColor.bg.replace('0.2', '0.08') : 'rgba(255,255,255,0.04)',
+                                    }}
+                                    className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded border text-xs font-medium text-white transition-all hover:opacity-90"
+                                >
+                                    <span>{slotColor.emoji}</span>
+                                    <span>Valor {vIdx + 1}</span>
+                                    <span className="ml-auto">
+                                    {isActive
+                                        ? <span className="text-yellow-300 animate-pulse text-[9px]">Dibujando...</span>
+                                        : hasRegion
+                                        ? <span className="text-emerald-400 text-[9px] font-bold">✓ OK</span>
+                                        : <span className="text-text-muted/40 text-[9px]">Vacío</span>
+                                    }
+                                    </span>
+                                </button>
+                                {hasRegion ? (
+                                    <button onClick={() => clearValue(gIdx, vIdx)} className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"><X className="w-3 h-3" /></button>
+                                ) : (
+                                    <button onClick={() => removeValueColumn(gIdx, vIdx)} className="p-1 text-text-muted hover:text-white hover:bg-white/10 rounded transition-colors" title="Eliminar columna"><Trash2 className="w-3 h-3" /></button>
+                                )}
+                            </div>
+                        )
                     })}
+                    
+                    <button 
+                        onClick={() => addValueRegion(gIdx)}
+                        className="w-full flex items-center justify-center gap-1 mt-2 py-1.5 rounded bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-[10px] font-semibold transition-colors"
+                    >
+                        <Plus className="w-3 h-3" /> Añadir Columna de Valor
+                    </button>
                   </div>
                 </div>
               );
@@ -242,28 +294,36 @@ export default function CustomNotaRegionSelector({ imageUrl, initialSubTables = 
                 <img src={imageUrl} alt="Document Preview" className="h-full w-auto block pointer-events-none" draggable={false} />
 
                 {/* Drawn regions */}
-                {subTables.map((group, gIdx) =>
-                  SLOTS.map(slot => {
-                    const region = group[`${slot.key}Region`];
-                    if (!region) return null;
+                {subTables.map((group, gIdx) => {
+                    const renderRegion = (region, colorInfo, title) => {
+                        if (!region) return null;
+                        return (
+                            <div
+                                key={`${gIdx}-${title}`}
+                                style={{
+                                    left: `${region.x * 100}%`, top: `${region.y * 100}%`,
+                                    width: `${region.w * 100}%`, height: `${region.h * 100}%`,
+                                    border: `2px solid ${colorInfo.border}`,
+                                    backgroundColor: colorInfo.bg,
+                                    position: 'absolute', pointerEvents: 'none',
+                                }}
+                            >
+                                <div style={{ backgroundColor: colorInfo.border }} className="absolute -top-5 left-0 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-t whitespace-nowrap shadow-sm">
+                                    T{gIdx + 1} {colorInfo.emoji} {title}{group.notaNum ? ` (NOTA ${group.notaNum})` : ''}
+                                </div>
+                            </div>
+                        );
+                    }
+
                     return (
-                      <div
-                        key={`${gIdx}-${slot.key}`}
-                        style={{
-                          left: `${region.x * 100}%`, top: `${region.y * 100}%`,
-                          width: `${region.w * 100}%`, height: `${region.h * 100}%`,
-                          border: `2px solid ${slot.border}`,
-                          backgroundColor: slot.bg,
-                          position: 'absolute', pointerEvents: 'none',
-                        }}
-                      >
-                        <div style={{ backgroundColor: slot.border }} className="absolute -top-5 left-0 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-t whitespace-nowrap">
-                          T{gIdx + 1} {slot.emoji} {slot.label}{group.notaNum ? ` (NOTA ${group.notaNum})` : ''}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                        <React.Fragment key={`regions-${gIdx}`}>
+                            {renderRegion(group.conceptRegion, CONCEPT_SLOT, 'Conceptos')}
+                            {group.valueRegions.map((vReg, vIdx) => 
+                                renderRegion(vReg, VALUE_COLORS[vIdx % VALUE_COLORS.length], `Valor ${vIdx + 1}`)
+                            )}
+                        </React.Fragment>
+                    )
+                })}
 
                 {/* Live preview while drawing */}
                 {isDrawing && currentRegion && drawingTarget && activeSlotColor && (

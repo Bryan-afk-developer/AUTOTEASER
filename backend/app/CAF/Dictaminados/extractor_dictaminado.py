@@ -256,12 +256,16 @@ def _extract_notas_custom(res, page_width: float, page_height: float, sub_tables
     for st in sub_tables:
         nota_num = st.get("nota_num", "")
         cr = st.get("concept_region")
-        v1r = st.get("val1_region")
-        v2r = st.get("val2_region")
+        val_regions = st.get("value_regions", [])
         
+        # Fallback for old saved state
+        if not val_regions:
+            v1r = st.get("val1_region")
+            v2r = st.get("val2_region")
+            val_regions = [r for r in [v1r, v2r] if r]
+
         c_tokens = [t for t in all_tokens if is_inside(t["bbox"], cr)]
-        v1_tokens = [t for t in all_tokens if is_inside(t["bbox"], v1r)]
-        v2_tokens = [t for t in all_tokens if is_inside(t["bbox"], v2r)]
+        v_tokens_list = [[t for t in all_tokens if is_inside(t["bbox"], vr)] for vr in val_regions]
         
         # Group concept tokens into rows by Y position
         c_rows = _build_table_from_lines(c_tokens)
@@ -278,22 +282,17 @@ def _extract_notas_custom(res, page_width: float, page_height: float, sub_tables
             
             concept_text = " ".join(t['text'] for t in row_tokens).strip()
             
-            # Find overlapping v1 and v2 tokens
-            v1_text = ""
-            v1_overlap = [t for t in v1_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
-            if v1_overlap:
-                v1_text = " ".join(t['text'] for t in sorted(v1_overlap, key=lambda x: x['bbox'][0]))
-                
-            v2_text = ""
-            v2_overlap = [t for t in v2_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
-            if v2_overlap:
-                v2_text = " ".join(t['text'] for t in sorted(v2_overlap, key=lambda x: x['bbox'][0]))
-                
-            table_rows.append([
-                {"text": concept_text},
-                {"text": v1_text},
-                {"text": v2_text}
-            ])
+            for v_tokens in v_tokens_list:
+                v_text = ""
+                v_overlap = [t for t in v_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
+                if v_overlap:
+                    v_text = " ".join(t['text'] for t in sorted(v_overlap, key=lambda x: x['bbox'][0]))
+                    
+                table_rows.append([
+                    {"text": concept_text},
+                    {"text": v_text},
+                    {"text": ""}
+                ])
             
         if len(table_rows) > (1 if nota_num else 0):
             tables.append(table_rows)
