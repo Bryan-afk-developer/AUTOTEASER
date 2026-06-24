@@ -672,13 +672,14 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                 val_cell.border = THIN
                 val_cell.alignment = Alignment(horizontal="right", vertical="center")
                 
-                # Auto-fill using fuzzy match
-                best_monto_str = _find_best_match(display_concept, flat_data, threshold=0.8)
+                # Auto-fill using fuzzy match (threshold 0.85 to avoid 'deudores' matching 'acreedores' which is 0.833)
+                best_monto_str = _find_best_match(display_concept, flat_data, threshold=0.85)
                 if best_monto_str:
                     val_cell.value = _parse_monto(best_monto_str)
                 
-                # Formula en la plantilla no la inyectamos porque los dictaminados son multi-sheet 
-                # (o podriamos inyectar si sabemos la hoja destino, pero por simplicidad de inputs se omite)
+                # Inyectar fórmula en la plantilla para que apunte a esta hoja de dictaminado
+                if tpl_sheet in wb.sheetnames and target_cell:
+                    wb[tpl_sheet][target_cell] = f"='{sheet_name}'!H{input_row}"
                 
                 input_row += 1
 
