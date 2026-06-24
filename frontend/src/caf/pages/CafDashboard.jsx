@@ -3,6 +3,7 @@ import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
 import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify, Crop } from 'lucide-react'
 import RegionSelector from '../components/RegionSelector'
+import CustomNotaRegionSelector from '../components/CustomNotaRegionSelector'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -122,7 +123,7 @@ export default function CafDashboard() {
           ...doc,
           pageLayouts: {
             ...doc.pageLayouts,
-            [pageNum]: {
+            [pageNum]: layoutType === 'notas_custom' ? regions : {
               type: layoutType || 'two_column',
               regions: regions
             }
@@ -331,20 +332,34 @@ export default function CafDashboard() {
                                 <option value="split_column">CONCEPTO / MONTO</option>
                                 <option value="two_column">2 COLUMNAS</option>
                                 {doc.docType === 'dictaminado' && (
-                                  <option value="notas_dictaminado">📋 NOTAS (Página completa)</option>
+                                  <>
+                                    <option value="notas_dictaminado">📋 NOTAS (Página completa)</option>
+                                    <option value="notas_custom">📊 NOTAS (personalizado)</option>
+                                  </>
                                 )}
                               </select>
                               
-                              {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column') && (
+                              {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column' || layoutType === 'notas_custom') && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openRegionSelector(doc.doc_id, thumb.page_num, `${API_BASE}/api/caf/document/${doc.doc_id}/page/${thumb.page_num}/image`, regions || [], layoutType);
+                                    const layoutConfig = doc.pageLayouts[thumb.page_num];
+                                    let initRegions = [];
+                                    if (layoutType === 'notas_custom') {
+                                      initRegions = (layoutConfig && layoutConfig.type === 'notas_custom') ? layoutConfig.sub_tables : [];
+                                    } else {
+                                      initRegions = (layoutConfig && typeof layoutConfig === 'object') ? layoutConfig.regions : [];
+                                    }
+                                    openRegionSelector(doc.doc_id, thumb.page_num, `${API_BASE}/api/caf/document/${doc.doc_id}/page/${thumb.page_num}/image`, initRegions, layoutType);
                                   }}
-                                  className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${regions && regions.length > 0 ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
+                                  className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${
+                                    (layoutType === 'notas_custom' ? (doc.pageLayouts[thumb.page_num]?.sub_tables?.length > 0) : (regions && regions.length > 0)) 
+                                    ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' 
+                                    : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                                  }`}
                                 >
                                   <Crop className="w-3 h-3" /> 
-                                  {regions && regions.length > 0 ? 'Áreas Ajustadas' : 'Ajustar Áreas'}
+                                  {(layoutType === 'notas_custom' ? (doc.pageLayouts[thumb.page_num]?.sub_tables?.length > 0) : (regions && regions.length > 0)) ? 'Áreas Ajustadas' : 'Definir Tablas'}
                                 </button>
                               )}
                               {layoutType === 'notas_dictaminado' && (
@@ -621,13 +636,22 @@ export default function CafDashboard() {
 
       {/* ── Region Selector Modal ── */}
       {regionSelectorState && (
-        <RegionSelector
-          imageUrl={regionSelectorState.imageUrl}
-          initialRegions={regionSelectorState.initialRegions}
-          layoutType={regionSelectorState.layoutType}
-          onSave={handleSaveRegions}
-          onCancel={() => setRegionSelectorState(null)}
-        />
+        regionSelectorState.layoutType === 'notas_custom' ? (
+          <CustomNotaRegionSelector
+            imageUrl={regionSelectorState.imageUrl}
+            initialSubTables={regionSelectorState.initialRegions || []}
+            onSave={handleSaveRegions}
+            onCancel={() => setRegionSelectorState(null)}
+          />
+        ) : (
+          <RegionSelector
+            imageUrl={regionSelectorState.imageUrl}
+            initialRegions={regionSelectorState.initialRegions}
+            layoutType={regionSelectorState.layoutType}
+            onSave={handleSaveRegions}
+            onCancel={() => setRegionSelectorState(null)}
+          />
+        )
       )}
     </>
   )

@@ -63,12 +63,16 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
             if isinstance(layout_val, dict):
                 layout_type = layout_val.get("type", "dictaminado")
                 regions = layout_val.get("regions")
+                sub_tables = layout_val.get("sub_tables", [])
             elif isinstance(layout_val, str):
                 layout_type = layout_val
 
             if layout_type == "notas_dictaminado":
                 # ── NOTAS MODE: use DocAI native table + block detection ──────
                 tables, last_nota_label = _extract_notas_with_native_tables(res, page_width, page_height, fitz_page=page, previous_nota_label=last_nota_label)
+            elif layout_type == "notas_custom":
+                # ── CUSTOM NOTAS MODE: use user-drawn sub-regions ─────────────
+                tables = _extract_notas_custom(res, page_width, page_height, sub_tables)
             else:
                 # ── STANDARD DICTAMINADO MODE: manual token grouping ──────────
                 all_tokens = _extract_tokens(res, page_width, page_height)
@@ -155,16 +159,7 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             table_y = min(v.y for v in verts) if verts else 0
 
             rows = []
-            
-            # Process header rows to capture column names (Costo, Depreciación, etc.)
-            for hrow in table.header_rows:
-                cells = _extract_row_cells(hrow, full_text, page_width, page_height)
-                if cells:
-                    for c in cells:
-                        c["is_table_header"] = True
-                    rows.append(cells)
-                    
-            # Process body rows
+            # Process body rows only
             for brow in table.body_rows:
                 cells = _extract_row_cells(brow, full_text, page_width, page_height)
                 if cells:
@@ -242,6 +237,68 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
                 result_tables.append([header_row])
 
     return result_tables, new_last_nota_label
+
+
+def _extract_notas_custom(res, page_width: float, page_height: float, sub_tables: list) -> list:
+    """
+    Extrae tablas basadas en múltiples regiones (Concepto, Val1, Val2) dibujadas por el usuario.
+    """
+    all_tokens = _extract_tokens(res, page_width, page_height)
+    
+    def is_inside(bbox, r):
+        if not r: return False
+        cx = (bbox[0] + bbox[2]) / 2 / page_width
+        cy = (bbox[1] + bbox[3]) / 2 / page_height
+        return (r["x"] <= cx <= r["x"] + r["w"]) and (r["y"] <= cy <= r["y"] + r["h"])
+
+    tables = []
+    
+    for st in sub_tables:
+        nota_num = st.get("nota_num", "")
+        cr = st.get("concept_region")
+        v1r = st.get("val1_region")
+        v2r = st.get("val2_region")
+        
+        c_tokens = [t for t in all_tokens if is_inside(t["bbox"], cr)]
+        v1_tokens = [t for t in all_tokens if is_inside(t["bbox"], v1r)]
+        v2_tokens = [t for t in all_tokens if is_inside(t["bbox"], v2r)]
+        
+        # Group concept tokens into rows by Y position
+        c_rows = _build_table_from_lines(c_tokens)
+        
+        table_rows = []
+        # Inject the nota header first
+        if nota_num:
+            table_rows.append([{"text": f"NOTA {nota_num}", "is_nota_header": True}])
+        
+        for row_tokens in c_rows:
+            y0 = min(t['bbox'][1] for t in row_tokens)
+            y1 = max(t['bbox'][3] for t in row_tokens)
+            h = y1 - y0
+            
+            concept_text = " ".join(t['text'] for t in row_tokens).strip()
+            
+            # Find overlapping v1 and v2 tokens
+            v1_text = ""
+            v1_overlap = [t for t in v1_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
+            if v1_overlap:
+                v1_text = " ".join(t['text'] for t in sorted(v1_overlap, key=lambda x: x['bbox'][0]))
+                
+            v2_text = ""
+            v2_overlap = [t for t in v2_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
+            if v2_overlap:
+                v2_text = " ".join(t['text'] for t in sorted(v2_overlap, key=lambda x: x['bbox'][0]))
+                
+            table_rows.append([
+                {"text": concept_text},
+                {"text": v1_text},
+                {"text": v2_text}
+            ])
+            
+        if len(table_rows) > (1 if nota_num else 0):
+            tables.append(table_rows)
+            
+    return tables
 
 
 def _extract_row_cells(row, full_text: str, page_width: float, page_height: float) -> list:
