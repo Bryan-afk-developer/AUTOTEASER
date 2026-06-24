@@ -201,7 +201,8 @@ def _extract_pairs_from_native_cells(row) -> list:
     m1_cell = cells[-2]
     m2_cell = cells[-1]
 
-    concepto = " ".join(c["text"].strip() for c in concept_cells if c["text"].strip())
+    # Usar SOLO la primera columna para el concepto (evita mezclar datos en tablas anchas)
+    concepto = cells[0]["text"].strip()
     raw_m1 = m1_cell["text"].strip()
     raw_m2 = m2_cell["text"].strip()
     
@@ -559,7 +560,7 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                                 break
 
                         # Extract Concept + amounts
-                        if layout_type in ("notas_dictaminado", "notas_custom"):
+                        if layout_type == "notas_dictaminado":
                             d_pairs = _extract_pairs_from_native_cells(row)
                         else:
                             d_pairs = _extract_pairs_dictaminado(row)

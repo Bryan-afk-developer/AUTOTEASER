@@ -63,16 +63,12 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
             if isinstance(layout_val, dict):
                 layout_type = layout_val.get("type", "dictaminado")
                 regions = layout_val.get("regions")
-                sub_tables = layout_val.get("sub_tables", [])
             elif isinstance(layout_val, str):
                 layout_type = layout_val
 
             if layout_type == "notas_dictaminado":
                 # ── NOTAS MODE: use DocAI native table + block detection ──────
                 tables, last_nota_label = _extract_notas_with_native_tables(res, page_width, page_height, fitz_page=page, previous_nota_label=last_nota_label)
-            elif layout_type == "notas_custom":
-                # ── CUSTOM NOTAS MODE: use user-drawn sub-regions ─────────────
-                tables = _extract_notas_custom(res, page_width, page_height, sub_tables)
             else:
                 # ── STANDARD DICTAMINADO MODE: manual token grouping ──────────
                 all_tokens = _extract_tokens(res, page_width, page_height)
@@ -159,11 +155,28 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             table_y = min(v.y for v in verts) if verts else 0
 
             rows = []
+            max_cols = 0
             # Process body rows only
             for brow in table.body_rows:
                 cells = _extract_row_cells(brow, full_text, page_width, page_height)
                 if cells:
+                    max_cols = max(max_cols, len(cells))
                     rows.append(cells)
+
+            # Si la tabla tiene más de 3 columnas (es una tabla compleja), 
+            # sacamos una captura de pantalla completa para que el usuario la vea.
+            if rows and max_cols > 3 and verts and fitz_page:
+                try:
+                    xs = [v.x * page_width for v in verts]
+                    ys = [v.y * page_height for v in verts]
+                    clip = fitz.Rect(max(0, min(xs)-15), max(0, min(ys)-15), min(page_width, max(xs)+15), min(page_height, max(ys)+15))
+                    pix = fitz_page.get_pixmap(clip=clip, dpi=150)
+                    table_b64 = base64.b64encode(pix.tobytes("png")).decode()
+                    # Añadir la imagen al final de la tabla
+                    rows.append([{"text": "", "bbox": None, "is_nota_image": True, "image_b64": table_b64}])
+                    logger.info(f"Captured screenshot for complex table at y={table_y:.2f} with {max_cols} cols")
+                except Exception as e:
+                    logger.warning(f"Could not capture screenshot for complex table: {e}")
 
             if rows:
                 docai_tables.append((table_y, rows))
@@ -237,67 +250,6 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
                 result_tables.append([header_row])
 
     return result_tables, new_last_nota_label
-
-
-def _extract_notas_custom(res, page_width: float, page_height: float, sub_tables: list) -> list:
-    """
-    Extrae tablas basadas en múltiples regiones (Concepto, Val1, Val2) dibujadas por el usuario.
-    """
-    all_tokens = _extract_tokens(res, page_width, page_height)
-    
-    def is_inside(bbox, r):
-        if not r: return False
-        cx = (bbox[0] + bbox[2]) / 2 / page_width
-        cy = (bbox[1] + bbox[3]) / 2 / page_height
-        return (r["x"] <= cx <= r["x"] + r["w"]) and (r["y"] <= cy <= r["y"] + r["h"])
-
-    tables = []
-    
-    for st in sub_tables:
-        nota_num = st.get("nota_num", "")
-        cr = st.get("concept_region")
-        val_regions = st.get("value_regions", [])
-        
-        # Fallback for old saved state
-        if not val_regions:
-            v1r = st.get("val1_region")
-            v2r = st.get("val2_region")
-            val_regions = [r for r in [v1r, v2r] if r]
-
-        c_tokens = [t for t in all_tokens if is_inside(t["bbox"], cr)]
-        v_tokens_list = [[t for t in all_tokens if is_inside(t["bbox"], vr)] for vr in val_regions]
-        
-        # Group concept tokens into rows by Y position
-        c_rows = _build_table_from_lines(c_tokens)
-        
-        table_rows = []
-        # Inject the nota header first
-        if nota_num:
-            table_rows.append([{"text": f"NOTA {nota_num}", "is_nota_header": True}])
-        
-        for row_tokens in c_rows:
-            y0 = min(t['bbox'][1] for t in row_tokens)
-            y1 = max(t['bbox'][3] for t in row_tokens)
-            h = y1 - y0
-            
-            concept_text = " ".join(t['text'] for t in row_tokens).strip()
-            
-            for v_tokens in v_tokens_list:
-                v_text = ""
-                v_overlap = [t for t in v_tokens if max(0, min(y1, t['bbox'][3]) - max(y0, t['bbox'][1])) > min(t['bbox'][3] - t['bbox'][1], h) * 0.3]
-                if v_overlap:
-                    v_text = " ".join(t['text'] for t in sorted(v_overlap, key=lambda x: x['bbox'][0]))
-                    
-                table_rows.append([
-                    {"text": concept_text},
-                    {"text": v_text},
-                    {"text": ""}
-                ])
-            
-        if len(table_rows) > (1 if nota_num else 0):
-            tables.append(table_rows)
-            
-    return tables
 
 
 def _extract_row_cells(row, full_text: str, page_width: float, page_height: float) -> list:
