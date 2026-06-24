@@ -32,6 +32,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
     name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
 
     results = []
+    last_nota_label = None
 
     for p_num in target_pages:
         try:
@@ -67,7 +68,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 
             if layout_type == "notas_dictaminado":
                 # ── NOTAS MODE: use DocAI native table + block detection ──────
-                tables = _extract_notas_with_native_tables(res, page_width, page_height, fitz_page=page)
+                tables, last_nota_label = _extract_notas_with_native_tables(res, page_width, page_height, fitz_page=page, previous_nota_label=last_nota_label)
             else:
                 # ── STANDARD DICTAMINADO MODE: manual token grouping ──────────
                 all_tokens = _extract_tokens(res, page_width, page_height)
@@ -110,7 +111,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 # NOTAS MODE: uses DocAI native tables
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_notas_with_native_tables(res, page_width: float, page_height: float, fitz_page=None) -> list:
+def _extract_notas_with_native_tables(res, page_width: float, page_height: float, fitz_page=None, previous_nota_label=None) -> tuple:
     """
     Usa la detección nativa de tablas de Document AI y los bloques de texto
     para asociar cada tabla a su encabezado NOTA X correspondiente.
@@ -135,6 +136,16 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
 
     nota_headers.sort(key=lambda x: x[0])
     logger.info(f"Found {len(nota_headers)} NOTA headers: {[n[1] for n in nota_headers]}")
+
+    # Determine what the last nota label of this page is
+    if nota_headers:
+        new_last_nota_label = nota_headers[-1][1]
+    else:
+        new_last_nota_label = previous_nota_label
+
+    # Inject previous nota header at the top of the page so overflowing tables associate with it
+    if previous_nota_label:
+        nota_headers.insert(0, (-1.0, previous_nota_label))
 
     # 2. Collect all DocAI tables with their Y positions
     docai_tables = []  # list of (y_norm, rows)
@@ -188,6 +199,9 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
 
     for i, (nota_y, nota_label) in enumerate(nota_headers):
         if nota_label not in tables_per_nota:
+            if nota_y < 0:
+                continue  # This is the injected previous_nota_label, we already screenshotted it on the previous page
+
             header_row = [{"text": nota_label, "bbox": None, "is_nota_header": True}]
 
             # Capture screenshot of the nota text region
@@ -218,7 +232,7 @@ def _extract_notas_with_native_tables(res, page_width: float, page_height: float
             else:
                 result_tables.append([header_row])
 
-    return result_tables
+    return result_tables, new_last_nota_label
 
 
 def _extract_row_cells(row, full_text: str, page_width: float, page_height: float) -> list:
