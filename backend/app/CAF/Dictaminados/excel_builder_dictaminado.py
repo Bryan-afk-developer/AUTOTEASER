@@ -2,6 +2,7 @@ import logging
 import re
 import uuid
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from PIL import Image as PILImage
 import io
