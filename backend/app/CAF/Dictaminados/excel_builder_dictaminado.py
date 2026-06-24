@@ -117,6 +117,25 @@ def _is_numeric(text: str) -> bool:
     except ValueError:
         return False
 
+def _clean_monto_ocr(text: str) -> str:
+    """
+    Limpia alucinaciones de OCR en los montos (ej. '9,231,513 AAAAAA69' -> '9,231,513').
+    Si no contiene números (ej. 'detallan.', 'Acreedores'), devuelve string vacío.
+    """
+    if not text:
+        return ""
+    # Busca el primer bloque que parezca un número financiero: $, números, comas, puntos, paréntesis.
+    m = re.search(r'(?:[\$\(]\s*)?[\d,\.]+(?:\s*\))?', text)
+    if m:
+        return m.group(0).strip()
+    
+    # Conservar guión si es lo único
+    if text.strip() == "-":
+        return "-"
+        
+    return ""
+
+
 
 def _tokenize_cells(row) -> list:
     """Extrae tokens de las celdas de una fila, de izquierda a derecha."""
@@ -162,7 +181,12 @@ def _extract_pairs_from_native_cells(row) -> list:
     if len(cells) == 2:
         # Concept + 1 amount (e.g. single-year table or total row)
         concepto = cells[0]["text"].strip()
-        m1 = cells[1]["text"].strip()
+        raw_m1 = cells[1]["text"].strip()
+        m1 = _clean_monto_ocr(raw_m1)
+        
+        if not m1:
+            return [] # Discard row if it has no numeric amount
+            
         # Skip if it looks like a year header (m1 is a year like "2024")
         try:
             if 1990 <= float(m1.replace(",", "")) <= 2030:
@@ -177,14 +201,20 @@ def _extract_pairs_from_native_cells(row) -> list:
     m2_cell = cells[-1]
 
     concepto = " ".join(c["text"].strip() for c in concept_cells if c["text"].strip())
-    m1 = m1_cell["text"].strip()
-    m2 = m2_cell["text"].strip()
+    raw_m1 = m1_cell["text"].strip()
+    raw_m2 = m2_cell["text"].strip()
+    
+    m1 = _clean_monto_ocr(raw_m1)
+    m2 = _clean_monto_ocr(raw_m2)
+    
+    if not m1 and not m2:
+        return [] # Discard row if neither cell has a numeric amount (filters out text-block noise)
 
     # Skip header-like rows where last cells are years (e.g. "2024" | "2023")
     try:
-        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1))
-        v2 = float(re.sub(r'[\$,\s\(\)]', '', m2))
-        if 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
+        v1 = float(re.sub(r'[\$,\s\(\)]', '', m1)) if m1 and m1 != "-" else 0
+        v2 = float(re.sub(r'[\$,\s\(\)]', '', m2)) if m2 and m2 != "-" else 0
+        if m1 and m2 and 1990 <= v1 <= 2030 and 1990 <= v2 <= 2030:
             return []
     except (ValueError, AttributeError):
         pass
