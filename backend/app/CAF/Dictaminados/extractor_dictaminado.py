@@ -27,6 +27,20 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 
     doc = fitz.open(pdf_path)
 
+    # Detectar el año leyendo siempre la primera página (como solicitó el usuario)
+    detected_years = "Desconocido"
+    try:
+        if len(doc) > 0:
+            first_page_text = doc[0].get_text()
+            from app.CAF.extractor import _detect_year
+            max_y_str = _detect_year(first_page_text)
+            if max_y_str != "Desconocido":
+                max_y = int(max_y_str)
+                # Los dictaminados siempre comparan el año actual con el anterior
+                detected_years = f"{max_y}, {max_y - 1}"
+    except Exception as e:
+        logger.warning(f"Could not auto-detect year from first page: {e}")
+
     opts = {"api_endpoint": f"{GCP_LOCATION}-documentai.googleapis.com"}
     client = documentai.DocumentProcessorServiceClient(client_options=opts)
     name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
@@ -102,7 +116,7 @@ def extract_dictaminado(pdf_path, target_pages: list, page_layouts: dict = None)
 
     return {
         "pages": results,
-        "year": "Desconocido",
+        "year": detected_years,
         "doc_type": "dictaminado",
     }
 
