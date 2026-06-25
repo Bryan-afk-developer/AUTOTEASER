@@ -92,7 +92,8 @@ def _find_best_match(target: str, flat_data: list, threshold: float = 0.8) -> st
     target_clean = _clean_text(target)
 
     # --- REGLA 1: Efectivo y equivalentes -> Bancos ---
-    if target_clean in ["bancos", "caja", "efectivo y equivalentes", "efectivo"]:
+    # Solo mapeamos a Bancos para evitar que se duplique el monto si la plantilla tiene "Caja" y "Bancos" separados.
+    if target_clean in ["bancos", "efectivo y equivalentes", "efectivo"]:
         for concept, monto in flat_data:
             c = _clean_text(concept)
             if "efectivo y equivalente" in c or "efectivo e inversiones" in c or c == "bancos":
