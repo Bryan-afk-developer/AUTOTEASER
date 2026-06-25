@@ -90,6 +90,21 @@ def _find_best_match(target: str, flat_data: list, threshold: float = 0.8) -> st
         return None
         
     target_clean = _clean_text(target)
+
+    # --- REGLA 1: Efectivo y equivalentes -> Bancos ---
+    if target_clean in ["bancos", "caja", "efectivo y equivalentes", "efectivo"]:
+        for concept, monto in flat_data:
+            c = _clean_text(concept)
+            if "efectivo y equivalente" in c or "efectivo e inversiones" in c or c == "bancos":
+                return monto
+
+    # --- REGLA 3: Deudores diversos y funcionarios -> Deudores diversos ---
+    if target_clean == "deudores diversos":
+        for concept, monto in flat_data:
+            c = _clean_text(concept)
+            if "deudores diversos" in c:
+                return monto
+
     best_score = 0.0
     best_monto = None
     
@@ -137,6 +152,14 @@ def _clean_monto_ocr(text: str) -> str:
     return ""
 
 
+def _is_section_header(text: str) -> bool:
+    clean = _clean_text(text)
+    headers = [
+        "activo", "activos", "activo a corto plazo", "activo circulante", "activo no circulante",
+        "pasivo", "pasivos", "pasivo a corto plazo", "pasivo circulante", "pasivo no circulante",
+        "capital contable", "patrimonio", "capital"
+    ]
+    return clean in headers
 
 def _tokenize_cells(row) -> list:
     """Extrae tokens de las celdas de una fila, de izquierda a derecha."""
@@ -174,8 +197,15 @@ def _extract_pairs_from_native_cells(row) -> list:
     if not row:
         return []
 
-    # Get only non-empty cells
     cells = [c for c in row if c.get("text", "").strip()]
+    if not cells:
+        return []
+
+    # REGLA 4: Encabezados de tabla (ACTIVO, PASIVO, etc.)
+    full_text = " ".join(c["text"].strip() for c in cells)
+    if _is_section_header(full_text):
+        return [(full_text, "__SECTION_HEADER__", "__SECTION_HEADER__")]
+
     if len(cells) < 2:
         return []
 
@@ -251,6 +281,11 @@ def _extract_pairs_dictaminado(row) -> list:
     tokens = _tokenize_cells(row)
     if not tokens:
         return []
+
+    # REGLA 4: Encabezados de tabla (ACTIVO, PASIVO, etc.)
+    full_text = " ".join(t.strip() for t in tokens if t.strip())
+    if _is_section_header(full_text):
+        return [(full_text, "__SECTION_HEADER__", "__SECTION_HEADER__")]
 
     # Separar textos y numéricos, PERO preservando números de referencia a notas
     texts = []
@@ -576,6 +611,13 @@ def inject_dictaminado_sheets(doc, wb, mapa):
                             if not concept and not monto:
                                 continue
                                 
+                            # REGLA 2: Depreciación acumulada siempre es negativo
+                            if "depreciacion acumulada" in _clean_text(concept):
+                                val = _parse_monto(monto)
+                                if val > 0:
+                                    if not monto.startswith("(") and not monto.startswith("-"):
+                                        monto = f"({monto})"
+                                        
                             row_data = (concept, monto, p_num, evidence_b64)
                             if current_nota_num:
                                 nota_tables[current_nota_num].append(("__DATA__",) + row_data)
@@ -590,6 +632,12 @@ def inject_dictaminado_sheets(doc, wb, mapa):
         used_notas = set()
 
         for (concept, monto, p_num, evidence_b64) in main_rows:
+            # REGLA 4: Imprimir encabezados de sección
+            if monto == "__SECTION_HEADER__":
+                _write_nota_header(ws, data_row, concept)
+                data_row += 1
+                continue
+
             # Write the main row
             _write_data_row(ws, data_row, concept, monto, p_num, evidence_b64)
             data_row += 1
