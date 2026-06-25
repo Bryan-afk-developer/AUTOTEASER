@@ -179,6 +179,12 @@ def _extract_pairs_from_native_cells(row) -> list:
     if len(cells) < 2:
         return []
 
+    # Si es una tabla compleja (>4 columnas), evitar extraer números incorrectos (como la vida útil)
+    # y solo tomar el concepto de la primera columna, indicando al usuario que vea la imagen.
+    if len(cells) > 4:
+        concepto = cells[0]["text"].strip()
+        return [(concepto, "Ver imagen abajo", "Ver imagen abajo")]
+
     if len(cells) == 2:
         # Concept + 1 amount (e.g. single-year table or total row)
         concepto = cells[0]["text"].strip()
