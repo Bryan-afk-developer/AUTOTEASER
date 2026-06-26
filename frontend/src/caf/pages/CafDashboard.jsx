@@ -3,6 +3,7 @@ import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
 import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify, Crop } from 'lucide-react'
 import RegionSelector from '../components/RegionSelector'
+import CustomNotaRegionSelector from '../components/CustomNotaRegionSelector'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -37,8 +38,7 @@ export default function CafDashboard() {
           status: 'uploaded',
           extractedData: null,
           pageLayouts: {}, // { 0: 'single_column', 1: 'two_column' }
-          useOcr: true,
-          docType: 'interno'
+          useOcr: true
         }
       })
       
@@ -123,7 +123,7 @@ export default function CafDashboard() {
           ...doc,
           pageLayouts: {
             ...doc.pageLayouts,
-            [pageNum]: {
+            [pageNum]: layoutType === 'notas_custom' ? regions : {
               type: layoutType || 'two_column',
               regions: regions
             }
@@ -153,12 +153,9 @@ export default function CafDashboard() {
 
     for (const doc of docsToProcess) {
       try {
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { 
-          pages: doc.selectedPages, 
-          page_layouts: doc.pageLayouts, 
-          use_ocr: doc.useOcr !== false,
-          doc_type: doc.docType || 'interno'
-        })
+        const docType = doc.docType || 'financiero';
+        const useOcr = docType === 'dictaminado' ? true : (doc.useOcr !== false);
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr, doc_type: docType })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -253,20 +250,21 @@ export default function CafDashboard() {
                   </div>
                   <div className="flex items-center gap-4">
                     <select
-                      value={doc.docType || 'interno'}
-                      onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, docType: e.target.value } : d))}
-                      className="bg-black/40 text-white text-xs border border-white/10 rounded-lg py-1 px-2 cursor-pointer outline-none focus:ring-1 focus:ring-primary-500 font-semibold"
+                      value={doc.docType || 'financiero'}
+                      onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, docType: e.target.value, useOcr: e.target.value === 'dictaminado' ? true : d.useOcr } : d))}
+                      className="bg-surface border border-border rounded text-xs px-2 py-1 text-white outline-none focus:ring-1 focus:ring-primary-500"
                     >
-                      <option value="interno">📄 E.F. Interno</option>
-                      <option value="dictaminado">🏛️ Dictaminado</option>
+                      <option value="financiero">Estado Financiero</option>
+                      <option value="dictaminado">Dictaminado</option>
                     </select>
-                    
-                    <label className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-white transition-colors" title="Si está activo, usa Document AI. Si se desactiva, intenta extraer el texto de forma nativa más rápido.">
+
+                    <label className={`flex items-center gap-2 cursor-pointer text-xs transition-colors ${doc.docType === 'dictaminado' ? 'text-text-muted/50' : 'text-text-muted hover:text-white'}`} title={doc.docType === 'dictaminado' ? "Los dictaminados siempre usan OCR" : "Si está activo, usa Document AI."}>
                       <input 
                         type="checkbox" 
-                        checked={doc.useOcr !== false} 
+                        checked={doc.docType === 'dictaminado' ? true : (doc.useOcr !== false)} 
+                        disabled={doc.docType === 'dictaminado'}
                         onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, useOcr: e.target.checked } : d))}
-                        className="w-3 h-3 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50"
+                        className="w-3 h-3 rounded bg-surface border-border text-primary-500 focus:ring-primary-500/50 disabled:opacity-50"
                       />
                       <span>Usar OCR</span>
                     </label>
@@ -333,19 +331,41 @@ export default function CafDashboard() {
                                 <option value="single_column">LINEAL (Auto)</option>
                                 <option value="split_column">CONCEPTO / MONTO</option>
                                 <option value="two_column">2 COLUMNAS</option>
+                                {doc.docType === 'dictaminado' && (
+                                  <>
+                                    <option value="notas_dictaminado">📋 NOTAS (Página completa)</option>
+                                    <option value="notas_custom">📊 NOTAS (personalizado)</option>
+                                  </>
+                                )}
                               </select>
                               
-                              {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column') && (
+                              {(layoutType === 'two_column' || layoutType === 'split_column' || layoutType === 'single_column' || layoutType === 'notas_custom') && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openRegionSelector(doc.doc_id, thumb.page_num, thumb.image, regions || [], layoutType);
+                                    const layoutConfig = doc.pageLayouts[thumb.page_num];
+                                    let initRegions = [];
+                                    if (layoutType === 'notas_custom') {
+                                      initRegions = (layoutConfig && layoutConfig.type === 'notas_custom') ? layoutConfig.sub_tables : [];
+                                    } else {
+                                      initRegions = (layoutConfig && typeof layoutConfig === 'object') ? layoutConfig.regions : [];
+                                    }
+                                    openRegionSelector(doc.doc_id, thumb.page_num, `${API_BASE}/api/caf/document/${doc.doc_id}/page/${thumb.page_num}/image`, initRegions, layoutType);
                                   }}
-                                  className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${regions && regions.length > 0 ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'}`}
+                                  className={`w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold transition-colors ${
+                                    (layoutType === 'notas_custom' ? (doc.pageLayouts[thumb.page_num]?.sub_tables?.length > 0) : (regions && regions.length > 0)) 
+                                    ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' 
+                                    : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                                  }`}
                                 >
                                   <Crop className="w-3 h-3" /> 
-                                  {regions && regions.length > 0 ? 'Áreas Ajustadas' : 'Ajustar Áreas'}
+                                  {(layoutType === 'notas_custom' ? (doc.pageLayouts[thumb.page_num]?.sub_tables?.length > 0) : (regions && regions.length > 0)) ? 'Áreas Ajustadas' : 'Definir Tablas'}
                                 </button>
+                              )}
+                              {layoutType === 'notas_dictaminado' && (
+                                <div className="w-full flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300">
+                                  🔍 Auto-detecta NOTAS
+                                </div>
                               )}
                             </div>
                           )}
@@ -541,16 +561,35 @@ export default function CafDashboard() {
                   <div className="space-y-4 mt-4">
                     {missingYearDocs.map(doc => (
                       <div key={doc.doc_id} className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-white/80">{doc.filename}</label>
-                        <input 
-                          type="number" 
-                          min="2000" 
-                          max="2100"
-                          placeholder="Ej. 2024"
-                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
-                          value={yearOverrides[doc.doc_id] || ''}
-                          onChange={(e) => setYearOverrides(prev => ({ ...prev, [doc.doc_id]: e.target.value }))}
-                        />
+                        <label className="text-xs font-semibold text-white/80">{doc.filename} {doc.docType === 'dictaminado' ? '(Dictaminado)' : ''}</label>
+                        {doc.docType === 'dictaminado' ? (
+                          <div className="flex gap-2">
+                            <input 
+                              type="number" 
+                              placeholder="Año Reciente (Ej. 2024)"
+                              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                              value={yearOverrides[`${doc.doc_id}_1`] || ''}
+                              onChange={(e) => setYearOverrides(prev => ({ ...prev, [`${doc.doc_id}_1`]: e.target.value }))}
+                            />
+                            <input 
+                              type="number" 
+                              placeholder="Año Anterior (Ej. 2023)"
+                              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                              value={yearOverrides[`${doc.doc_id}_2`] || ''}
+                              onChange={(e) => setYearOverrides(prev => ({ ...prev, [`${doc.doc_id}_2`]: e.target.value }))}
+                            />
+                          </div>
+                        ) : (
+                          <input 
+                            type="number" 
+                            min="2000" 
+                            max="2100"
+                            placeholder="Ej. 2024"
+                            className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                            value={yearOverrides[doc.doc_id] || ''}
+                            onChange={(e) => setYearOverrides(prev => ({ ...prev, [doc.doc_id]: e.target.value }))}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -564,12 +603,22 @@ export default function CafDashboard() {
                     </button>
                     <button 
                       onClick={() => {
-                        const allFilled = missingYearDocs.every(d => yearOverrides[d.doc_id]?.trim());
+                        const allFilled = missingYearDocs.every(d => {
+                          if (d.docType === 'dictaminado') {
+                            return yearOverrides[`${d.doc_id}_1`]?.trim() && yearOverrides[`${d.doc_id}_2`]?.trim();
+                          }
+                          return yearOverrides[d.doc_id]?.trim();
+                        });
                         if (!allFilled) {
-                          alert("Por favor ingresa el año para todos los documentos listados.");
+                          alert("Por favor ingresa el/los año(s) correspondientes para todos los documentos listados.");
                           return;
                         }
                         const overrides = { ...yearOverrides };
+                        missingYearDocs.forEach(d => {
+                          if (d.docType === 'dictaminado') {
+                            overrides[d.doc_id] = `${overrides[`${d.doc_id}_1`]}, ${overrides[`${d.doc_id}_2`]}`;
+                          }
+                        });
                         setMissingYearDocs(null);
                         handleGenerateExcel(overrides);
                       }}
@@ -587,13 +636,22 @@ export default function CafDashboard() {
 
       {/* ── Region Selector Modal ── */}
       {regionSelectorState && (
-        <RegionSelector
-          imageUrl={regionSelectorState.imageUrl}
-          initialRegions={regionSelectorState.initialRegions}
-          layoutType={regionSelectorState.layoutType}
-          onSave={handleSaveRegions}
-          onCancel={() => setRegionSelectorState(null)}
-        />
+        regionSelectorState.layoutType === 'notas_custom' ? (
+          <CustomNotaRegionSelector
+            imageUrl={regionSelectorState.imageUrl}
+            initialSubTables={regionSelectorState.initialRegions || []}
+            onSave={handleSaveRegions}
+            onCancel={() => setRegionSelectorState(null)}
+          />
+        ) : (
+          <RegionSelector
+            imageUrl={regionSelectorState.imageUrl}
+            initialRegions={regionSelectorState.initialRegions}
+            layoutType={regionSelectorState.layoutType}
+            onSave={handleSaveRegions}
+            onCancel={() => setRegionSelectorState(null)}
+          />
+        )
       )}
     </>
   )

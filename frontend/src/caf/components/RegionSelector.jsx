@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Save, Trash2, Info } from 'lucide-react';
+import { X, Save, Trash2, Info, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function RegionSelector({ imageUrl, initialRegions = [], layoutType = 'two_column', onSave, onCancel }) {
@@ -7,6 +7,7 @@ export default function RegionSelector({ imageUrl, initialRegions = [], layoutTy
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentRegion, setCurrentRegion] = useState(null);
+  const [zoom, setZoom] = useState(1);
   const containerRef = useRef(null);
 
   const getRelativeCoords = (e) => {
@@ -117,22 +118,47 @@ export default function RegionSelector({ imageUrl, initialRegions = [], layoutTy
                 : 'Dibuja 2 rectángulos sobre la imagen: uno para la columna izquierda y otro para la derecha.'}
             </p>
           </div>
-          <button 
-            onClick={onCancel}
-            className="p-2 hover:bg-white/10 rounded-lg text-text-muted hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-black/20 rounded-lg p-1 mr-4">
+              <button 
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                className="p-1.5 hover:bg-white/10 rounded-md text-text-muted hover:text-white transition-colors"
+                title="Alejar"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-mono w-12 text-center text-white/80">{Math.round(zoom * 100)}%</span>
+              <button 
+                onClick={() => setZoom(Math.min(3, zoom + 0.25))}
+                className="p-1.5 hover:bg-white/10 rounded-md text-text-muted hover:text-white transition-colors"
+                title="Acercar"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setZoom(1)}
+                className="p-1.5 hover:bg-white/10 rounded-md text-text-muted hover:text-white transition-colors ml-1 border-l border-white/10 pl-2"
+                title="Ajustar a pantalla"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
+            </div>
+            <button 
+              onClick={onCancel}
+              className="p-2 hover:bg-white/10 rounded-lg text-text-muted hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex bg-black/50 relative p-4">
-          <div 
-            className="relative mx-auto h-full flex items-center justify-center select-none"
-          >
+        <div className="flex-1 overflow-auto bg-black/50 p-4 custom-scrollbar">
+          <div className="min-h-full min-w-full flex items-center justify-center select-none">
             {/* Contenedor de la imagen que mantiene la relación de aspecto */}
             <div 
               ref={containerRef}
-              className="relative cursor-crosshair shadow-2xl border border-white/10 h-full w-auto"
+              className="relative cursor-crosshair shadow-2xl border border-white/10 flex-shrink-0"
+              style={{ height: `${zoom * 80}vh` }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
@@ -141,7 +167,7 @@ export default function RegionSelector({ imageUrl, initialRegions = [], layoutTy
               <img 
                 src={imageUrl} 
                 alt="Document Preview" 
-                className="h-full w-auto object-contain pointer-events-none"
+                className="h-full w-auto block pointer-events-none"
                 draggable={false}
               />
 
