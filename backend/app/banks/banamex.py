@@ -5,7 +5,7 @@ Logic specific to Banamex bank statements.
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a Banamex bank statement.
     

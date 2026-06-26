@@ -11,7 +11,7 @@ Sabadell format (from example 2025.10 - SABADELL 7801.pdf):
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a Sabadell bank statement.
 

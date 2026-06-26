@@ -11,7 +11,7 @@ Banorte format (from example 2025.12 - BANORTE 0253.PDF):
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a Banorte bank statement.
 

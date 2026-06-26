@@ -5,7 +5,7 @@ Logic specific to BX+ / Banco Ve por Más bank statements.
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a BX+ bank statement.
 

@@ -11,7 +11,7 @@ Scotiabank format (from example 2025.03 - SCOTIABANK 6212.pdf):
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a Scotiabank bank statement.
 

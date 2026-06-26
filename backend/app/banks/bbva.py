@@ -8,21 +8,56 @@ BBVA format (from example 2025.11 - BBVA 0757.pdf):
 - Saldo Promedio in "Saldo Promedio 2,603,512.56"
 - Deposits in "Depósitos / Abonos (+) 456 76,778,579.95"
   (the number after (+) is the transaction count, the big number is the total)
+
+Supports both native-text PDFs and scanned (image-only) PDFs via Document AI OCR.
 """
 import re
+import logging
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
-def parse(text: str, pages: list[str]) -> dict:
-    """
-    Parse a BBVA bank statement.
+def _ocr_first_page(pdf_path: str | Path) -> str:
+    """Render page 1 as image and OCR it with Document AI Basic OCR. Returns text."""
+    try:
+        import fitz
+        from google.api_core.client_options import ClientOptions
+        from google.cloud import documentai
+        from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_BASIC_OCR, GCP_PROCESSOR_ID_OCR
 
-    Args:
-        text: Full extracted text from the PDF
-        pages: List of text per page
+        processor_id = GCP_PROCESSOR_ID_BASIC_OCR or GCP_PROCESSOR_ID_OCR
+        if not GCP_PROJECT_ID or not processor_id:
+            logger.warning("BBVA OCR: GCP credentials not configured")
+            return ""
 
-    Returns:
-        dict with account_name, month, year, deposits, average_balance
-    """
+        logger.info("BBVA: Rendering page 1 as image for OCR...")
+        doc = fitz.open(str(pdf_path))
+        page = doc[0]
+        pix = page.get_pixmap(dpi=200)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+
+        opts = ClientOptions(api_endpoint=f"{GCP_LOCATION}-documentai.googleapis.com")
+        client = documentai.DocumentProcessorServiceClient(client_options=opts)
+        name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, processor_id)
+
+        raw_document = documentai.RawDocument(content=png_bytes, mime_type="image/png")
+        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+        logger.info(f"BBVA: Sending page image to Document OCR Basic (Processor: {processor_id})...")
+        result = client.process_document(request=request)
+
+        ocr_text = result.document.text or ""
+        logger.info(f"BBVA: OCR extracted {len(ocr_text)} chars from page 1")
+        return ocr_text
+
+    except Exception as e:
+        logger.error(f"BBVA OCR failed: {e}", exc_info=True)
+        return ""
+
+
+def _extract_fields(text: str) -> dict:
+    """Apply regex to extract the 4 required fields from text."""
     result = {
         "account_name": "",
         "month": "",
@@ -46,13 +81,11 @@ def parse(text: str, pages: list[str]) -> dict:
 
     # ── 2. Month & Year ──
     # "Periodo DEL 01/11/2025 AL 30/11/2025"
-    # or "DEL 01/NOV/2025 AL 30/NOV/2025"
     match_date = re.search(
         r'(?:Periodo\s+)?DEL\s+\d{1,2}/(\d{2})/(\d{4})\s+AL\s+\d{1,2}/(\d{2})/(\d{4})',
         text, re.IGNORECASE
     )
     if match_date:
-        # Use end-of-period month
         m_num = match_date.group(3)
         result["year"] = match_date.group(4)
         result["month"] = meses_num.get(m_num, m_num)
@@ -68,9 +101,6 @@ def parse(text: str, pages: list[str]) -> dict:
             result["month"] = meses_num.get(m_num, m_num)
 
     # ── 3. Average Balance (Saldo Promedio) ──
-    # "Saldo Promedio 2,603,512.56"
-    # Be careful: there are multiple "Saldo Promedio" lines. We want the first one
-    # (the main account one, not "Saldo Promedio Gravable" or "Saldo Promedio Mínimo")
     match_bal = re.search(
         r'Saldo\s+Promedio\s+([\d,]+\.\d{2})',
         text, re.IGNORECASE
@@ -80,18 +110,36 @@ def parse(text: str, pages: list[str]) -> dict:
 
     # ── 4. Deposits ──
     # "Depósitos / Abonos (+) 456 76,778,579.95"
-    # Pattern: "Depósitos / Abonos (+)" then transaction count then amount
     match_dep = re.search(
         r'Dep[oó]sitos\s*/\s*Abonos\s*\(\+\)\s*\d+\s+([\d,]+\.\d{2})',
         text, re.IGNORECASE
     )
     if not match_dep:
-        # Fallback: just "Depósitos" or "Abonos" followed by amount
         match_dep = re.search(
             r'(?:Dep[oó]sitos|Abonos)\s*(?:\(\+\))?\s*\d*\s*([\d,]+\.\d{2})',
             text, re.IGNORECASE
         )
     if match_dep:
         result["deposits"] = float(match_dep.group(1).replace(',', ''))
+
+    return result
+
+
+def parse(text: str, pages: list[str], pdf_path: str | Path = None, **kwargs) -> dict:
+    """
+    Parse a BBVA bank statement.
+    
+    If the PDF is scanned (no native text), uses Document AI OCR on page 1.
+    """
+    # Try regex on native text first
+    result = _extract_fields(text)
+
+    # If critical fields are missing and we have the PDF path, try OCR
+    missing_critical = not result["account_name"] or result["deposits"] == 0.0
+    if missing_critical and pdf_path:
+        logger.info("BBVA: Native text empty or incomplete. Trying OCR on page 1...")
+        ocr_text = _ocr_first_page(pdf_path)
+        if ocr_text:
+            result = _extract_fields(ocr_text)
 
     return result

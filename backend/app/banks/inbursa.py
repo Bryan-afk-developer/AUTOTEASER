@@ -11,7 +11,7 @@ Inbursa format (from example 2025.04 - INBURSA 0014.pdf):
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse an Inbursa bank statement.
 

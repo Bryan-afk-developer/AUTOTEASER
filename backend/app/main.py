@@ -214,10 +214,10 @@ async def process_document(doc_id: str, engine: str = "gemini"):
         raise HTTPException(400, f"No hay parser implementado para el banco: {bank}")
 
     try:
-        # Pass pdf_path as kwarg (HSBC needs it for Gemini OCR rendering)
-        parse_kwargs = {}
+        # Pass pdf_path and engine as kwargs – parsers that need them (HSBC, BBVA)
+        # accept **kwargs so others simply ignore them.
+        parse_kwargs = {"pdf_path": doc["file_path"]}
         if bank == "hsbc":
-            parse_kwargs["pdf_path"] = doc["file_path"]
             parse_kwargs["engine"] = engine
         
         parsed_data = parser.parse(
@@ -325,8 +325,11 @@ async def fill_template_batch_endpoint(req: BatchFillRequest):
             raise HTTPException(400, f"El documento {doc['file_name']} no ha sido procesado.")
         data_list.append(doc["parsed_data"])
 
+    if not req.template_name or not req.template_name.strip():
+        raise HTTPException(400, "No se especificó el nombre de la plantilla (template_name)")
+
     template_path = TEMPLATES_DIR / req.template_name
-    if not template_path.exists():
+    if not template_path.exists() or template_path.is_dir():
         raise HTTPException(404, f"Plantilla {req.template_name} no encontrada")
 
     mapping = _load_mapping(req.template_name)

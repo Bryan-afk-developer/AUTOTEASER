@@ -108,17 +108,7 @@ def extract_text(pdf_path: str | Path) -> dict:
         logger.warning(f"PyMuPDF extraction failed, falling back to pdfplumber: {e}")
         pages_text = []
 
-    # If PyMuPDF failed or returned no text, fallback to pdfplumber
-    if not pages_text or sum(len(p.strip()) for p in pages_text) < 50:
-        pages_text = []
-        try:
-            with pdfplumber.open(str(pdf_path)) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text() or ""
-                    pages_text.append(text)
-        except Exception as e:
-            logger.warning(f"pdfplumber extraction failed: {e}")
-            
+
     # Final fallback for Teaser (Estados de Cuenta): Document AI OCR
     if not pages_text or sum(len(p.strip()) for p in pages_text) < 50:
         logger.info("PDF appears scanned or protected. Attempting Google Cloud Document AI OCR fallback...")

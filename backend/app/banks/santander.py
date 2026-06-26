@@ -11,7 +11,7 @@ Santander format (from example 2025.11 - SANTANDER 1517-6.pdf):
 import re
 
 
-def parse(text: str, pages: list[str]) -> dict:
+def parse(text: str, pages: list[str], **kwargs) -> dict:
     """
     Parse a Santander bank statement.
 

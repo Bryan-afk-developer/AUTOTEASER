@@ -73,16 +73,18 @@ function App() {
     return () => clearInterval(i)
   }, [])
 
-  // Fetch Teaser templates
+  // Fetch Teaser templates (retry when backend comes online)
   useEffect(() => {
-    (async () => {
+    if (!isOnline) return
+    ;(async () => {
       try {
         const r = await axios.get(`${API_BASE}/api/templates`)
-        setTemplates(r.data.templates || [])
-        if (r.data.templates?.length > 0) setSelectedTemplate(r.data.templates[0].name)
-      } catch { }
+        const tpls = r.data.templates || []
+        setTemplates(tpls)
+        if (tpls.length > 0 && !selectedTemplate) setSelectedTemplate(tpls[0].name)
+      } catch (err) { console.error('Error fetching templates:', err) }
     })()
-  }, [])
+  }, [isOnline])
 
   // Fetch CAF templates & documents
   const loadCafTemplates = async () => {
@@ -160,6 +162,7 @@ function App() {
   const handlePreview = async () => {
     const processed = documents.filter(d => d.parsed_data)
     if (!processed.length) return showToast('No hay datos procesados para previsualizar', true)
+    if (!selectedTemplate) return showToast('Selecciona una plantilla primero', true)
     setIsLoading(true)
     try {
       const r = await axios.post(`${API_BASE}/api/preview-batch`, { doc_ids: processed.map(d => d.id), template_name: selectedTemplate })
@@ -171,6 +174,7 @@ function App() {
   const handleGenerate = async () => {
     const processed = documents.filter(d => d.parsed_data)
     if (!processed.length) return showToast('No hay datos procesados', true)
+    if (!selectedTemplate) return showToast('Selecciona una plantilla primero', true)
     setIsLoading(true); showToast('Generando Excel...')
     try {
       const r = await axios.post(`${API_BASE}/api/fill-template-batch`, { doc_ids: processed.map(d => d.id), template_name: selectedTemplate })
