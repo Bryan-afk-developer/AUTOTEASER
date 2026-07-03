@@ -660,9 +660,13 @@ Analiza el siguiente texto de un acta constitutiva, asamblea o poder notarial y 
 {
   "razon_social": "Nombre completo de la empresa / sociedad",
   "tipo_documento": "Ej: Acta Constitutiva, Asamblea Extraordinaria, Poder Notarial, etc.",
-  "fecha_documento": "Fecha del acta en formato YYYY-MM-DD si la encuentras, si no null",
+  "numero_acta": "Número de acta, escritura o póliza (ej: 12345, 100, etc.) si se menciona, si no null",
+  "fecha_documento": "Fecha en la que se realizó el acta en formato YYYY-MM-DD si la encuentras, si no null",
   "accionistas": [
-    "Nombre del accionista y porcentaje o número de acciones si se especifica"
+    {
+      "nombre": "Nombre completo del accionista",
+      "participacion": "Porcentaje (ej: 50%) o número de acciones (ej: 100 acciones) o capital aportado, si se menciona. De lo contrario null"
+    }
   ],
   "poderes": "Resumen de quién tiene poderes legales (representantes) y qué tipo de poderes tienen",
   "resumen": "Resumen ejecutivo de máximo 3 líneas del contenido principal del documento"

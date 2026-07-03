@@ -645,17 +645,47 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
             <h3 className="text-sm font-bold text-white tracking-wide">Acta Principal (IA)</h3>
           </div>
 
-          <div className="space-y-3 relative z-10">
+          <div className="space-y-3 relative z-10 max-h-96 overflow-y-auto custom-scrollbar pr-2">
             <div>
               <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Razón Social Extraída</p>
               <p className="text-sm font-bold text-white leading-tight">{actaPrincipal.ai_summary.razon_social}</p>
             </div>
+
+            {(actaPrincipal.ai_summary.tipo_documento || actaPrincipal.ai_summary.numero_acta || actaPrincipal.ai_summary.fecha_documento) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {actaPrincipal.ai_summary.tipo_documento && (
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Tipo</p>
+                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.tipo_documento}</p>
+                  </div>
+                )}
+                {actaPrincipal.ai_summary.numero_acta && (
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Número</p>
+                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.numero_acta}</p>
+                  </div>
+                )}
+                {actaPrincipal.ai_summary.fecha_documento && (
+                  <div className="md:col-span-2">
+                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Fecha</p>
+                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.fecha_documento}</p>
+                  </div>
+                )}
+              </div>
+            )}
             
             <div>
               <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Accionistas</p>
-              <ul className="list-disc list-inside text-xs text-text-muted leading-relaxed">
+              <ul className="list-disc list-inside text-xs text-text-muted leading-relaxed space-y-1">
                 {actaPrincipal.ai_summary.accionistas?.map((acc, i) => (
-                  <li key={i}>{acc}</li>
+                  <li key={i}>
+                    {typeof acc === 'string' ? acc : (
+                      <>
+                        <span className="font-medium text-white">{acc.nombre}</span>
+                        {acc.participacion && <span className="text-indigo-200/70 ml-1">({acc.participacion})</span>}
+                      </>
+                    )}
+                  </li>
                 ))}
               </ul>
             </div>
