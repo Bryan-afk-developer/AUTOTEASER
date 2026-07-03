@@ -655,7 +655,7 @@ async def eliminar_carpeta_banco(
 
 PROMPT_ACTA = """
 Eres un analista legal experto en México.
-Analiza este documento (acta constitutiva, asamblea o poder notarial) y extrae la siguiente información en formato JSON estrictamente. Si algún campo no aplica o no se encuentra, usa null.
+Analiza el siguiente texto de un acta constitutiva, asamblea o poder notarial y extrae la información en formato JSON estrictamente. Si algún campo no aplica o no se encuentra, usa null.
 
 {
   "razon_social": "Nombre completo de la empresa / sociedad",
@@ -669,7 +669,74 @@ Analiza este documento (acta constitutiva, asamblea o poder notarial) y extrae l
 }
 
 Responde ÚNICAMENTE con el JSON, sin texto adicional, sin bloques de código markdown.
+
+TEXTO DEL ACTA:
 """
+
+
+def _ocr_with_docai(pdf_bytes: bytes) -> str:
+    """Extrae texto de un PDF escaneado usando Google Cloud Document AI Basic OCR."""
+    from google.cloud import documentai
+    from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_BASIC_OCR, GCP_PROCESSOR_ID_OCR
+    
+    processor_id = GCP_PROCESSOR_ID_BASIC_OCR or GCP_PROCESSOR_ID_OCR
+    if not GCP_PROJECT_ID or not processor_id:
+        raise ValueError("GCP_PROJECT_ID o GCP_PROCESSOR_ID no configurados en .env")
+    
+    opts = {"api_endpoint": f"{GCP_LOCATION}-documentai.googleapis.com"}
+    client = documentai.DocumentProcessorServiceClient(client_options=opts)
+    name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, processor_id)
+    
+    # Document AI tiene un límite de 15 páginas por llamada y 20MB
+    # Procesamos en lotes si el PDF es muy grande
+    doc_pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
+    n_pages = len(doc_pdf)
+    BATCH_SIZE = 15
+    
+    full_text = ""
+    for i in range(0, n_pages, BATCH_SIZE):
+        batch_doc = fitz.open()
+        end = min(i + BATCH_SIZE, n_pages)
+        batch_doc.insert_pdf(doc_pdf, from_page=i, to_page=end - 1)
+        batch_bytes = batch_doc.tobytes()
+        batch_doc.close()
+        
+        raw_document = documentai.RawDocument(content=batch_bytes, mime_type="application/pdf")
+        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+        result = client.process_document(request=request)
+        full_text += result.document.text + "\n"
+        logger.info(f"DocAI OCR: páginas {i+1}-{end} de {n_pages} procesadas")
+    
+    doc_pdf.close()
+    return full_text.strip()
+
+
+def _analyze_with_vertex(text: str) -> dict:
+    """Analiza el texto con Vertex AI Gemini (usa service account, sin API key)."""
+    import vertexai
+    from vertexai.generative_models import GenerativeModel
+    from app.config import GCP_PROJECT_ID, GCP_LOCATION
+    
+    # Vertex AI usa las Google Credentials del entorno (GOOGLE_APPLICATION_CREDENTIALS)
+    vertexai.init(project=GCP_PROJECT_ID, location="us-central1")
+    model = GenerativeModel("gemini-1.5-flash")
+    
+    prompt = PROMPT_ACTA + text[:30000]
+    response = model.generate_content(prompt)
+    
+    ai_text = response.text.strip()
+    # Limpiar posibles bloques markdown
+    if ai_text.startswith("```json"):
+        ai_text = ai_text[7:].strip()
+        if ai_text.endswith("```"):
+            ai_text = ai_text[:-3].strip()
+    elif ai_text.startswith("```"):
+        ai_text = ai_text[3:].strip()
+        if ai_text.endswith("```"):
+            ai_text = ai_text[:-3].strip()
+    
+    return json.loads(ai_text)
+
 
 @router.post("/actas/{clave}/procesar-ia")
 async def procesar_acta_principal(clave: str, authorization: str = Header(None)):
@@ -693,87 +760,36 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
     except Exception as e:
         raise HTTPException(500, f"Error al descargar el PDF: {e}")
 
-    if not GEMINI_API_KEY:
-        raise HTTPException(500, "API Key de Gemini no configurada.")
-
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-
-    # 2. Intentar extracción de texto nativa primero (PDFs digitales)
+    # 2. Intentar extracción de texto nativo primero (PDFs digitales — gratis)
     text_content = ""
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         for page in doc[:30]:
             text_content += page.get_text() + "\n"
+        doc.close()
     except Exception as e:
         logger.warning(f"No se pudo extraer texto nativo: {e}")
 
-    ai_data = None
-
-    if text_content.strip() and len(text_content.strip()) > 100:
-        # PDF digital — usar texto directamente
-        logger.info(f"Procesando acta con texto nativo ({len(text_content)} chars)")
-        prompt = PROMPT_ACTA + f"\n\nTEXTO DEL ACTA:\n{text_content[:30000]}"
+    # 3. Si el PDF es escaneado (sin texto), usar Document AI OCR
+    if not text_content.strip() or len(text_content.strip()) < 100:
+        logger.info("PDF sin texto nativo → usando Document AI Basic OCR")
         try:
-            response = model.generate_content(prompt)
-            ai_text = response.text.strip()
-            if ai_text.startswith("```json"):
-                ai_text = ai_text[7:].strip()
-                if ai_text.endswith("```"):
-                    ai_text = ai_text[:-3].strip()
-            elif ai_text.startswith("```"):
-                ai_text = ai_text[3:].strip()
-                if ai_text.endswith("```"):
-                    ai_text = ai_text[:-3].strip()
-            ai_data = json.loads(ai_text)
+            text_content = _ocr_with_docai(pdf_bytes)
         except Exception as e:
-            logger.error(f"Error Gemini texto: {e}")
-            # Si falla el parsing de texto, intentamos con imágenes
-            text_content = ""
+            logger.error(f"Error Document AI OCR: {e}")
+            raise HTTPException(500, f"Error al procesar el PDF con OCR: {e}")
 
-    if ai_data is None:
-        # PDF escaneado (OCR) — convertir páginas a imágenes y usar Gemini Vision
-        logger.info("PDF sin texto detectado, usando Gemini Vision (OCR mode)")
-        import base64
+    if not text_content.strip():
+        raise HTTPException(400, "No se pudo extraer texto del documento, incluso con OCR.")
 
-        try:
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            total_pages = min(len(doc), 15)  # Máximo 15 páginas para no pasarnos del límite
-            
-            parts = [PROMPT_ACTA]
-            
-            for page_num in range(total_pages):
-                page = doc[page_num]
-                # Renderizar a imagen con resolución decente (150 DPI)
-                mat = fitz.Matrix(150/72, 150/72)
-                pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-                img_bytes = pix.tobytes("png")
-                
-                # Gemini acepta imágenes como partes inline
-                parts.append({
-                    "inline_data": {
-                        "mime_type": "image/png",
-                        "data": base64.b64encode(img_bytes).decode("utf-8")
-                    }
-                })
-            
-            response = model.generate_content(parts)
-            ai_text = response.text.strip()
-            if ai_text.startswith("```json"):
-                ai_text = ai_text[7:].strip()
-                if ai_text.endswith("```"):
-                    ai_text = ai_text[:-3].strip()
-            elif ai_text.startswith("```"):
-                ai_text = ai_text[3:].strip()
-                if ai_text.endswith("```"):
-                    ai_text = ai_text[:-3].strip()
-            ai_data = json.loads(ai_text)
+    # 4. Analizar con Vertex AI Gemini
+    try:
+        ai_data = _analyze_with_vertex(text_content)
+    except Exception as e:
+        logger.error(f"Error Vertex AI: {e}")
+        raise HTTPException(500, f"Error al analizar el texto con IA: {e}")
 
-        except Exception as e:
-            logger.error(f"Error Gemini Vision: {e}")
-            raise HTTPException(500, f"Error al procesar el documento con IA (Vision): {e}")
-
-    # 4. Guardar resumen en Storage
+    # 5. Guardar resumen en Storage
     summary_payload = {
         "clave_principal": clave,
         "ai_summary": ai_data
