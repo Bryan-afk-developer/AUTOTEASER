@@ -661,6 +661,7 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
             isOpen={isAiSummaryOpen} 
             onClose={() => setIsAiSummaryOpen(false)} 
             aiSummary={actaPrincipal.ai_summary} 
+            fetchPdfUrl={() => api.descargarDocumentoIndividual(empresa.id, actaPrincipal.id, false, true)}
           />
         </>
       )}

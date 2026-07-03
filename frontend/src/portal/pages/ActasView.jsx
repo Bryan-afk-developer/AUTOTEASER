@@ -173,7 +173,7 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
               {/* Botón Ver Resumen IA */}
               {isPrincipal && expediente?.acta_principal?.ai_summary && (
                 <button
-                  onClick={() => setSelectedAiSummary(expediente.acta_principal.ai_summary)}
+                  onClick={() => setSelectedAiSummary({ aiSummary: expediente.acta_principal.ai_summary, pdfUrl: docReq.url_documento })}
                   className="mt-3 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow"
                 >
                   <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Ver Resumen de IA</span>
@@ -230,7 +230,8 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
       <AiSummarySlideover 
         isOpen={!!selectedAiSummary} 
         onClose={() => setSelectedAiSummary(null)} 
-        aiSummary={selectedAiSummary} 
+        aiSummary={selectedAiSummary?.aiSummary} 
+        pdfUrl={selectedAiSummary?.pdfUrl}
       />
     </div>
   )
