@@ -83,6 +83,20 @@ class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
     year_overrides: dict = {}
 
+@router.get("/templates")
+async def list_caf_templates():
+    """List available Excel templates for CAF."""
+    from app.config import TEMPLATES_DIR
+    templates = []
+    if TEMPLATES_DIR.exists():
+        for f in TEMPLATES_DIR.iterdir():
+            if f.suffix in (".xlsx", ".xls"):
+                name = f.name.lower()
+                # Name-based heuristic for CAF templates
+                if "caf" in name or "balance" in name or "resultados" in name or "plantilla" in name:
+                    templates.append({"name": f.name})
+    return {"templates": templates}
+
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):

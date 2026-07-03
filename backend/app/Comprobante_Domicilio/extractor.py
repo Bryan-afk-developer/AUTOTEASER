@@ -65,4 +65,4 @@ def extract_location_from_cd(file_path: str = None, file_bytes: bytes = None, fi
 
     except Exception as e:
         logger.error(f"Error fatal extrayendo Comprobante Domicilio: {e}")
-        return "Desconocido - Ubicacion no detectada"
+        return "Ubicacion no detectada"

@@ -21,6 +21,10 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
+import json
+import google.generativeai as genai
+from app.config import GEMINI_API_KEY
+import fitz  # PyMuPDF
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +36,7 @@ router = APIRouter()
 # ══════════════════════════════════════════════════════════════════════════════
 
 # 1. Documentos Legales
-DOCUMENTOS_LEGALES = [
-    {
-        "clave": "acta_constitutiva",
-        "nombre": "Acta Constitutiva y Asambleas Posteriores",
-        "descripcion": "Acta constitutiva y asambleas posteriores con inscripción en el Registro Público de Comercio (RPC)",
-        "categoria": "legal",
-        "icono": "📜",
-        "grupo": "legal",
-    },
-]
+DOCUMENTOS_LEGALES = []
 
 # 5. Documentos Vigentes (validez temporal)
 DOCUMENTOS_VIGENTES = [
@@ -51,6 +46,14 @@ DOCUMENTOS_VIGENTES = [
         "descripcion": "Reporte de Buró de Crédito actualizado (vigente al mes actual)",
         "categoria": "fiscal",
         "icono": "📊",
+        "grupo": "vigentes",
+    },
+    {
+        "clave": "buro_score_empresa",
+        "nombre": "Buró de Crédito Mi Score",
+        "descripcion": "Reporte de Mi Score de la Empresa",
+        "categoria": "financiero",
+        "icono": "📈",
         "grupo": "vigentes",
     },
     {
@@ -284,11 +287,39 @@ def calcular_declaraciones() -> list[dict]:
     return docs
 
 
+def calcular_actas(docs_subidos: dict = None) -> list[dict]:
+    docs_subidos = docs_subidos or {}
+    actas_subidas = [d for d in docs_subidos.values() if d["tipo_documento"].startswith("acta_constitutiva")]
+    
+    docs = []
+    if not actas_subidas:
+        docs.append({
+            "clave": "acta_constitutiva",
+            "nombre": "Acta Constitutiva y Asambleas Posteriores",
+            "descripcion": "Acta constitutiva y asambleas posteriores con inscripción en el RPC",
+            "categoria": "legal",
+            "icono": "📜",
+            "grupo": "legal",
+        })
+    else:
+        actas_subidas = sorted(actas_subidas, key=lambda x: x.get("subido_en") or "")
+        for i, acta in enumerate(actas_subidas):
+            docs.append({
+                "clave": acta["tipo_documento"],
+                "nombre": f"Acta Constitutiva / Asamblea ({i+1})",
+                "descripcion": "Acta constitutiva o de asamblea",
+                "categoria": "legal",
+                "icono": "📜",
+                "grupo": "legal",
+            })
+    return docs
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # COMBINADOR
 # ══════════════════════════════════════════════════════════════════════════════
 
-def get_todos_los_documentos_requeridos(bancos: list[dict] = None) -> list[dict]:
+def get_todos_los_documentos_requeridos(bancos: list[dict] = None, docs_subidos: dict = None) -> list[dict]:
     """Combina todos los grupos de documentos en el orden de presentación.
     Las declaraciones SAT se calculan aparte (lista dinámica de lo subido).
     """
@@ -299,6 +330,7 @@ def get_todos_los_documentos_requeridos(bancos: list[dict] = None) -> list[dict]
 
     return (
         DOCUMENTOS_LEGALES
+        + calcular_actas(docs_subidos)
         + docs_bancos
         + calcular_financieros()
         + DOCUMENTOS_VIGENTES
@@ -358,7 +390,7 @@ async def get_expediente(authorization: str = Header(None)):
     docs_subidos = {d["tipo_documento"]: d for d in todos_subidos}
 
     # Construir respuesta combinando requeridos con los subidos
-    documentos_requeridos = get_todos_los_documentos_requeridos(bancos)
+    documentos_requeridos = get_todos_los_documentos_requeridos(bancos, docs_subidos)
     # --- Generación en lote de URLs firmadas para mayor velocidad ---
     paths_to_sign = [d["storage_path"] for d in todos_subidos if d.get("storage_path")]
     signed_urls_map = {}
@@ -529,6 +561,16 @@ async def get_expediente(authorization: str = Header(None)):
     total = len(resultado)
     progreso = round((aprobados / total) * 100) if total > 0 else 0
 
+    # 5. Fetch Acta Principal Summary from Storage
+    acta_principal_data = None
+    try:
+        files = sb.storage.from_(BUCKET_NAME).list(f"{empresa_id}")
+        if files and any(f.get("name") == "acta_principal_summary.json" for f in files):
+            summary_bytes = sb.storage.from_(BUCKET_NAME).download(f"{empresa_id}/acta_principal_summary.json")
+            acta_principal_data = json.loads(summary_bytes)
+    except Exception as e:
+        logger.warning(f"Error checking summary: {e}")
+
     return {
         "empresa_id": empresa_id,
         "nombre_empresa": empresa["nombre"],
@@ -536,6 +578,7 @@ async def get_expediente(authorization: str = Header(None)):
         "documentos": resultado,
         "declaraciones_sat": declaraciones_sat,
         "declaraciones_completo": declaraciones_completo,
+        "acta_principal": acta_principal_data,
         "resumen": {
             "total": total,
             "aprobados": aprobados,
@@ -605,3 +648,98 @@ async def eliminar_carpeta_banco(
     # Finalmente, eliminar la cuenta bancaria
     sb.table("cuentas_bancarias").delete().eq("id", cuenta_id).eq("empresa_id", empresa_id).execute()
     return {"message": "Cuenta bancaria y documentos eliminados"}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROCESAR ACTA PRINCIPAL (GEMINI)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/actas/{clave}/procesar-ia")
+async def procesar_acta_principal(clave: str, authorization: str = Header(None)):
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+
+    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(404, "Empresa no encontrada")
+    empresa_id = empresa_resp.data["id"]
+
+    doc_resp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).eq("tipo_documento", clave).single().execute()
+    if not doc_resp.data:
+        raise HTTPException(404, "Acta no encontrada")
+    
+    storage_path = doc_resp.data["storage_path"]
+    
+    try:
+        pdf_bytes = sb.storage.from_(BUCKET_NAME).download(storage_path)
+    except Exception as e:
+        raise HTTPException(500, f"Error al descargar el PDF: {e}")
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text_content = ""
+        for page in doc[:30]:
+            text_content += page.get_text() + "\n"
+    except Exception as e:
+        raise HTTPException(500, f"Error al leer el PDF: {e}")
+
+    if not text_content.strip():
+        raise HTTPException(400, "El documento parece estar vacío o ser solo imágenes (no se detectó texto).")
+
+    if not GEMINI_API_KEY:
+        raise HTTPException(500, "API Key de Gemini no configurada.")
+
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"""
+    Eres un analista legal experto en México. 
+    Analiza el siguiente texto de un acta constitutiva o asamblea y extrae la siguiente información en formato JSON estrictamente:
+    {{
+      "razon_social": "Nombre de la empresa",
+      "accionistas": ["Lista", "De", "Accionistas", "Y su participación si la hay"],
+      "poderes": "Resumen de quién tiene poderes legales (representantes) y qué tipo de poderes",
+      "resumen": "Un resumen ejecutivo muy breve (máx 3 líneas) del documento (ej. Acta constitutiva de 2020, o asamblea extraordinaria de cambios de poderes)"
+    }}
+
+    TEXTO DEL ACTA:
+    {text_content[:30000]}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        ai_text = response.text.strip()
+        if ai_text.startswith("```json"):
+            ai_text = ai_text[7:-3].strip()
+        elif ai_text.startswith("```"):
+            ai_text = ai_text[3:-3].strip()
+            
+        ai_data = json.loads(ai_text)
+    except Exception as e:
+        logger.error(f"Error con Gemini: {e}")
+        raise HTTPException(500, "Error al procesar el documento con IA.")
+
+    summary_payload = {
+        "clave_principal": clave,
+        "ai_summary": ai_data
+    }
+    
+    file_path = f"{empresa_id}/acta_principal_summary.json"
+    
+    try:
+        sb.storage.from_(BUCKET_NAME).upload(
+            file=json.dumps(summary_payload).encode('utf-8'),
+            path=file_path,
+            file_options={"content-type": "application/json"}
+        )
+    except Exception:
+        try:
+            sb.storage.from_(BUCKET_NAME).update(
+                file=json.dumps(summary_payload).encode('utf-8'),
+                path=file_path,
+                file_options={"content-type": "application/json"}
+            )
+        except Exception as e2:
+            logger.error(f"Error guardando JSON en storage: {e2}")
+            raise HTTPException(500, "Error guardando el resumen en Storage.")
+            
+    return summary_payload

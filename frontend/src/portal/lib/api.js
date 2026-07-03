@@ -96,6 +96,9 @@ export const api = {
   eliminarCarpetaBanco: (cuentaId) =>
     request('DELETE', `/api/portal/cliente/carpetas-banco/${cuentaId}`),
 
+  procesarActaPrincipal: (clave) =>
+    request('POST', `/api/portal/cliente/actas/${clave}/procesar-ia`),
+
   subirEstadosCuentaAuto: (files) => {
     const formData = new FormData()
     Array.from(files).forEach(f => formData.append('files', f))

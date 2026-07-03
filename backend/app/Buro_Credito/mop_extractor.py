@@ -33,12 +33,12 @@ ALERTA_DESDE = 3
 # Niveles que se detectan (se muestran en tabla aunque no alerten)
 DETECTAR_DESDE = 2
 # Todos los niveles posibles
-ALL_NIVELES = [1, 2, 3, 4, 5, 6, 7]
+ALL_NIVELES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 # Años válidos para el reporte (desde 2018 en adelante)
 YEAR_MIN = 2018
 YEAR_MAX = 2030
 
-MOP_VALID = {'1', '2', '3', '4', '5', '6', '7'}
+MOP_VALID = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 
 
 def _is_valid_year(text: str) -> bool:

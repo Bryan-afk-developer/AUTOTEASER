@@ -21,7 +21,7 @@ def parse(extracted_text: str, img_bytes: bytes, mime_type: str) -> str:
     """
     try:
         if not extracted_text and not img_bytes:
-            return "Desconocido - Ubicacion no detectada"
+            return "Ubicacion no detectada"
 
         # 2. Intento con Gemini
         try:
@@ -32,7 +32,7 @@ def parse(extracted_text: str, img_bytes: bytes, mime_type: str) -> str:
 
     except Exception as e:
         logger.error(f"Error fatal procesando Comprobante Domicilio (Genérico): {e}")
-        return "Desconocido - Ubicacion no detectada"
+        return "Ubicacion no detectada"
 
 def _clean_location_string(raw_text: str) -> str:
     """Limpia la respuesta de la IA para que sea válida para un nombre de archivo"""
@@ -110,7 +110,7 @@ def _extract_with_document_ai(raw_bytes: bytes, mime_type: str) -> str:
             direccion_candidata += line.strip() + " "
             
     if direccion_candidata:
-        return _clean_location_string(f"Desconocido - {direccion_candidata}")
+        return _clean_location_string(direccion_candidata)
     
     # Si no encuentra un patrón obvio, retorna las primeras palabras
-    return _clean_location_string(f"Desconocido - {' '.join(lines[:3])}")
+    return _clean_location_string(' '.join(lines[:3]))

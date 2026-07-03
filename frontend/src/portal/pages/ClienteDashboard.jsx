@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import api from '../lib/api'
 import BancosView from './BancosView'
+import ActasView from './ActasView'
 
 const ESTADO_CONFIG = {
   APROBADO: { color: '#22c55e', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', icon: '✅', label: 'Aprobado' },
@@ -670,10 +671,21 @@ export default function ClienteDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [uploadDoc, setUploadDoc] = useState(null)
-  const [activeView, setActiveView] = useState('dashboard') // 'dashboard' | 'bancos' | 'declaraciones'
-
-  // Modal visibility states
   const [showFinancierosModal, setShowFinancierosModal] = useState(false)
+  
+  const [activeView, setActiveView] = useState(() => {
+    if (window.location.pathname === '/portal/actas') return 'actas'
+    if (window.location.pathname === '/portal/bancos') return 'bancos'
+    return 'main'
+  })
+
+  useEffect(() => {
+    const basePath = '/portal'
+    const newPath = activeView === 'main' ? basePath : `${basePath}/${activeView}`
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath)
+    }
+  }, [activeView])
 
   const fetchExpediente = useCallback(async () => {
     setLoading(true)
@@ -682,6 +694,10 @@ export default function ClienteDashboard({ user, onLogout }) {
       const data = await api.getExpediente()
       setExpediente(data)
     } catch (err) {
+      if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized')) {
+        onLogout()
+        return
+      }
       setError(err.message)
     } finally {
       setLoading(false)
@@ -695,7 +711,7 @@ export default function ClienteDashboard({ user, onLogout }) {
     expediente ? expediente.documentos.filter(d => d.grupo === grupo) : []
 
   // Documentos de la empresa (todos excepto representante)
-  const docsLegal = byGroup('legal')
+  const docsLegal = byGroup('legal').filter(d => !d.clave.startsWith('acta_constitutiva'))
   const docsEdos = byGroup('estados_cuenta')
   const docsFinancieros = byGroup('financieros')
   const docsDeclaraciones = byGroup('declaraciones')
@@ -709,6 +725,39 @@ export default function ClienteDashboard({ user, onLogout }) {
   const handleUploadFromModal = (doc) => {
     setShowFinancierosModal(false)
     setUploadDoc(doc)
+  }
+
+  if (activeView === 'actas') {
+    return (
+      <div style={dashStyles.page}>
+        <header style={dashStyles.header}>
+          <div style={dashStyles.headerLeft}>
+            <img src="/Logo.webp" alt="Logo" style={dashStyles.headerIcon} />
+            <div>
+              <h1 style={dashStyles.headerTitle}>Expediente Rojo</h1>
+              <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+        </header>
+        <main style={dashStyles.main}>
+          <ActasView
+            expediente={expediente}
+            docs_subidos={[]}
+            onBack={() => setActiveView('main')}
+            fetchExpediente={fetchExpediente}
+            onUpload={setUploadDoc}
+          />
+        </main>
+        {uploadDoc && (
+          <UploadModal
+            doc={uploadDoc}
+            onClose={() => setUploadDoc(null)}
+            onSuccess={fetchExpediente}
+          />
+        )}
+      </div>
+    )
   }
 
   if (activeView === 'bancos') {
@@ -876,6 +925,33 @@ export default function ClienteDashboard({ user, onLogout }) {
                   }}
                 >
                   Ir a Cuentas Bancarias ➔
+                </button>
+              </div>
+
+              {/* Actas Constitutivas y Asambleas (Card dinámico) */}
+              <div style={{
+                ...cardStyles.card,
+                background: 'linear-gradient(135deg, rgba(30,30,36,0.9) 0%, rgba(15,23,42,0.9) 100%)',
+                borderColor: 'rgba(255,255,255,0.1)'
+              }}>
+                <div style={cardStyles.topRow}>
+                  <div style={cardStyles.iconWrap}><span style={{ fontSize: '22px' }}>📜</span></div>
+                  <span style={{ ...cardStyles.badge, background: 'rgba(99,102,241,0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)' }}>
+                    {expediente?.requeridos?.filter(d => d.clave.startsWith('acta_constitutiva') && d.estado !== 'FALTANTE').length || 0} actas
+                  </span>
+                </div>
+                <h4 style={cardStyles.docName}>Actas Constitutivas y Asambleas</h4>
+                <p style={cardStyles.docDesc}>Sube múltiples actas constitutivas, asambleas y poderes notariales.</p>
+
+                <button
+                  onClick={() => setActiveView('actas')}
+                  style={{
+                    ...cardStyles.uploadBtn,
+                    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                    marginTop: 'auto',
+                  }}
+                >
+                  Administrar Actas ➔
                 </button>
               </div>
 

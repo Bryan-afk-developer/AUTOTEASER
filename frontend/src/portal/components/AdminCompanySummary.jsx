@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, FileText, MapPin, Building2, Landmark, Loader2, Copy, ShieldCheck, FolderPlus, UploadCloud, ExternalLink } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, FileText, MapPin, Building2, Landmark, Loader2, Copy, ShieldCheck, FolderPlus, UploadCloud, ExternalLink, TrendingUp, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 import { formatMopText } from '../lib/utils'
 
@@ -9,7 +9,7 @@ import { formatMopText } from '../lib/utils'
 
 const mopsCache = {}
 
-export default function AdminCompanySummary({ empresa, documentos }) {
+export default function AdminCompanySummary({ empresa, documentos, actaPrincipal }) {
   const [mopData, setMopData] = useState(null)
   const [loadingMop, setLoadingMop] = useState(true)
 
@@ -18,6 +18,9 @@ export default function AdminCompanySummary({ empresa, documentos }) {
 
   const [scoreRepData, setScoreRepData] = useState(null)
   const [loadingScoreRep, setLoadingScoreRep] = useState(true)
+
+  const [scoreEmpresaData, setScoreEmpresaData] = useState(null)
+  const [loadingScoreEmpresa, setLoadingScoreEmpresa] = useState(true)
 
   const [verificandoEmpresa, setVerificandoEmpresa] = useState(false)
   const [matchEmpresa, setMatchEmpresa] = useState(null)
@@ -99,6 +102,22 @@ export default function AdminCompanySummary({ empresa, documentos }) {
         })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoadingMop(false) })
+    }
+
+    const scoreEmpresaKey = `${empresa.id}_score_empresa`
+    if (mopsCache[scoreEmpresaKey]) {
+      setScoreEmpresaData(mopsCache[scoreEmpresaKey])
+      setLoadingScoreEmpresa(false)
+    } else {
+      api.getBuroScore(empresa.id, 'buro_score_empresa')
+        .then(res => {
+          if (!cancelled) {
+            mopsCache[scoreEmpresaKey] = res
+            setScoreEmpresaData(res)
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoadingScoreEmpresa(false) })
     }
 
     const cacheRepKey = `${empresa.id}_rep`
@@ -280,6 +299,34 @@ export default function AdminCompanySummary({ empresa, documentos }) {
                       {mopInfo.alert ? 'Alerta' : mopInfo.maxLevel > 0 ? 'Normal' : 'Sin Datos'}
                     </span>
                   )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* BC Score (Empresa) */}
+          <div className="group">
+            <div className="flex items-center gap-2 mb-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-text-muted" />
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">BC Score</span>
+            </div>
+            <div className="flex items-center gap-3">
+              {loadingScoreEmpresa ? (
+                <div className="flex items-center gap-2 text-text-muted text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs">Analizando Score...</span>
+                </div>
+              ) : (
+                <div className={`px-3 py-1.5 rounded-lg border flex flex-col justify-center transition-all ${
+                  !scoreEmpresaData?.score ? 'bg-slate-500/10 border-slate-500/20 text-slate-400' :
+                  scoreEmpresaData.score >= 650 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                  scoreEmpresaData.score >= 550 ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                  'bg-red-500/10 border-red-500/30 text-red-400'
+                }`}>
+                  <span className="text-base font-black leading-none whitespace-nowrap">{scoreEmpresaData?.score || '-'}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest opacity-80 mt-0.5">
+                    {scoreEmpresaData?.score ? 'BC Score' : 'Sin Score'}
+                  </span>
                 </div>
               )}
             </div>
@@ -585,6 +632,46 @@ export default function AdminCompanySummary({ empresa, documentos }) {
           </a>
         )}
       </div>
+
+      {/* Resumen de Acta Principal (IA) */}
+      {actaPrincipal?.ai_summary && (
+        <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+          
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+            </div>
+            <h3 className="text-sm font-bold text-white tracking-wide">Acta Principal (IA)</h3>
+          </div>
+
+          <div className="space-y-3 relative z-10">
+            <div>
+              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Razón Social Extraída</p>
+              <p className="text-sm font-bold text-white leading-tight">{actaPrincipal.ai_summary.razon_social}</p>
+            </div>
+            
+            <div>
+              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Accionistas</p>
+              <ul className="list-disc list-inside text-xs text-text-muted leading-relaxed">
+                {actaPrincipal.ai_summary.accionistas?.map((acc, i) => (
+                  <li key={i}>{acc}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Poderes</p>
+              <p className="text-xs text-text-muted leading-relaxed">{actaPrincipal.ai_summary.poderes}</p>
+            </div>
+            
+            <div>
+              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Resumen del Acta</p>
+              <p className="text-xs text-indigo-200/80 leading-relaxed italic border-l-2 border-indigo-500/50 pl-2 py-0.5">{actaPrincipal.ai_summary.resumen}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

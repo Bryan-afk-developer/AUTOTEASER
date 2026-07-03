@@ -549,6 +549,7 @@ export default function AdminDashboard() {
   const [empresas, setEmpresas] = useState([])
   const [selectedEmpresa, setSelectedEmpresa] = useState(null)
   const [documentos, setDocumentos] = useState([])
+  const [actaPrincipal, setActaPrincipal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -594,6 +595,7 @@ export default function AdminDashboard() {
     try {
       const data = await api.getEmpresaDocumentos(empresaId)
       setDocumentos(data.documentos || [])
+      setActaPrincipal(data.acta_principal || null)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -905,7 +907,7 @@ export default function AdminDashboard() {
     <main className="max-w-[1600px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
       
       {/* Sidebar de Resumen (Izquierda) */}
-      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} />
+      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} actaPrincipal={actaPrincipal} />
 
       {/* Contenido Principal (Derecha) */}
       <div className="flex-1 space-y-6 min-w-0 w-full">

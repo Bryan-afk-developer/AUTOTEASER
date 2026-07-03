@@ -184,7 +184,7 @@ async def get_empresa_documentos(empresa_id: str):
     bancos_resp = sb.table("cuentas_bancarias").select("*").eq("empresa_id", empresa_id).execute()
     bancos = bancos_resp.data or []
     
-    documentos_requeridos = get_todos_los_documentos_requeridos(bancos)
+    documentos_requeridos = get_todos_los_documentos_requeridos(bancos, docs_subidos_dict)
     
     documentos_completos = []
     
@@ -242,10 +242,21 @@ async def get_empresa_documentos(empresa_id: str):
             
             documentos_completos.append(doc_subido)
         
+    acta_principal_data = None
+    try:
+        import json
+        files = sb.storage.from_("expedientes_clientes").list(f"{empresa_id}")
+        if files and any(f.get("name") == "acta_principal_summary.json" for f in files):
+            summary_bytes = sb.storage.from_("expedientes_clientes").download(f"{empresa_id}/acta_principal_summary.json")
+            acta_principal_data = json.loads(summary_bytes)
+    except Exception:
+        pass
+        
     return {
         "empresa": empresa_info,
         "documentos": documentos_completos,
-        "total": len(documentos_completos)
+        "total": len(documentos_completos),
+        "acta_principal": acta_principal_data
     }
 
 

@@ -13,7 +13,7 @@ def detect_and_parse_cd(text: str, img_bytes: bytes, mime_type: str) -> str:
     Retorna la cadena "PROVEEDOR - DIRECCION".
     """
     if not text and not img_bytes:
-        return "Desconocido - Ubicacion no detectada"
+        return "Ubicacion no detectada"
 
     # Si hay texto, intentamos rutearlo
     if text:
