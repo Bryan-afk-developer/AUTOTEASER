@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
-import { ArrowLeft, Plus, FileText, XCircle, RefreshCw, Trash2, CheckCircle2, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, XCircle, RefreshCw, Trash2, CheckCircle2, Loader2, Sparkles, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
+import AiSummarySlideover from '../components/AiSummarySlideover'
 
 export default function ActasView({ expediente, docs_subidos, onBack, fetchExpediente, onUpload }) {
   const actasRequeridas = expediente?.documentos?.filter(d => d.clave.startsWith('acta_constitutiva')) || []
@@ -8,6 +9,7 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [processingClave, setProcessingClave] = useState(null)
+  const [selectedAiSummary, setSelectedAiSummary] = useState(null)
 
   const uploadFiles = async (files) => {
     if (!files || files.length === 0) return
@@ -168,55 +170,15 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
                 </div>
               )}
 
-              {/* Contenido IA */}
+              {/* Botón Ver Resumen IA */}
               {isPrincipal && expediente?.acta_principal?.ai_summary && (
-                <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl max-h-64 overflow-y-auto custom-scrollbar">
-                  <p className="text-xs font-semibold text-indigo-300 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Sparkles className="w-3 h-3"/> Razón Social</p>
-                  <p className="text-sm font-bold text-white mb-3">{expediente.acta_principal.ai_summary.razon_social}</p>
-
-                  {(expediente.acta_principal.ai_summary.tipo_documento || expediente.acta_principal.ai_summary.numero_acta || expediente.acta_principal.ai_summary.fecha_documento) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                      {expediente.acta_principal.ai_summary.tipo_documento && (
-                        <div>
-                          <p className="text-[10px] font-semibold text-indigo-300/80 uppercase tracking-widest">Tipo</p>
-                          <p className="text-xs text-text-muted">{expediente.acta_principal.ai_summary.tipo_documento}</p>
-                        </div>
-                      )}
-                      {expediente.acta_principal.ai_summary.numero_acta && (
-                        <div>
-                          <p className="text-[10px] font-semibold text-indigo-300/80 uppercase tracking-widest">Número</p>
-                          <p className="text-xs text-text-muted">{expediente.acta_principal.ai_summary.numero_acta}</p>
-                        </div>
-                      )}
-                      {expediente.acta_principal.ai_summary.fecha_documento && (
-                        <div className="md:col-span-2">
-                          <p className="text-[10px] font-semibold text-indigo-300/80 uppercase tracking-widest">Fecha</p>
-                          <p className="text-xs text-text-muted">{expediente.acta_principal.ai_summary.fecha_documento}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  <p className="text-xs font-semibold text-indigo-300 uppercase tracking-widest mb-1.5">Accionistas</p>
-                  <ul className="list-disc list-inside text-xs text-text-muted mb-3 space-y-1">
-                    {expediente.acta_principal.ai_summary.accionistas?.map((acc, i) => (
-                      <li key={i}>
-                        {typeof acc === 'string' ? acc : (
-                          <>
-                            <span className="font-medium text-white">{acc.nombre}</span>
-                            {acc.participacion && <span className="text-indigo-200/70 ml-1">({acc.participacion})</span>}
-                          </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <p className="text-xs font-semibold text-indigo-300 uppercase tracking-widest mb-1.5">Poderes</p>
-                  <p className="text-xs text-text-muted mb-3">{expediente.acta_principal.ai_summary.poderes}</p>
-                  
-                  <p className="text-xs font-semibold text-indigo-300 uppercase tracking-widest mb-1.5">Resumen</p>
-                  <p className="text-xs text-text-muted italic border-l-2 border-indigo-500/30 pl-2">{expediente.acta_principal.ai_summary.resumen}</p>
-                </div>
+                <button
+                  onClick={() => setSelectedAiSummary(expediente.acta_principal.ai_summary)}
+                  className="mt-3 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow"
+                >
+                  <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Ver Resumen de IA</span>
+                  <ChevronRight className="w-4 h-4 opacity-50" />
+                </button>
               )}
 
               <div className="mt-auto pt-4 flex flex-wrap gap-2">
@@ -264,6 +226,12 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
           )
         })}
       </div>
+
+      <AiSummarySlideover 
+        isOpen={!!selectedAiSummary} 
+        onClose={() => setSelectedAiSummary(null)} 
+        aiSummary={selectedAiSummary} 
+      />
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, FileText, MapPin, Building2, Landmark, Loader2, Copy, ShieldCheck, FolderPlus, UploadCloud, ExternalLink, TrendingUp, Sparkles } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, FileText, MapPin, Building2, Landmark, Loader2, Copy, ShieldCheck, FolderPlus, UploadCloud, ExternalLink, TrendingUp, Sparkles, ChevronRight } from 'lucide-react'
 import api from '../lib/api'
 import { formatMopText } from '../lib/utils'
+import AiSummarySlideover from './AiSummarySlideover'
 
 // We will use the same cache object from AdminDashboard if possible, 
 // but since it's defined in AdminDashboard, we can just maintain a local one here or rely on the fast network cache.
@@ -10,6 +11,7 @@ import { formatMopText } from '../lib/utils'
 const mopsCache = {}
 
 export default function AdminCompanySummary({ empresa, documentos, actaPrincipal }) {
+  const [isAiSummaryOpen, setIsAiSummaryOpen] = useState(false)
   const [mopData, setMopData] = useState(null)
   const [loadingMop, setLoadingMop] = useState(true)
 
@@ -635,72 +637,32 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
 
       {/* Resumen de Acta Principal (IA) */}
       {actaPrincipal?.ai_summary && (
-        <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-          
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
-              <Sparkles className="w-4 h-4 text-indigo-400" />
-            </div>
-            <h3 className="text-sm font-bold text-white tracking-wide">Acta Principal (IA)</h3>
-          </div>
-
-          <div className="space-y-3 relative z-10 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-            <div>
-              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Razón Social Extraída</p>
-              <p className="text-sm font-bold text-white leading-tight">{actaPrincipal.ai_summary.razon_social}</p>
-            </div>
-
-            {(actaPrincipal.ai_summary.tipo_documento || actaPrincipal.ai_summary.numero_acta || actaPrincipal.ai_summary.fecha_documento) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {actaPrincipal.ai_summary.tipo_documento && (
-                  <div>
-                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Tipo</p>
-                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.tipo_documento}</p>
-                  </div>
-                )}
-                {actaPrincipal.ai_summary.numero_acta && (
-                  <div>
-                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Número</p>
-                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.numero_acta}</p>
-                  </div>
-                )}
-                {actaPrincipal.ai_summary.fecha_documento && (
-                  <div className="md:col-span-2">
-                    <p className="text-[10px] font-black text-indigo-300/80 uppercase tracking-widest mb-0.5">Fecha</p>
-                    <p className="text-xs text-text-muted">{actaPrincipal.ai_summary.fecha_documento}</p>
-                  </div>
-                )}
+        <>
+          <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+            
+            <div className="flex items-center gap-2 mb-2 relative z-10">
+              <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
               </div>
-            )}
-            
-            <div>
-              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Accionistas</p>
-              <ul className="list-disc list-inside text-xs text-text-muted leading-relaxed space-y-1">
-                {actaPrincipal.ai_summary.accionistas?.map((acc, i) => (
-                  <li key={i}>
-                    {typeof acc === 'string' ? acc : (
-                      <>
-                        <span className="font-medium text-white">{acc.nombre}</span>
-                        {acc.participacion && <span className="text-indigo-200/70 ml-1">({acc.participacion})</span>}
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <h3 className="text-sm font-bold text-white tracking-wide">Acta Principal (IA)</h3>
             </div>
 
-            <div>
-              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Poderes</p>
-              <p className="text-xs text-text-muted leading-relaxed">{actaPrincipal.ai_summary.poderes}</p>
-            </div>
-            
-            <div>
-              <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-0.5">Resumen del Acta</p>
-              <p className="text-xs text-indigo-200/80 leading-relaxed italic border-l-2 border-indigo-500/50 pl-2 py-0.5">{actaPrincipal.ai_summary.resumen}</p>
-            </div>
+            <button
+              onClick={() => setIsAiSummaryOpen(true)}
+              className="mt-2 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow relative z-10"
+            >
+              <span className="flex items-center gap-2">Ver Resumen Completo</span>
+              <ChevronRight className="w-4 h-4 opacity-70" />
+            </button>
           </div>
-        </div>
+
+          <AiSummarySlideover 
+            isOpen={isAiSummaryOpen} 
+            onClose={() => setIsAiSummaryOpen(false)} 
+            aiSummary={actaPrincipal.ai_summary} 
+          />
+        </>
       )}
 
     </div>
