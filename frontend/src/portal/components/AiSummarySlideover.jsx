@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 
@@ -26,7 +27,7 @@ export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl,
   const finalPdfUrl = pdfUrl || dynamicPdfUrl;
   const isSplitView = !!finalPdfUrl || loadingPdf;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
@@ -160,6 +161,7 @@ export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl,
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
