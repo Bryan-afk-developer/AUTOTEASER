@@ -139,3 +139,53 @@ async def revisar_documento(
         "revisado_en": ahora,
         "revisado_por": "admin (interno)",
     }
+
+class VerificarDomiciliosRequest(BaseModel):
+    direccion_1: str
+    direccion_2: str
+
+@router.post("/verificar-domicilios")
+async def verificar_domicilios(req: VerificarDomiciliosRequest):
+    from app.config import GEMINI_API_KEY
+    import google.generativeai as genai
+    import json
+    
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="Gemini API Key no configurada")
+    
+    if not req.direccion_1 or not req.direccion_2 or req.direccion_1 == "No disponible" or req.direccion_2 == "No disponible":
+        return {"match": False, "razon": "Faltan direcciones para comparar"}
+        
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-flash-latest')
+        
+        prompt = f"""
+        Eres un auditor experto en domicilios de México.
+        Analiza estas dos direcciones y determina si apuntan a la MISMA ubicación física real,
+        ignorando diferencias de formato, abreviaturas (Av. vs Avenida, Col. vs Colonia), 
+        leves errores ortográficos o diferencias en cómo se escribió el proveedor al inicio.
+        
+        Dirección 1 (CD): "{req.direccion_1}"
+        Dirección 2 (CSF): "{req.direccion_2}"
+        
+        Responde ESTRICTAMENTE en formato JSON:
+        {{
+            "match": true/false,
+            "razon": "breve explicación de por qué coinciden o difieren"
+        }}
+        No incluyas markdown (```json) ni texto adicional.
+        """
+        response = model.generate_content(prompt)
+        text = response.text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(text)
+        return data
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error verificando domicilios con Gemini: {error_msg}")
+        if "429" in error_msg or "Quota exceeded" in error_msg:
+            return {
+                "match": False, 
+                "razon": "Límite de peticiones de Gemini alcanzado. Espera unos segundos e intenta de nuevo."
+            }
+        raise HTTPException(status_code=500, detail="Error al verificar domicilios")

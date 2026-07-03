@@ -12,7 +12,7 @@ from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
 
-def extract_with_documentai(pdf_path: Path) -> list[str]:
+def extract_with_documentai(pdf_source: Path | bytes) -> list[str]:
     """
     Extracts text using Google Cloud Document AI Form Parser.
     Returns a list of strings, where each string is a JSON dictionary
@@ -33,8 +33,11 @@ def extract_with_documentai(pdf_path: Path) -> list[str]:
         
         name = client.processor_path(GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR)
         
-        with open(pdf_path, "rb") as image:
-            image_content = image.read()
+        if isinstance(pdf_source, bytes):
+            image_content = pdf_source
+        else:
+            with open(pdf_source, "rb") as image:
+                image_content = image.read()
             
         raw_document = documentai.RawDocument(content=image_content, mime_type="application/pdf")
         request = documentai.ProcessRequest(name=name, raw_document=raw_document)

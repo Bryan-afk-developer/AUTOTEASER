@@ -52,14 +52,9 @@ def extract_name_from_ine(file_path: str = None, file_bytes: bytes = None, filen
         if not img_bytes:
             return "Error al leer documento"
 
-        # 1. Intento con Gemini (Más rápido, inteligente y económico)
-        try:
-            return _extract_with_gemini(img_bytes, mime_type)
-        except Exception as e:
-            logger.warning(f"Error o límite excedido en Gemini al procesar INE: {e}. Activando Fallback a Document AI...")
-            
-            # 2. Fallback a Document AI
-            return _extract_with_document_ai(img_bytes, mime_type)
+        # Usar directamente Document AI como solicitó el usuario
+        logger.info("Enviando INE a Document AI OCR básico...")
+        return _extract_with_document_ai(img_bytes, mime_type)
 
     except Exception as e:
         logger.error(f"Error fatal procesando INE: {e}")
@@ -73,9 +68,12 @@ def _extract_with_gemini(img_bytes: bytes, mime_type: str) -> str:
     model = genai.GenerativeModel("gemini-flash-latest")
     
     prompt = (
-        "Extrae el nombre completo de la persona de esta credencial oficial (INE). "
-        "Devuelve ÚNICAMENTE el nombre en mayúsculas, sin texto adicional, sin introducciones, "
-        "sin etiquetas y sin comillas. Solo el nombre limpio."
+        "Extrae el nombre completo de la persona de esta credencial oficial (INE de México). "
+        "Toma en cuenta que en las credenciales INE el nombre suele estar en varias líneas debajo de la etiqueta 'NOMBRE': "
+        "primero el apellido paterno, luego el apellido materno y al final el nombre(s). "
+        "Debes concatenar todo en una sola línea en orden lógico (Nombre(s) Apellido_Paterno Apellido_Materno). "
+        "Devuelve ÚNICAMENTE el nombre completo en mayúsculas, sin texto adicional, sin introducciones, "
+        "sin etiquetas y sin comillas. Ejemplo: JORGE VALES BULIO."
     )
     
     image_parts = [{"mime_type": mime_type, "data": img_bytes}]

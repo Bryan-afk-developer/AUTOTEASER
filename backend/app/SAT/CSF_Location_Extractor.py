@@ -66,6 +66,18 @@ def extract_csf_location(file_bytes: bytes, filename: str) -> str:
         location = re.sub(r'[<>:"/\\|?*]', '', location)
         location = " ".join(location.split())
         
+        # Formatear a Title Case para que coincida visualmente con los Comprobantes de Domicilio
+        def smart_title(s):
+            # Convierte a minúsculas y luego capitaliza cada palabra
+            words = s.lower().split()
+            title_words = [w.capitalize() if not re.match(r'^c\.?p\.?$', w, re.IGNORECASE) else 'CP' for w in words]
+            return " ".join(title_words)
+            
+        location = smart_title(location)
+        # Opcional: Agregar el prefijo "SAT - " para que encaje con el formato "PROVEEDOR - Dirección"
+        # de los comprobantes de domicilio (e.g. "CFE - ...")
+        location = f"SAT - {location}"
+        
         if len(location) > 120:
             location = location[:117] + "..."
             

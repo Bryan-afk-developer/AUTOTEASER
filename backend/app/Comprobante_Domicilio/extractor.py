@@ -27,11 +27,23 @@ def extract_location_from_cd(file_path: str = None, file_bytes: bytes = None, fi
                 page = doc.load_page(0)
                 extracted_text = page.get_text().strip()
                 
-                # Si no hay suficiente texto, es un PDF escaneado, sacar la imagen
+                # Si no hay suficiente texto, es un PDF escaneado, sacar la imagen y usar Document AI
                 if len(extracted_text) < 50:
                     pix = page.get_pixmap(dpi=300)
                     img_bytes = pix.tobytes("png")
-                    extracted_text = "" # Ignorar basura
+                    
+                    try:
+                        from app.pdf_extractor import extract_with_documentai
+                        logger.info("PDF Escaneado detectado en CD, usando Document AI para extraer texto base.")
+                        # Pass bytes or file_path
+                        if file_path:
+                            docai_text_list = extract_with_documentai(file_path)
+                        else:
+                            docai_text_list = extract_with_documentai(file_bytes)
+                        extracted_text = "\n".join(docai_text_list)
+                    except Exception as ex:
+                        logger.warning(f"Fallo extracción OCR en CD: {ex}")
+                        extracted_text = ""
                 else:
                     # Siempre guardamos la imagen por si acaso el Document AI fallback la necesita
                     pix = page.get_pixmap(dpi=300)

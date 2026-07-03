@@ -289,6 +289,7 @@ async def descargar_todos_documentos(empresa_id: str):
             f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/3. COMPROBANTE DOMICILIO/",
             f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/4. ACTA NACIMIENTO/",
             f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/5. ACTA MATRIMONIO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/6. BURO DE CREDITO/",
             f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/PREVIOS/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/0. PRE ANALISIS/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/ACTA CONSTITUTIVA/",
@@ -341,6 +342,8 @@ async def descargar_todos_documentos(empresa_id: str):
                         ruta_final = f"{rep_folder}/3. COMPROBANTE DOMICILIO/{nombre_archivo}"
                     elif tipo == "acta_matrimonio":
                         ruta_final = f"{rep_folder}/5. ACTA MATRIMONIO/{nombre_archivo}"
+                    elif tipo == "buro_representante":
+                        ruta_final = f"{rep_folder}/6. BURO DE CREDITO/{nombre_archivo}"
                     else:
                         ruta_final = f"{rep_folder}/PREVIOS/{nombre_archivo}"
                 else:
@@ -565,9 +568,9 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
 
 
 @router.get("/empresas/{empresa_id}/buro-mops")
-async def get_buro_mops(empresa_id: str):
+async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
     """
-    Descarga el PDF de Buró de Crédito de la empresa y extrae el análisis de MOPs
+    Descarga el PDF de Buró de Crédito de la empresa (o representante) y extrae el análisis de MOPs
     (Manera de Pago / Histórico de Pagos).
 
     Returns:
@@ -585,12 +588,14 @@ async def get_buro_mops(empresa_id: str):
     if not emp_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
+    table = "documentos_representante" if tipo_buro == "buro_representante" else "documentos_expediente"
+
     # Buscar el documento de Buró de Crédito
     doc_resp = (
-        sb.table("documentos_expediente")
+        sb.table(table)
         .select("id, storage_path, nombre_archivo, estado")
         .eq("empresa_id", empresa_id)
-        .eq("tipo_documento", "buro_credito")
+        .eq("tipo_documento", tipo_buro)
         .single()
         .execute()
     )
@@ -611,5 +616,44 @@ async def get_buro_mops(empresa_id: str):
     resultado["nombre_archivo"] = doc.get("nombre_archivo")
     resultado["estado_documento"] = doc.get("estado")
 
+    return resultado
+
+from app.Buro_Credito.score_extractor import extraer_score_desde_storage
+
+@router.get("/empresas/{empresa_id}/buro-score")
+async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_representante"):
+    """
+    Descarga el PDF de Buró de Crédito Mi Score y extrae el puntaje.
+    """
+    sb = get_supabase_admin()
+
+    emp_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not emp_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    table = "documentos_representante" if "representante" in tipo_buro else "documentos_expediente"
+
+    doc_resp = (
+        sb.table(table)
+        .select("id, storage_path, nombre_archivo, estado")
+        .eq("empresa_id", empresa_id)
+        .eq("tipo_documento", tipo_buro)
+        .single()
+        .execute()
+    )
+
+    if not doc_resp.data:
+        raise HTTPException(status_code=404, detail="No se encontró el documento Mi Score")
+
+    doc = doc_resp.data
+    storage_path = doc.get("storage_path")
+
+    if not storage_path:
+        raise HTTPException(status_code=400, detail="El Mi Score aún no tiene archivo")
+
+    resultado = extraer_score_desde_storage(storage_path, sb)
+    resultado["empresa_id"] = empresa_id
+    resultado["documento_id"] = doc.get("id")
+    
     return resultado
 

@@ -121,6 +121,22 @@ DOCUMENTOS_REPRESENTANTE = [
         "icono": "🏠",
         "grupo": "representante",
     },
+    {
+        "clave": "buro_representante",
+        "nombre": "Buró de Crédito (Representante)",
+        "descripcion": "Reporte de Crédito Especial",
+        "categoria": "financiero",
+        "icono": "📊",
+        "grupo": "representante",
+    },
+    {
+        "clave": "buro_score_representante",
+        "nombre": "Buró de Crédito (Mi Score)",
+        "descripcion": "Reporte de Mi Score de Buró de Crédito",
+        "categoria": "financiero",
+        "icono": "🎯",
+        "grupo": "representante",
+    },
 ]
 
 MESES_ES = {

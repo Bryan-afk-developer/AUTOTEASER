@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import api from '../lib/api'
 import AdminCompanySummary from '../components/AdminCompanySummary'
+import { formatMopText } from '../lib/utils'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
   XCircle, Clock, Eye, Download, RefreshCw, ChevronDown, ChevronUp,
@@ -29,44 +30,40 @@ const MOP_NIVEL_CONFIG = [
 ]
 
 // ── Componente MopsBadge (Alerta Inline) ──────────────────────────────────────
-function MopsBadge({ empresaId }) {
-  const [mopMax, setMopMax] = useState(null)
+function MopsBadge({ empresaId, tipoBuro = 'buro_credito' }) {
+  const [mopInfo, setMopInfo] = useState(null)
 
   useEffect(() => {
     let cancelled = false
+    const cacheKey = `${empresaId}_${tipoBuro}`
 
     const process = (data) => {
-      let highest = 0
-      if (data.mops_alerta?.length > 0) {
-        highest = Math.max(...data.mops_alerta.map(m => m.nivel))
-      } else if (data.niveles) {
-        const levels = Object.keys(data.niveles).map(Number)
-        if (levels.length > 0) highest = Math.max(...levels)
+      const info = formatMopText(data)
+      if (info.maxLevel >= 3) {
+        setMopInfo(info)
       }
-      // Solo mostrar de nivel 3 para arriba
-      if (highest >= 3) setMopMax(highest)
     }
 
-    if (mopsCache[empresaId]) {
-      process(mopsCache[empresaId])
+    if (mopsCache[cacheKey]) {
+      process(mopsCache[cacheKey])
       return
     }
 
-    api.getBuroMops(empresaId).then(res => {
+    api.getBuroMops(empresaId, tipoBuro).then(res => {
       if (!cancelled) {
-        mopsCache[empresaId] = res
+        mopsCache[cacheKey] = res
         process(res)
       }
     }).catch(() => {})
 
     return () => { cancelled = true }
-  }, [empresaId])
+  }, [empresaId, tipoBuro])
 
-  if (!mopMax) return null
+  if (!mopInfo) return null
 
   return (
-    <div className="mt-1.5 ml-2 inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in">
-      ⚠️ MOP {mopMax}
+    <div className="mt-1.5 ml-2 inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg animate-fade-in whitespace-nowrap">
+      ⚠️ {mopInfo.text} {mopInfo.subtext}
     </div>
   )
 }
@@ -74,7 +71,7 @@ function MopsBadge({ empresaId }) {
 // ── PdfDrawer ──────────────────────────────────────────────────────────────────
 const pdfCache = {}
 
-function PdfDrawer({ isOpen, empresaId, docId, onClose }) {
+function PdfDrawer({ isOpen, empresaId, docId, isRep, onClose }) {
   const [pdfUrl, setPdfUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -92,7 +89,7 @@ function PdfDrawer({ isOpen, empresaId, docId, onClose }) {
       return
     }
 
-    api.descargarDocumentoIndividual(empresaId, docId, false, true)
+    api.descargarDocumentoIndividual(empresaId, docId, isRep, true)
       .then(res => {
         if (!cancelled) {
           pdfCache[docId] = {
@@ -105,7 +102,7 @@ function PdfDrawer({ isOpen, empresaId, docId, onClose }) {
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [isOpen, empresaId, docId])
+  }, [isOpen, empresaId, docId, isRep])
 
   return createPortal(
     <AnimatePresence>
@@ -186,15 +183,16 @@ function PdfDrawer({ isOpen, empresaId, docId, onClose }) {
 // ── MopsDrawer ────────────────────────────────────────────────────────────────
 const mopsCache = {}
 
-function MopsDrawer({ isOpen, empresaId, onClose }) {
-  const [data, setData] = useState(mopsCache[empresaId] || null)
-  const [loading, setLoading] = useState(!mopsCache[empresaId])
+function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
+  const cacheKey = `${empresaId}_${tipoBuro}`
+  const [data, setData] = useState(mopsCache[cacheKey] || null)
+  const [loading, setLoading] = useState(!mopsCache[cacheKey])
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isOpen || !empresaId) return
-    if (mopsCache[empresaId]) {
-      setData(mopsCache[empresaId])
+    if (mopsCache[cacheKey]) {
+      setData(mopsCache[cacheKey])
       setLoading(false)
       return
     }
@@ -202,17 +200,17 @@ function MopsDrawer({ isOpen, empresaId, onClose }) {
     let cancelled = false
     setLoading(true)
     setError('')
-    api.getBuroMops(empresaId)
+    api.getBuroMops(empresaId, tipoBuro)
       .then(res => { 
         if (!cancelled) {
-          mopsCache[empresaId] = res
+          mopsCache[cacheKey] = res
           setData(res) 
         }
       })
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [isOpen, empresaId])
+  }, [isOpen, empresaId, tipoBuro, cacheKey])
 
   const anios = data?.anios || data?.años || []
   const niveles = data?.niveles || {}
@@ -559,6 +557,7 @@ export default function AdminDashboard() {
   const [collapsedSections, setCollapsedSections] = useState({})
   const [downloadingSection, setDownloadingSection] = useState(null)
   const [mopsEmpresaId, setMopsEmpresaId] = useState(null)
+  const [mopsTipoBuro, setMopsTipoBuro] = useState('buro_credito')
   const [pdfViewerDoc, setPdfViewerDoc] = useState(null)
 
   const toggleSection = title =>
@@ -769,7 +768,7 @@ export default function AdminDashboard() {
                           const sentido = doc.comentario_admin.replace('[SISTEMA] OPC:', '').trim()
                           return (
                             <button 
-                              onClick={(e) => { e.stopPropagation(); setPdfViewerDoc({ empresaId: selectedEmpresa.id, docId: doc.id }) }}
+                              onClick={(e) => { e.stopPropagation(); setPdfViewerDoc({ empresaId: selectedEmpresa.id, docId: doc.id, isRep: doc.grupo === 'representante' }) }}
                               className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block border hover:opacity-80 transition-opacity cursor-pointer ${sentido === 'POSITIVO'
                                 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
                                 : 'text-red-300 bg-red-500/10 border-red-500/30'
@@ -779,16 +778,16 @@ export default function AdminDashboard() {
                           )
                         })()}
                         {/* Botón Ver MOPs — solo para Buró de Crédito con archivo */}
-                        {doc.tipo_documento === 'buro_credito' && doc.estado !== 'FALTANTE' && (
+                        {(doc.tipo_documento === 'buro_credito' || doc.tipo_documento === 'buro_representante') && doc.estado !== 'FALTANTE' && (
                           <div className="flex items-center">
                             <button
-                              onClick={e => { e.stopPropagation(); setMopsEmpresaId(selectedEmpresa.id) }}
+                              onClick={e => { e.stopPropagation(); setMopsTipoBuro(doc.tipo_documento); setMopsEmpresaId(selectedEmpresa.id) }}
                               className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded-lg text-[10px] font-bold transition-colors"
                             >
                               <BarChart2 className="w-3 h-3" />
                               Ver MOPs
                             </button>
-                            <MopsBadge empresaId={selectedEmpresa.id} />
+                            <MopsBadge empresaId={selectedEmpresa.id} tipoBuro={doc.tipo_documento} />
                           </div>
                         )}
                       </td>
@@ -811,27 +810,39 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-2">
                           <span className={estadoDescarga.color}>{estadoDescarga.label}</span>
                           {doc.estado !== 'FALTANTE' && doc.id && (
-                            <button
-                              onClick={async e => {
-                                e.stopPropagation()
-                                const btn = e.currentTarget
-                                btn.disabled = true
-                                btn.style.opacity = '0.5'
-                                try {
-                                  await api.descargarDocumentoIndividual(selectedEmpresa.id, doc.id, doc.grupo === 'representante')
-                                  loadDocumentos(selectedEmpresa.id)
-                                } catch (err) {
-                                  alert('Error al descargar: ' + err.message)
-                                } finally {
-                                  btn.disabled = false
-                                  btn.style.opacity = '1'
-                                }
-                              }}
-                              className="p-1 hover:bg-primary-500/20 text-primary-400 rounded transition-colors flex-shrink-0"
-                              title="Descargar documento"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  setPdfViewerDoc({ empresaId: selectedEmpresa.id, docId: doc.id, isRep: doc.grupo === 'representante' }) 
+                                }}
+                                className="p-1 hover:bg-primary-500/20 text-primary-400 rounded transition-colors flex-shrink-0"
+                                title="Vista Previa PDF"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={async e => {
+                                  e.stopPropagation()
+                                  const btn = e.currentTarget
+                                  btn.disabled = true
+                                  btn.style.opacity = '0.5'
+                                  try {
+                                    await api.descargarDocumentoIndividual(selectedEmpresa.id, doc.id, doc.grupo === 'representante')
+                                    loadDocumentos(selectedEmpresa.id)
+                                  } catch (err) {
+                                    alert('Error al descargar: ' + err.message)
+                                  } finally {
+                                    btn.disabled = false
+                                    btn.style.opacity = '1'
+                                  }
+                                }}
+                                className="p-1 hover:bg-primary-500/20 text-primary-400 rounded transition-colors flex-shrink-0"
+                                title="Descargar documento"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -991,6 +1002,7 @@ export default function AdminDashboard() {
       <MopsDrawer
         isOpen={!!mopsEmpresaId}
         empresaId={mopsEmpresaId}
+        tipoBuro={mopsTipoBuro}
         onClose={() => setMopsEmpresaId(null)}
       />
 
@@ -999,6 +1011,7 @@ export default function AdminDashboard() {
         isOpen={!!pdfViewerDoc}
         empresaId={pdfViewerDoc?.empresaId}
         docId={pdfViewerDoc?.docId}
+        isRep={pdfViewerDoc?.isRep}
         onClose={() => setPdfViewerDoc(null)}
       />
     </main>

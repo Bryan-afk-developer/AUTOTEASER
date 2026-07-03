@@ -3,7 +3,7 @@ AutoTeaser - CD File Detector
 Router pattern for Comprobante de Domicilio processing.
 """
 import logging
-from app.Comprobante_Domicilio import CFE, Agua, Telmex, Generic_CD
+from app.Comprobante_Domicilio import CFE, Agua, Telmex, Telcel, Generic_CD
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,9 @@ def detect_and_parse_cd(text: str, img_bytes: bytes, mime_type: str) -> str:
             
         if Telmex.matches(text):
             return Telmex.parse(text, img_bytes, mime_type)
+            
+        if Telcel.matches(text):
+            return Telcel.parse(text, img_bytes, mime_type)
             
     # Si no hubo match, o si solo había imagen (sin texto), usamos el Genérico
     logger.info("Módulo CD: No se detectó proveedor específico, enviando a Generic_CD.")

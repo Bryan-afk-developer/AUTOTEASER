@@ -130,7 +130,9 @@ export const api = {
 
   getEmpresaDocumentos: (empresaId) => request('GET', `/api/portal/admin/empresas/${empresaId}/documentos`),
 
-  getBuroMops: (empresaId) => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-mops`),
+  getBuroMops: (empresaId, tipo = 'buro_credito') => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-mops?tipo_buro=${tipo}`),
+  
+  getBuroScore: (empresaId, tipo = 'buro_score_representante') => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-score?tipo_buro=${tipo}`),
 
   // Admin - Revisión
   getDocumentoDetalle: (docId) =>
@@ -138,6 +140,9 @@ export const api = {
 
   revisarDocumento: (docId, estado, comentario = '') =>
     request('PATCH', `/api/portal/admin/documentos/${docId}/revisar`, { estado, comentario }),
+
+  verificarDomicilios: (dir1, dir2) =>
+    request('POST', '/api/portal/admin/verificar-domicilios', { direccion_1: dir1, direccion_2: dir2 }),
 
   descargarTodosDocumentos: async (empresaId) => {
     const headers = { ...authHeaders() }
@@ -205,6 +210,10 @@ export const api = {
     a.click()
     a.remove()
   },
+  
+  // Admin - Google Drive
+  initDrive: (empresaId) => request('POST', `/api/portal/admin/empresas/${empresaId}/drive/init`),
+  syncDrive: (empresaId) => request('POST', `/api/portal/admin/empresas/${empresaId}/drive/sync`),
 }
 
 export default api
