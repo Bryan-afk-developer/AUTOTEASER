@@ -711,44 +711,23 @@ def _ocr_with_docai(pdf_bytes: bytes) -> str:
     return full_text.strip()
 
 
-def _analyze_with_service_account(text: str) -> dict:
+def _analyze_with_gemini_api_key(text: str) -> dict:
     """
-    Llama a Gemini via Vertex AI endpoint usando el service account de GCP.
-    El service account ya tiene acceso a Vertex AI (usarlo para Document AI también).
-    Scope: cloud-platform (compatible con todo GCP).
+    Llama a Gemini via HTTP directamente usando la API key.
+    Evita conflictos con genai.configure() global y no requiere roles IAM.
     """
-    import os
     import requests as http_requests
-    from google.oauth2 import service_account
-    from google.auth.transport.requests import Request as GoogleAuthRequest
-    from app.config import GCP_PROJECT_ID, GCP_LOCATION
+    from app.config import GEMINI_API_KEY
 
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not credentials_path:
-        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS no configurado en .env")
-
-    # scope cloud-platform es el mismo que usa Document AI
-    creds = service_account.Credentials.from_service_account_file(
-        credentials_path,
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-    creds.refresh(GoogleAuthRequest())
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY no configurada en .env. Obtén una en https://aistudio.google.com/apikey")
 
     prompt = PROMPT_ACTA + text[:30000]
 
-    # Vertex AI Gemini endpoint (mismo proyecto, misma service account)
-    vertex_location = "us-central1"  # Vertex AI solo en us-central1 por ahora
-    url = (
-        f"https://{vertex_location}-aiplatform.googleapis.com/v1/projects/"
-        f"{GCP_PROJECT_ID}/locations/{vertex_location}/publishers/google/"
-        f"models/gemini-1.5-flash:generateContent"
-    )
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": "application/json"
-    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
     payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.1, "maxOutputTokens": 4096}
     }
 
@@ -814,11 +793,11 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
     if not text_content.strip():
         raise HTTPException(400, "No se pudo extraer texto del documento, incluso con OCR.")
 
-    # 4. Analizar con Gemini (service account)
+    # 4. Analizar con Gemini (API key via HTTP directo)
     try:
-        ai_data = _analyze_with_service_account(text_content)
+        ai_data = _analyze_with_gemini_api_key(text_content)
     except Exception as e:
-        logger.error(f"Error Gemini service account: {e}")
+        logger.error(f"Error Gemini: {e}")
         raise HTTPException(500, f"Error al analizar el texto con IA: {e}")
 
     # 5. Guardar resumen en Storage
