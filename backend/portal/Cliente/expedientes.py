@@ -711,21 +711,31 @@ def _ocr_with_docai(pdf_bytes: bytes) -> str:
     return full_text.strip()
 
 
-def _analyze_with_vertex(text: str) -> dict:
-    """Analiza el texto con Vertex AI Gemini (usa service account, sin API key)."""
-    import vertexai
-    from vertexai.generative_models import GenerativeModel
-    from app.config import GCP_PROJECT_ID, GCP_LOCATION
-    
-    # Vertex AI usa las Google Credentials del entorno (GOOGLE_APPLICATION_CREDENTIALS)
-    vertexai.init(project=GCP_PROJECT_ID, location="us-central1")
-    model = GenerativeModel("gemini-1.5-flash")
-    
+def _analyze_with_service_account(text: str) -> dict:
+    """
+    Analiza el texto con Gemini usando el service account de GCP (sin API key).
+    Usa google-generativeai con credentials de service account.
+    """
+    import os
+    import google.generativeai as genai
+    from google.oauth2 import service_account
+
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not credentials_path:
+        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS no configurado en .env")
+
+    creds = service_account.Credentials.from_service_account_file(
+        credentials_path,
+        scopes=["https://www.googleapis.com/auth/generative-language"]
+    )
+
+    genai.configure(credentials=creds)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
     prompt = PROMPT_ACTA + text[:30000]
     response = model.generate_content(prompt)
-    
+
     ai_text = response.text.strip()
-    # Limpiar posibles bloques markdown
     if ai_text.startswith("```json"):
         ai_text = ai_text[7:].strip()
         if ai_text.endswith("```"):
@@ -734,7 +744,7 @@ def _analyze_with_vertex(text: str) -> dict:
         ai_text = ai_text[3:].strip()
         if ai_text.endswith("```"):
             ai_text = ai_text[:-3].strip()
-    
+
     return json.loads(ai_text)
 
 
@@ -782,11 +792,11 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
     if not text_content.strip():
         raise HTTPException(400, "No se pudo extraer texto del documento, incluso con OCR.")
 
-    # 4. Analizar con Vertex AI Gemini
+    # 4. Analizar con Gemini (service account)
     try:
-        ai_data = _analyze_with_vertex(text_content)
+        ai_data = _analyze_with_service_account(text_content)
     except Exception as e:
-        logger.error(f"Error Vertex AI: {e}")
+        logger.error(f"Error Gemini service account: {e}")
         raise HTTPException(500, f"Error al analizar el texto con IA: {e}")
 
     # 5. Guardar resumen en Storage
