@@ -199,7 +199,7 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
                         className="w-full bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/50 text-indigo-300 hover:text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 mb-1"
                       >
                         {processingClave === docReq.clave ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        {processingClave === docReq.clave ? 'Extrayendo...' : 'Procesar con IA'}
+                        {processingClave === docReq.clave ? 'Leyendo con IA (puede tardar ~30s)...' : '✨ Procesar con IA'}
                       </button>
                     )}
                     <button

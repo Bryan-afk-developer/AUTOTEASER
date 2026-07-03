@@ -650,8 +650,26 @@ async def eliminar_carpeta_banco(
     return {"message": "Cuenta bancaria y documentos eliminados"}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROCESAR ACTA PRINCIPAL (GEMINI)
+# PROCESAR ACTA PRINCIPAL (GEMINI VISION — soporta PDFs escaneados/OCR)
 # ══════════════════════════════════════════════════════════════════════════════
+
+PROMPT_ACTA = """
+Eres un analista legal experto en México.
+Analiza este documento (acta constitutiva, asamblea o poder notarial) y extrae la siguiente información en formato JSON estrictamente. Si algún campo no aplica o no se encuentra, usa null.
+
+{
+  "razon_social": "Nombre completo de la empresa / sociedad",
+  "tipo_documento": "Ej: Acta Constitutiva, Asamblea Extraordinaria, Poder Notarial, etc.",
+  "fecha_documento": "Fecha del acta en formato YYYY-MM-DD si la encuentras, si no null",
+  "accionistas": [
+    "Nombre del accionista y porcentaje o número de acciones si se especifica"
+  ],
+  "poderes": "Resumen de quién tiene poderes legales (representantes) y qué tipo de poderes tienen",
+  "resumen": "Resumen ejecutivo de máximo 3 líneas del contenido principal del documento"
+}
+
+Responde ÚNICAMENTE con el JSON, sin texto adicional, sin bloques de código markdown.
+"""
 
 @router.post("/actas/{clave}/procesar-ia")
 async def procesar_acta_principal(clave: str, authorization: str = Header(None)):
@@ -669,55 +687,93 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
     
     storage_path = doc_resp.data["storage_path"]
     
+    # 1. Descargar el PDF
     try:
         pdf_bytes = sb.storage.from_(BUCKET_NAME).download(storage_path)
     except Exception as e:
         raise HTTPException(500, f"Error al descargar el PDF: {e}")
-
-    try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text_content = ""
-        for page in doc[:30]:
-            text_content += page.get_text() + "\n"
-    except Exception as e:
-        raise HTTPException(500, f"Error al leer el PDF: {e}")
-
-    if not text_content.strip():
-        raise HTTPException(400, "El documento parece estar vacío o ser solo imágenes (no se detectó texto).")
 
     if not GEMINI_API_KEY:
         raise HTTPException(500, "API Key de Gemini no configurada.")
 
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
-    
-    prompt = f"""
-    Eres un analista legal experto en México. 
-    Analiza el siguiente texto de un acta constitutiva o asamblea y extrae la siguiente información en formato JSON estrictamente:
-    {{
-      "razon_social": "Nombre de la empresa",
-      "accionistas": ["Lista", "De", "Accionistas", "Y su participación si la hay"],
-      "poderes": "Resumen de quién tiene poderes legales (representantes) y qué tipo de poderes",
-      "resumen": "Un resumen ejecutivo muy breve (máx 3 líneas) del documento (ej. Acta constitutiva de 2020, o asamblea extraordinaria de cambios de poderes)"
-    }}
 
-    TEXTO DEL ACTA:
-    {text_content[:30000]}
-    """
-    
+    # 2. Intentar extracción de texto nativa primero (PDFs digitales)
+    text_content = ""
     try:
-        response = model.generate_content(prompt)
-        ai_text = response.text.strip()
-        if ai_text.startswith("```json"):
-            ai_text = ai_text[7:-3].strip()
-        elif ai_text.startswith("```"):
-            ai_text = ai_text[3:-3].strip()
-            
-        ai_data = json.loads(ai_text)
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page in doc[:30]:
+            text_content += page.get_text() + "\n"
     except Exception as e:
-        logger.error(f"Error con Gemini: {e}")
-        raise HTTPException(500, "Error al procesar el documento con IA.")
+        logger.warning(f"No se pudo extraer texto nativo: {e}")
 
+    ai_data = None
+
+    if text_content.strip() and len(text_content.strip()) > 100:
+        # PDF digital — usar texto directamente
+        logger.info(f"Procesando acta con texto nativo ({len(text_content)} chars)")
+        prompt = PROMPT_ACTA + f"\n\nTEXTO DEL ACTA:\n{text_content[:30000]}"
+        try:
+            response = model.generate_content(prompt)
+            ai_text = response.text.strip()
+            if ai_text.startswith("```json"):
+                ai_text = ai_text[7:].strip()
+                if ai_text.endswith("```"):
+                    ai_text = ai_text[:-3].strip()
+            elif ai_text.startswith("```"):
+                ai_text = ai_text[3:].strip()
+                if ai_text.endswith("```"):
+                    ai_text = ai_text[:-3].strip()
+            ai_data = json.loads(ai_text)
+        except Exception as e:
+            logger.error(f"Error Gemini texto: {e}")
+            # Si falla el parsing de texto, intentamos con imágenes
+            text_content = ""
+
+    if ai_data is None:
+        # PDF escaneado (OCR) — convertir páginas a imágenes y usar Gemini Vision
+        logger.info("PDF sin texto detectado, usando Gemini Vision (OCR mode)")
+        import base64
+
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            total_pages = min(len(doc), 15)  # Máximo 15 páginas para no pasarnos del límite
+            
+            parts = [PROMPT_ACTA]
+            
+            for page_num in range(total_pages):
+                page = doc[page_num]
+                # Renderizar a imagen con resolución decente (150 DPI)
+                mat = fitz.Matrix(150/72, 150/72)
+                pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+                img_bytes = pix.tobytes("png")
+                
+                # Gemini acepta imágenes como partes inline
+                parts.append({
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": base64.b64encode(img_bytes).decode("utf-8")
+                    }
+                })
+            
+            response = model.generate_content(parts)
+            ai_text = response.text.strip()
+            if ai_text.startswith("```json"):
+                ai_text = ai_text[7:].strip()
+                if ai_text.endswith("```"):
+                    ai_text = ai_text[:-3].strip()
+            elif ai_text.startswith("```"):
+                ai_text = ai_text[3:].strip()
+                if ai_text.endswith("```"):
+                    ai_text = ai_text[:-3].strip()
+            ai_data = json.loads(ai_text)
+
+        except Exception as e:
+            logger.error(f"Error Gemini Vision: {e}")
+            raise HTTPException(500, f"Error al procesar el documento con IA (Vision): {e}")
+
+    # 4. Guardar resumen en Storage
     summary_payload = {
         "clave_principal": clave,
         "ai_summary": ai_data
@@ -727,14 +783,14 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
     
     try:
         sb.storage.from_(BUCKET_NAME).upload(
-            file=json.dumps(summary_payload).encode('utf-8'),
+            file=json.dumps(summary_payload, ensure_ascii=False).encode('utf-8'),
             path=file_path,
             file_options={"content-type": "application/json"}
         )
     except Exception:
         try:
             sb.storage.from_(BUCKET_NAME).update(
-                file=json.dumps(summary_payload).encode('utf-8'),
+                file=json.dumps(summary_payload, ensure_ascii=False).encode('utf-8'),
                 path=file_path,
                 file_options={"content-type": "application/json"}
             )
