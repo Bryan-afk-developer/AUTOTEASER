@@ -713,29 +713,43 @@ def _ocr_with_docai(pdf_bytes: bytes) -> str:
 
 def _analyze_with_service_account(text: str) -> dict:
     """
-    Analiza el texto con Gemini usando el service account de GCP (sin API key).
-    Usa google-generativeai con credentials de service account.
+    Llama a Gemini directamente via HTTP con el service account de GCP.
+    Evita conflictos con genai.configure() que ya usa API key en otras partes.
     """
     import os
-    import google.generativeai as genai
+    import requests as http_requests
     from google.oauth2 import service_account
+    from google.auth.transport.requests import Request as GoogleAuthRequest
 
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if not credentials_path:
         raise ValueError("GOOGLE_APPLICATION_CREDENTIALS no configurado en .env")
 
+    # Obtener access token del service account
     creds = service_account.Credentials.from_service_account_file(
         credentials_path,
         scopes=["https://www.googleapis.com/auth/generative-language"]
     )
-
-    genai.configure(credentials=creds)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    creds.refresh(GoogleAuthRequest())
 
     prompt = PROMPT_ACTA + text[:30000]
-    response = model.generate_content(prompt)
 
-    ai_text = response.text.strip()
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    headers = {
+        "Authorization": f"Bearer {creds.token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+
+    resp = http_requests.post(url, json=payload, headers=headers, timeout=120)
+    resp.raise_for_status()
+
+    result = resp.json()
+    ai_text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+
     if ai_text.startswith("```json"):
         ai_text = ai_text[7:].strip()
         if ai_text.endswith("```"):
