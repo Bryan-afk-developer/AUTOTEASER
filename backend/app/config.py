@@ -32,3 +32,6 @@ GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "").strip()
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us").strip()
 GCP_PROCESSOR_ID_OCR = os.getenv("GCP_PROCESSOR_ID_OCR", "").strip()
 GCP_PROCESSOR_ID_BASIC_OCR = os.getenv("GCP_PROCESSOR_ID_BASIC_OCR", "").strip()
+
+# Vertex AI requires specific region (us is multi-region for DocAI)
+VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1").strip()

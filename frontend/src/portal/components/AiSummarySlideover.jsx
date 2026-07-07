@@ -138,6 +138,13 @@ export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl,
                         </li>
                       ))}
                     </ul>
+                    
+                    {aiSummary.administrador_unico && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-[10px] font-bold text-indigo-300/80 uppercase tracking-wider mb-1">Administrador Único / En el Poder</p>
+                        <p className="text-sm font-semibold text-white">{aiSummary.administrador_unico}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

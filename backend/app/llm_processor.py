@@ -4,8 +4,9 @@ Uses Google Gemini to analyze financial document text and extract structured dat
 """
 import json
 import logging
-import google.generativeai as genai
-from app.config import GEMINI_API_KEY
+import vertexai
+from vertexai.generative_models import GenerativeModel
+from app.config import GEMINI_API_KEY, GCP_PROJECT_ID, VERTEX_LOCATION
 
 logger = logging.getLogger(__name__)
 
@@ -277,12 +278,12 @@ Estructura requerida (agrega o quita años según lo que encuentres en el docume
 
 
 def configure_gemini():
-    """Configure the Gemini API client."""
-    if not GEMINI_API_KEY:
+    """Configure the Gemini API client via Vertex AI."""
+    if not GCP_PROJECT_ID:
         raise ValueError(
-            "GEMINI_API_KEY no configurada. Agrega tu API key en el archivo .env"
+            "GCP_PROJECT_ID no configurada. Agrega tu proyecto en el archivo .env"
         )
-    genai.configure(api_key=GEMINI_API_KEY)
+    vertexai.init(project=GCP_PROJECT_ID, location=VERTEX_LOCATION)
 
 
 def detect_document_type(text: str) -> str:
@@ -363,8 +364,8 @@ def analyze_document(text: str, doc_type: str | None = None) -> dict:
     prompt_template = get_prompt_for_type(doc_type)
     prompt = prompt_template.format(document_text=text)
     
-    # Call Gemini
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    # Call Gemini via Vertex AI
+    model = GenerativeModel("gemini-2.5-flash")
     
     max_retries = 2
     last_error = None
@@ -374,10 +375,10 @@ def analyze_document(text: str, doc_type: str | None = None) -> dict:
         try:
             response = model.generate_content(
                 prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,  # Low temperature for accuracy
-                    max_output_tokens=16384,
-                )
+                generation_config={
+                    "temperature": 0.1,  # Low temperature for accuracy
+                    "max_output_tokens": 8192,
+                }
             )
             
             # Parse JSON response
@@ -503,15 +504,15 @@ INSTRUCCIONES:
 - Responde SOLO con el JSON válido
 """
     
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = GenerativeModel("gemini-2.5-flash")
     
     try:
         response = model.generate_content(
             prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=8192,
-            )
+            generation_config={
+                "temperature": 0.1,
+                "max_output_tokens": 8192,
+            }
         )
         
         response_text = response.text.strip()
@@ -563,14 +564,14 @@ INSTRUCCIONES:
 }}
 """
     
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = GenerativeModel("gemini-2.5-flash")
     
     try:
         response = model.generate_content(
             prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-            )
+            generation_config={
+                "temperature": 0.1,
+            }
         )
         
         response_text = response.text.strip()

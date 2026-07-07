@@ -26,7 +26,9 @@ const MOP_NIVEL_CONFIG = [
   { nivel: 4, color: 'text-orange-400', bg: 'bg-orange-500/15', border: 'border-orange-500/30', alerta: true, desc: '60-89 días' },
   { nivel: 5, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', alerta: true, desc: '90-119 días' },
   { nivel: 6, color: 'text-red-400', bg: 'bg-red-500/15', border: 'border-red-500/30', alerta: true, desc: '120-179 días' },
-  { nivel: 7, color: 'text-red-500', bg: 'bg-red-500/20', border: 'border-red-500/40', alerta: true, desc: '180+ días' },
+  { nivel: 7, color: 'text-red-500', bg: 'bg-red-500/20', border: 'border-red-500/40', alerta: true, desc: '180-359 días' },
+  { nivel: 8, color: 'text-red-600', bg: 'bg-red-600/20', border: 'border-red-600/40', alerta: true, desc: '360+ días' },
+  { nivel: 9, color: 'text-rose-600', bg: 'bg-rose-600/20', border: 'border-rose-600/40', alerta: true, desc: 'Atraso mayor / Fraude' },
 ]
 
 // ── Componente MopsBadge (Alerta Inline) ──────────────────────────────────────
@@ -595,7 +597,7 @@ export default function AdminDashboard() {
     try {
       const data = await api.getEmpresaDocumentos(empresaId)
       setDocumentos(data.documentos || [])
-      setActaPrincipal(data.acta_principal || null)
+      // setActaPrincipal(data.acta_principal || null) // Removed as we use doc.ai_summary directly
     } catch (err) {
       setError(err.message)
     } finally {
@@ -907,7 +909,7 @@ export default function AdminDashboard() {
     <main className="max-w-[1600px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
       
       {/* Sidebar de Resumen (Izquierda) */}
-      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} actaPrincipal={actaPrincipal} />
+      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} />
 
       {/* Contenido Principal (Derecha) */}
       <div className="flex-1 space-y-6 min-w-0 w-full">

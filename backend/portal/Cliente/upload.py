@@ -217,6 +217,25 @@ async def subir_documento(
         except Exception as e:
             logger.warning(f"No se pudo leer Opinión de Cumplimiento: {e}")
 
+    # --- Extracción de Buro de Crédito (MOPs y Score) ---
+    if "buro_credito" in tipo_documento or "buro_representante" in tipo_documento:
+        try:
+            from app.Buro_Credito.mop_extractor import extraer_mops_de_bytes
+            extracted_mops = extraer_mops_de_bytes(content)
+            doc_data["extracted_data"] = extracted_mops
+            logger.info("MOPs extraídos exitosamente durante la subida.")
+        except Exception as e:
+            logger.error(f"Error extrayendo MOPs en upload: {e}")
+            
+    if "buro_score" in tipo_documento:
+        try:
+            from app.Buro_Credito.score_extractor import extraer_score_de_bytes
+            extracted_score = extraer_score_de_bytes(content)
+            doc_data["extracted_data"] = extracted_score
+            logger.info("Score extraído exitosamente durante la subida.")
+        except Exception as e:
+            logger.error(f"Error extrayendo Score en upload: {e}")
+
     if existing.data:
         # Actualizar registro existente
         doc_id = existing.data[0]["id"]
@@ -351,11 +370,10 @@ async def subir_documentos_banco(
     nombre_carpeta = banco["nombre_banco"]
 
     # 3. Calcular slots requeridos y ver cuáles faltan/pueden ser reemplazados
-    slots_requeridos = calcular_estados_de_cuenta(banco)
-    
-    # Obtener documentos actuales para este banco
     docs_actuales_resp = sb.table("documentos_expediente").select("*").eq("cuenta_bancaria_id", cuenta_bancaria_id).execute()
     docs_actuales = {d["tipo_documento"]: d for d in docs_actuales_resp.data or []}
+
+    slots_requeridos = calcular_estados_de_cuenta(banco, docs_actuales)
 
     slots_disponibles = []
     for slot in slots_requeridos:
@@ -450,13 +468,17 @@ def _get_or_create_cuenta_bancaria(sb, empresa_id: str, nombre_banco: str) -> di
 
 
 def _get_next_slot(sb, cuenta_bancaria_id: str, banco: dict) -> str | None:
-    """Get the next available slot (ec_{id}_1 to ec_{id}_7) for a bank account."""
-    slots_requeridos = calcular_estados_de_cuenta(banco)
+    """Get the next available slot for a bank account."""
     docs_actuales_resp = sb.table("documentos_expediente").select("tipo_documento, estado").eq("cuenta_bancaria_id", cuenta_bancaria_id).execute()
+    docs_actuales = {d["tipo_documento"]: d for d in (docs_actuales_resp.data or [])}
+    
+    slots_requeridos = calcular_estados_de_cuenta(banco, docs_actuales)
+    
     ocupados = {}
     for d in (docs_actuales_resp.data or []):
         if d["estado"] not in ("FALTANTE", "RECHAZADO"):
             ocupados[d["tipo_documento"]] = True
+            
     for slot in slots_requeridos:
         if slot["clave"] not in ocupados:
             return slot["clave"]

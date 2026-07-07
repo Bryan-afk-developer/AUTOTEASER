@@ -1,7 +1,7 @@
 import json
 import logging
-import google.generativeai as genai
-from app.config import GEMINI_API_KEY
+from app.llm_processor import configure_gemini
+from vertexai.generative_models import GenerativeModel
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +15,9 @@ def map_financial_data(extracted_text: str, concepts_dict: dict) -> dict:
       "Edo de resultados": ["ventas", "costo_ventas", ...]
     }
     """
-    genai.configure(api_key=GEMINI_API_KEY)
+    configure_gemini()
     
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        generation_config={"response_mime_type": "application/json"}
-    )
+    model = GenerativeModel("gemini-2.5-flash")
     
     prompt = f"""Eres un experto contador y analista financiero.
 He extraído el texto de un estado financiero (Balance General y Estado de Resultados).
@@ -42,7 +39,10 @@ INSTRUCCIONES:
 """
     
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
         text = response.text
         # Sometimes Gemini wraps json in ```json ... ``` even with response_mime_type
         if text.startswith("```json"):

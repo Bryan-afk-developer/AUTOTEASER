@@ -1,26 +1,49 @@
 export function formatMopText(mopData) {
-  if (!mopData || !mopData.niveles) return { text: '-', subtext: '', alert: false, maxLevel: 0 };
+  if (!mopData || !mopData.niveles || !mopData.anios || mopData.anios.length === 0) {
+    return { text: '-', subtext: '', alert: false, maxLevel: 0 };
+  }
   
   const levels = Object.keys(mopData.niveles).map(Number).filter(l => !isNaN(l) && l >= 2);
   
-  if (levels.length === 0) return { text: '-', subtext: '', alert: false, maxLevel: 0 };
+  if (levels.length === 0) {
+    return { text: '1 NORMAL', subtext: 'SIN MOPs NEGATIVOS', alert: false, maxLevel: 0 };
+  }
   
-  const highestNivel = Math.max(...levels);
+  // Sort years descending to find the most recent
+  const anios = mopData.anios.map(Number).sort((a, b) => b - a);
+  const mostRecentYear = anios[0];
   
-  // Count occurrences of highestNivel
-  let highestCount = 0;
-  const yearsDict = mopData.niveles[highestNivel];
-  if (yearsDict) {
-    for (const year in yearsDict) {
-      highestCount += yearsDict[year];
+  const allTimeHighestLevel = Math.max(...levels);
+  
+  // Find highest level in the most recent year
+  let recentHighestLevel = 0;
+  let recentHighestCount = 0;
+  for (let l = allTimeHighestLevel; l >= 2; l--) {
+    if (mopData.niveles[l] && mopData.niveles[l][mostRecentYear]) {
+      recentHighestLevel = l;
+      recentHighestCount = mopData.niveles[l][mostRecentYear];
+      break;
     }
   }
   
-  const hasInferiores = levels.some(l => l >= 2 && l < highestNivel);
+  let text = '';
+  let subtext = '';
   
-  const text = `${highestCount} de nvl${highestNivel}`;
-  const subtext = hasInferiores ? 'e inferiores' : '';
-  const alert = highestNivel >= 3;
+  if (recentHighestLevel >= 2) {
+    text = `${recentHighestCount} de nvl${recentHighestLevel}`;
+    if (allTimeHighestLevel > recentHighestLevel) {
+      subtext = `Antecedente: nvl${allTimeHighestLevel}`;
+    } else {
+      // Find if there are lower levels in recent year
+      const hasInferioresRecent = Object.keys(mopData.niveles).map(Number).some(l => l >= 2 && l < recentHighestLevel && mopData.niveles[l][mostRecentYear]);
+      subtext = hasInferioresRecent ? 'e inferiores' : '';
+    }
+  } else {
+    text = `1 NORMAL (${mostRecentYear})`;
+    subtext = `Antecedente: nvl${allTimeHighestLevel}`;
+  }
   
-  return { text, subtext, alert, maxLevel: highestNivel };
+  const alert = recentHighestLevel >= 3 || allTimeHighestLevel >= 4;
+  
+  return { text, subtext, alert, maxLevel: recentHighestLevel || allTimeHighestLevel };
 }

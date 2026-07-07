@@ -146,19 +146,16 @@ class VerificarDomiciliosRequest(BaseModel):
 
 @router.post("/verificar-domicilios")
 async def verificar_domicilios(req: VerificarDomiciliosRequest):
-    from app.config import GEMINI_API_KEY
-    import google.generativeai as genai
+    from app.llm_processor import configure_gemini
+    from vertexai.generative_models import GenerativeModel
     import json
-    
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="Gemini API Key no configurada")
     
     if not req.direccion_1 or not req.direccion_2 or req.direccion_1 == "No disponible" or req.direccion_2 == "No disponible":
         return {"match": False, "razon": "Faltan direcciones para comparar"}
         
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-flash-latest')
+        configure_gemini()
+        model = GenerativeModel('gemini-2.5-flash')
         
         prompt = f"""
         Eres un auditor experto en domicilios de México.

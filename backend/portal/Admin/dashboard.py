@@ -133,25 +133,35 @@ async def get_empresas():
     empresas_resp = sb.table("empresas").select("*").order("created_at", desc=True).execute()
     empresas = empresas_resp.data or []
 
-    # Para cada empresa, contar documentos por estado
+    # Traer todos los estados de documentos de UNA sola vez
+    docs_resp = sb.table("documentos_expediente").select("empresa_id, estado").execute()
+    docs = docs_resp.data or []
+    
+    # Agrupar por empresa
+    docs_por_empresa = {}
+    for doc in docs:
+        emp_id = doc["empresa_id"]
+        est = doc.get("estado", "FALTANTE")
+        if emp_id not in docs_por_empresa:
+            docs_por_empresa[emp_id] = {"count": 0, "conteo": {"PENDIENTE": 0, "APROBADO": 0, "RECHAZADO": 0, "FALTANTE": 0}}
+        
+        docs_por_empresa[emp_id]["count"] += 1
+        if est in docs_por_empresa[emp_id]["conteo"]:
+            docs_por_empresa[emp_id]["conteo"][est] += 1
+
+    # Construir resultado
     resultado = []
     for empresa in empresas:
-        docs_resp = sb.table("documentos_expediente").select("estado").eq("empresa_id", empresa["id"]).execute()
-        docs = docs_resp.data or []
-
-        conteo = {"PENDIENTE": 0, "APROBADO": 0, "RECHAZADO": 0, "FALTANTE": 0}
-        for doc in docs:
-            est = doc.get("estado", "FALTANTE")
-            if est in conteo:
-                conteo[est] += 1
+        emp_id = empresa["id"]
+        stats = docs_por_empresa.get(emp_id, {"count": 0, "conteo": {"PENDIENTE": 0, "APROBADO": 0, "RECHAZADO": 0, "FALTANTE": 0}})
 
         resultado.append({
-            "id": empresa["id"],
+            "id": emp_id,
             "nombre": empresa["nombre"],
             "rfc": empresa.get("rfc"),
             "created_at": empresa.get("created_at"),
-            "documentos_count": len(docs),
-            "conteo_estados": conteo,
+            "documentos_count": stats["count"],
+            "conteo_estados": stats["conteo"],
         })
 
     return {"empresas": resultado, "total": len(resultado)}
@@ -242,21 +252,11 @@ async def get_empresa_documentos(empresa_id: str):
             
             documentos_completos.append(doc_subido)
         
-    acta_principal_data = None
-    try:
-        import json
-        files = sb.storage.from_("expedientes_clientes").list(f"{empresa_id}")
-        if files and any(f.get("name") == "acta_principal_summary.json" for f in files):
-            summary_bytes = sb.storage.from_("expedientes_clientes").download(f"{empresa_id}/acta_principal_summary.json")
-            acta_principal_data = json.loads(summary_bytes)
-    except Exception:
-        pass
-        
     return {
         "empresa": empresa_info,
         "documentos": documentos_completos,
         "total": len(documentos_completos),
-        "acta_principal": acta_principal_data
+        "acta_principal": None
     }
 
 
@@ -604,7 +604,7 @@ async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
     # Buscar el documento de Buró de Crédito
     doc_resp = (
         sb.table(table)
-        .select("id, storage_path, nombre_archivo, estado")
+        .select("id, storage_path, nombre_archivo, estado, extracted_data")
         .eq("empresa_id", empresa_id)
         .eq("tipo_documento", tipo_buro)
         .single()
@@ -620,8 +620,17 @@ async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
     if not storage_path:
         raise HTTPException(status_code=400, detail="El Buró de Crédito aún no tiene un archivo subido")
 
-    # Extraer MOPs
-    resultado = extraer_mops_desde_storage(storage_path, sb)
+    # Extraer MOPs (de base de datos o procesar y guardar)
+    if doc.get("extracted_data"):
+        resultado = doc["extracted_data"]
+    else:
+        resultado = extraer_mops_desde_storage(storage_path, sb)
+        # Guardar para la próxima vez
+        try:
+            sb.table(table).update({"extracted_data": resultado}).eq("id", doc["id"]).execute()
+        except Exception as e:
+            pass # ignore if it fails
+            
     resultado["empresa_id"] = empresa_id
     resultado["documento_id"] = doc.get("id")
     resultado["nombre_archivo"] = doc.get("nombre_archivo")
@@ -646,7 +655,7 @@ async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_represent
 
     doc_resp = (
         sb.table(table)
-        .select("id, storage_path, nombre_archivo, estado")
+        .select("id, storage_path, nombre_archivo, estado, extracted_data")
         .eq("empresa_id", empresa_id)
         .eq("tipo_documento", tipo_buro)
         .single()
@@ -662,7 +671,15 @@ async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_represent
     if not storage_path:
         raise HTTPException(status_code=400, detail="El Mi Score aún no tiene archivo")
 
-    resultado = extraer_score_desde_storage(storage_path, sb)
+    if doc.get("extracted_data"):
+        resultado = doc["extracted_data"]
+    else:
+        resultado = extraer_score_desde_storage(storage_path, sb)
+        try:
+            sb.table(table).update({"extracted_data": resultado}).eq("id", doc["id"]).execute()
+        except Exception:
+            pass
+
     resultado["empresa_id"] = empresa_id
     resultado["documento_id"] = doc.get("id")
     

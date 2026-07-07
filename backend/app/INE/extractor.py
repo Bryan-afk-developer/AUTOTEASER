@@ -2,17 +2,13 @@ import fitz  # PyMuPDF
 import io
 import re
 import logging
-import google.generativeai as genai
+from app.llm_processor import configure_gemini
+from vertexai.generative_models import GenerativeModel, Part
 from google.cloud import documentai
 
-from app.config import GEMINI_API_KEY, GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
+from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
-
-def configure_gemini():
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY no configurada.")
-    genai.configure(api_key=GEMINI_API_KEY)
 
 def extract_name_from_ine(file_path: str = None, file_bytes: bytes = None, filename: str = "") -> str:
     """
@@ -64,8 +60,7 @@ def _extract_with_gemini(img_bytes: bytes, mime_type: str) -> str:
     """Usa la API de Gemini para extraer el nombre con un prompt estricto."""
     configure_gemini()
     
-    # Usamos flash porque es el más rápido para este tipo de tareas sencillas
-    model = genai.GenerativeModel("gemini-flash-latest")
+    model = GenerativeModel("gemini-2.5-flash")
     
     prompt = (
         "Extrae el nombre completo de la persona de esta credencial oficial (INE de México). "
@@ -76,14 +71,14 @@ def _extract_with_gemini(img_bytes: bytes, mime_type: str) -> str:
         "sin etiquetas y sin comillas. Ejemplo: JORGE VALES BULIO."
     )
     
-    image_parts = [{"mime_type": mime_type, "data": img_bytes}]
+    image_part = Part.from_data(data=img_bytes, mime_type=mime_type)
     
     response = model.generate_content(
-        [prompt, image_parts[0]],
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.0, # Determinístico
-            max_output_tokens=50,
-        )
+        [prompt, image_part],
+        generation_config={
+            "temperature": 0.0, # Determinístico
+            "max_output_tokens": 50,
+        }
     )
     
     result = response.text.strip().upper()

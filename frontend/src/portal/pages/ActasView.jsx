@@ -139,23 +139,23 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
 
         {actasRequeridas.map((docReq) => {
           const isUploaded = docReq.estado !== 'FALTANTE'
-          const isPrincipal = expediente?.acta_principal?.clave_principal === docReq.clave
+          const hasSummary = !!docReq.ai_summary
 
           return (
             <div
               key={docReq.clave}
               className={`bg-surface border rounded-2xl p-5 flex flex-col gap-3 transition-all ${docReq.estado === 'RECHAZADO' ? 'border-rose-500/50 bg-rose-500/5' :
-                  docReq.estado === 'APROBADO' ? 'border-emerald-500/30' : 
-                  isPrincipal ? 'border-indigo-500/50 shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'border-border hover:border-primary-500/50'
+                docReq.estado === 'APROBADO' ? 'border-emerald-500/30' :
+                  hasSummary ? 'border-indigo-500/50 shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'border-border hover:border-primary-500/50'
                 }`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2 text-lg font-bold">
-                  <FileText className={`w-5 h-5 ${isPrincipal ? 'text-indigo-400' : 'text-primary-400'}`} />
+                  <FileText className={`w-5 h-5 ${hasSummary ? 'text-indigo-400' : 'text-primary-400'}`} />
                   {docReq.nombre}
                 </div>
                 {/* Status Badge */}
-                {isPrincipal && <span className="bg-indigo-500/20 text-indigo-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1"><Sparkles className="w-3 h-3" /> Principal</span>}
+                {hasSummary && <span className="bg-indigo-500/20 text-indigo-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1"><Sparkles className="w-3 h-3" /> Procesado</span>}
                 {docReq.estado === 'APROBADO' && <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Aprobado</span>}
                 {docReq.estado === 'PENDIENTE' && <span className="bg-amber-500/20 text-amber-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">En Revisión</span>}
                 {docReq.estado === 'RECHAZADO' && <span className="bg-rose-500/20 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1"><XCircle className="w-3 h-3" /> Rechazado</span>}
@@ -171,9 +171,9 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
               )}
 
               {/* Botón Ver Resumen IA */}
-              {isPrincipal && expediente?.acta_principal?.ai_summary && (
+              {hasSummary && (
                 <button
-                  onClick={() => setSelectedAiSummary({ aiSummary: expediente.acta_principal.ai_summary, pdfUrl: docReq.url_documento })}
+                  onClick={() => setSelectedAiSummary({ aiSummary: docReq.ai_summary, pdfUrl: docReq.url_documento })}
                   className="mt-3 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow"
                 >
                   <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Ver Resumen de IA</span>
@@ -184,14 +184,14 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
               <div className="mt-auto pt-4 flex flex-wrap gap-2">
                 {isUploaded ? (
                   <>
-                    {!isPrincipal && (
-                      <button 
+                    {!hasSummary && (
+                      <button
                         onClick={() => handleProcesarIA(docReq.clave)}
                         disabled={processingClave === docReq.clave}
                         className="w-full bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/50 text-indigo-300 hover:text-white font-bold py-2 px-3 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 mb-1"
                       >
                         {processingClave === docReq.clave ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        {processingClave === docReq.clave ? 'Leyendo con IA (puede tardar ~30s)...' : '✨ Procesar con IA'}
+                        {processingClave === docReq.clave ? 'Leyendo con IA (puede tardar ~30s)...' : 'Procesar con IA'}
                       </button>
                     )}
                     <button
@@ -227,10 +227,10 @@ export default function ActasView({ expediente, docs_subidos, onBack, fetchExped
         })}
       </div>
 
-      <AiSummarySlideover 
-        isOpen={!!selectedAiSummary} 
-        onClose={() => setSelectedAiSummary(null)} 
-        aiSummary={selectedAiSummary?.aiSummary} 
+      <AiSummarySlideover
+        isOpen={!!selectedAiSummary}
+        onClose={() => setSelectedAiSummary(null)}
+        aiSummary={selectedAiSummary?.aiSummary}
         pdfUrl={selectedAiSummary?.pdfUrl}
       />
     </div>

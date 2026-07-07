@@ -2,17 +2,13 @@ import fitz  # PyMuPDF
 import io
 import re
 import logging
-import google.generativeai as genai
+from app.llm_processor import configure_gemini
+from vertexai.generative_models import GenerativeModel, Part
 from google.cloud import documentai
 
-from app.config import GEMINI_API_KEY, GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
+from app.config import GCP_PROJECT_ID, GCP_LOCATION, GCP_PROCESSOR_ID_OCR
 
 logger = logging.getLogger(__name__)
-
-def configure_gemini():
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY no configurada.")
-    genai.configure(api_key=GEMINI_API_KEY)
 
 def parse(extracted_text: str, img_bytes: bytes, mime_type: str) -> str:
     """
@@ -50,7 +46,7 @@ def _clean_location_string(raw_text: str) -> str:
 
 def _extract_with_gemini(extracted_text: str, img_bytes: bytes, mime_type: str) -> str:
     configure_gemini()
-    model = genai.GenerativeModel('gemini-flash-latest')
+    model = GenerativeModel('gemini-2.5-flash')
     
     prompt = (
         "Eres un asistente experto en extraer datos de comprobantes de domicilio en México (CFE, Telmex, Agua, etc.). "
@@ -68,13 +64,8 @@ def _extract_with_gemini(extracted_text: str, img_bytes: bytes, mime_type: str) 
     else:
         # Modo Visión (Scanned PDF o Imagen)
         logger.info("Usando Gemini en modo Visión para el Comprobante de Domicilio")
-        image_parts = [
-            {
-                "mime_type": mime_type,
-                "data": img_bytes
-            }
-        ]
-        response = model.generate_content([prompt, image_parts[0]])
+        image_part = Part.from_data(data=img_bytes, mime_type=mime_type)
+        response = model.generate_content([prompt, image_part])
 
     text_result = response.text.strip()
     if not text_result:

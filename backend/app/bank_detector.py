@@ -7,9 +7,8 @@ import logging
 from pathlib import Path
 
 import fitz  # PyMuPDF
-import google.generativeai as genai
-
-from app.config import GEMINI_API_KEY
+from app.llm_processor import configure_gemini
+from vertexai.generative_models import GenerativeModel, Part
 
 logger = logging.getLogger(__name__)
 
@@ -117,14 +116,10 @@ def detect_bank_with_gemini(pdf_bytes: bytes) -> str | None:
     Send the first page of the PDF as an image to Gemini Vision
     and ask it to identify the bank from the logo/header.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("No GEMINI_API_KEY configured, skipping vision detection")
-        return None
-    
     try:
         png_bytes = _render_first_page_as_image(pdf_bytes)
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        configure_gemini()
+        model = GenerativeModel("gemini-2.5-flash")
         
         prompt = (
             "Mira esta imagen de un estado de cuenta bancario mexicano. "
@@ -136,7 +131,7 @@ def detect_bank_with_gemini(pdf_bytes: bytes) -> str | None:
             "Ejemplo de respuesta válida: bbva"
         )
         
-        image_part = {"mime_type": "image/png", "data": png_bytes}
+        image_part = Part.from_data(data=png_bytes, mime_type="image/png")
         response = model.generate_content([prompt, image_part])
         answer = response.text.strip().lower()
         

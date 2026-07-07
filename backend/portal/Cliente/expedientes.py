@@ -22,7 +22,6 @@ from pydantic import BaseModel
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
 import json
-import google.generativeai as genai
 from app.config import GEMINI_API_KEY
 import fitz  # PyMuPDF
 
@@ -153,9 +152,10 @@ MESES_ES = {
 # GENERADORES DINÁMICOS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def calcular_estados_de_cuenta(banco: dict = None) -> list[dict]:
+def calcular_estados_de_cuenta(banco: dict = None, docs_subidos: dict = None) -> list[dict]:
     """
-    Genera 7 slots genéricos para estados de cuenta de la cuenta bancaria.
+    Genera slots dinámicos para estados de cuenta de la cuenta bancaria.
+    Garantiza mínimo 12 slots, más un colchón si ya subieron más.
     """
     docs = []
     
@@ -166,7 +166,20 @@ def calcular_estados_de_cuenta(banco: dict = None) -> list[dict]:
     nombre_banco = banco["nombre_banco"]
     cuenta_id = banco["id"]
     
-    for i in range(1, 8):
+    max_uploaded = 0
+    if docs_subidos:
+        for d in docs_subidos.values():
+            clave = d.get("tipo_documento", d.get("clave", ""))
+            if clave.startswith(f"ec_{cuenta_id}_"):
+                try:
+                    num = int(clave.split("_")[-1])
+                    max_uploaded = max(max_uploaded, num)
+                except ValueError:
+                    pass
+
+    slots_to_generate = max(12, max_uploaded + 6)
+    
+    for i in range(1, slots_to_generate + 1):
         clave = f"ec_{cuenta_id}_{i}"
         docs.append({
             "clave": clave,
@@ -326,7 +339,7 @@ def get_todos_los_documentos_requeridos(bancos: list[dict] = None, docs_subidos:
     docs_bancos = []
     if bancos:
         for banco in bancos:
-            docs_bancos.extend(calcular_estados_de_cuenta(banco))
+            docs_bancos.extend(calcular_estados_de_cuenta(banco, docs_subidos))
 
     return (
         DOCUMENTOS_LEGALES
@@ -427,6 +440,7 @@ async def get_expediente(authorization: str = Header(None)):
                 "comentario_admin": doc_subido.get("comentario_admin"),
                 "storage_path": storage_path,
                 "url_documento": url_documento,
+                "ai_summary": doc_subido.get("ai_summary"),
             }
             if estado == "APROBADO":
                 aprobados += 1
@@ -441,6 +455,7 @@ async def get_expediente(authorization: str = Header(None)):
                 "comentario_admin": None,
                 "storage_path": None,
                 "url_documento": None,
+                "ai_summary": None,
             }
 
         resultado.append(entry)
@@ -660,7 +675,7 @@ Analiza el siguiente texto de un acta constitutiva, asamblea o poder notarial y 
 {
   "razon_social": "Nombre completo de la empresa / sociedad",
   "tipo_documento": "Ej: Acta Constitutiva, Asamblea Extraordinaria, Poder Notarial, etc.",
-  "numero_acta": "Número de acta, escritura o póliza (ej: 12345, 100, etc.) si se menciona, si no null",
+  "numero_acta": "Número de acta, escritura o póliza. IMPORTANTÍSIMO: Busca primero en la portada o primera página (ej. 'ACTA 360-2023'). Si hay varios números a lo largo del documento (ej. 'Acta número CIEN'), prioriza SIEMPRE el número que aparece en la primera página/portada. Si de plano no hay ninguno en la portada, busca en el resto del texto.",
   "fecha_documento": "Fecha en la que se realizó el acta en formato YYYY-MM-DD si la encuentras, si no null",
   "accionistas": [
     {
@@ -668,8 +683,9 @@ Analiza el siguiente texto de un acta constitutiva, asamblea o poder notarial y 
       "participacion": "Porcentaje (ej: 50%) o número de acciones (ej: 100 acciones) o capital aportado, si se menciona. De lo contrario null"
     }
   ],
+  "administrador_unico": "Nombre completo de la persona o personas que quedan designadas como Administrador Único, Administrador General o Presidente del Consejo de Administración. Si no se menciona explícitamente, usa null.",
   "poderes": "Resumen de quién tiene poderes legales (representantes) y qué tipo de poderes tienen",
-  "resumen": "Resumen ejecutivo de máximo 3 líneas del contenido principal del documento"
+  "resumen": "Resumen ejecutivo de máximo 3 líneas del contenido principal."
 }
 
 Responde ÚNICAMENTE con el JSON, sin texto adicional, sin bloques de código markdown.
@@ -717,29 +733,24 @@ def _ocr_with_docai(pdf_bytes: bytes) -> str:
 
 def _analyze_with_gemini_api_key(text: str) -> dict:
     """
-    Llama a Gemini via HTTP directamente usando la API key.
-    Evita conflictos con genai.configure() global y no requiere roles IAM.
+    Llama a Gemini via Vertex AI.
     """
-    import requests as http_requests
-    from app.config import GEMINI_API_KEY
-
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY no configurada en .env. Obtén una en https://aistudio.google.com/apikey")
-
+    from app.llm_processor import configure_gemini
+    from vertexai.generative_models import GenerativeModel
+    
+    configure_gemini()
     prompt = PROMPT_ACTA + text[:30000]
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 4096}
-    }
-
-    resp = http_requests.post(url, json=payload, headers=headers, timeout=120)
-    resp.raise_for_status()
-
-    result = resp.json()
-    ai_text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+    
+    model = GenerativeModel("gemini-2.5-flash")
+    response = model.generate_content(
+        prompt,
+        generation_config={
+            "temperature": 0.1,
+            "max_output_tokens": 8192,
+        }
+    )
+    
+    ai_text = response.text.strip()
 
     if ai_text.startswith("```json"):
         ai_text = ai_text[7:].strip()
@@ -804,29 +815,16 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
         logger.error(f"Error Gemini: {e}")
         raise HTTPException(500, f"Error al analizar el texto con IA: {e}")
 
-    # 5. Guardar resumen en Storage
+    # 5. Guardar resumen en la Base de Datos
     summary_payload = {
         "clave_principal": clave,
         "ai_summary": ai_data
     }
     
-    file_path = f"{empresa_id}/acta_principal_summary.json"
-    
     try:
-        sb.storage.from_(BUCKET_NAME).upload(
-            file=json.dumps(summary_payload, ensure_ascii=False).encode('utf-8'),
-            path=file_path,
-            file_options={"content-type": "application/json"}
-        )
-    except Exception:
-        try:
-            sb.storage.from_(BUCKET_NAME).update(
-                file=json.dumps(summary_payload, ensure_ascii=False).encode('utf-8'),
-                path=file_path,
-                file_options={"content-type": "application/json"}
-            )
-        except Exception as e2:
-            logger.error(f"Error guardando JSON en storage: {e2}")
-            raise HTTPException(500, "Error guardando el resumen en Storage.")
+        sb.table("documentos_expediente").update({"ai_summary": ai_data}).eq("id", doc_resp.data["id"]).execute()
+    except Exception as e:
+        logger.error(f"Error guardando ai_summary en BD: {e}")
+        raise HTTPException(500, "Error guardando el resumen en Base de Datos.")
             
     return summary_payload

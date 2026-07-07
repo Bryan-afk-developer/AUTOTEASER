@@ -636,35 +636,39 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
       </div>
 
       {/* Resumen de Acta Principal (IA) */}
-      {actaPrincipal?.ai_summary && (
-        <>
-          <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-            
-            <div className="flex items-center gap-2 mb-2 relative z-10">
-              <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
-                <Sparkles className="w-4 h-4 text-indigo-400" />
+      {(() => {
+        const docWithSummary = documentos?.find(d => d.ai_summary);
+        if (!docWithSummary) return null;
+        return (
+          <>
+            <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+              
+              <div className="flex items-center gap-2 mb-2 relative z-10">
+                <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                </div>
+                <h3 className="text-sm font-bold text-white tracking-wide">Resumen (IA)</h3>
               </div>
-              <h3 className="text-sm font-bold text-white tracking-wide">Acta Principal (IA)</h3>
+
+              <button
+                onClick={() => setIsAiSummaryOpen(true)}
+                className="mt-2 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow relative z-10"
+              >
+                <span className="flex items-center gap-2">Ver Resumen Completo</span>
+                <ChevronRight className="w-4 h-4 opacity-70" />
+              </button>
             </div>
 
-            <button
-              onClick={() => setIsAiSummaryOpen(true)}
-              className="mt-2 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow relative z-10"
-            >
-              <span className="flex items-center gap-2">Ver Resumen Completo</span>
-              <ChevronRight className="w-4 h-4 opacity-70" />
-            </button>
-          </div>
-
-          <AiSummarySlideover 
-            isOpen={isAiSummaryOpen} 
-            onClose={() => setIsAiSummaryOpen(false)} 
-            aiSummary={actaPrincipal.ai_summary} 
-            fetchPdfUrl={() => api.descargarDocumentoIndividual(empresa.id, actaPrincipal.id, false, true)}
-          />
-        </>
-      )}
+            <AiSummarySlideover 
+              isOpen={isAiSummaryOpen} 
+              onClose={() => setIsAiSummaryOpen(false)} 
+              aiSummary={docWithSummary.ai_summary} 
+              fetchPdfUrl={() => api.descargarDocumentoIndividual(empresa.id, docWithSummary.id || docWithSummary.documento_id, false, true)}
+            />
+          </>
+        )
+      })()}
 
     </div>
   )
