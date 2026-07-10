@@ -293,15 +293,25 @@ async def descargar_todos_documentos(empresa_id: str):
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         
+        # Extraer el nombre global del representante del INE
+        global_rep_name = "Representante Legal"
+        import re
+        for d in docs_emp + docs_rep:
+            if d.get("tipo_documento") == "ine_representante":
+                m = re.search(r'INE\s*-\s*([^-]+?)(?:\s*-|\.\w+$)', d.get("nombre_archivo", ""), re.IGNORECASE)
+                if m:
+                    global_rep_name = m.group(1).strip()
+                break
+
         # 1. GENERAR ESTRUCTURA VACÍA BASE
         carpetas_base = [
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/1. INE/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/2. CONSTANCIA SITUACION FISCAL/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/3. COMPROBANTE DOMICILIO/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/4. ACTA NACIMIENTO/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/5. ACTA MATRIMONIO/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/6. BURO DE CREDITO/",
-            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/1. GENERALES/PREVIOS/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/1. INE/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/2. CONSTANCIA SITUACION FISCAL/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/3. COMPROBANTE DOMICILIO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/4. ACTA NACIMIENTO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/5. ACTA MATRIMONIO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/6. BURO DE CREDITO/",
+            f"{empresa_nombre}/1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES/PREVIOS/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/0. PRE ANALISIS/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/ACTA CONSTITUTIVA/",
             f"{empresa_nombre}/2. EMPRESAS DEL GRUPO/1. ACTAS/ACTAS DE ASAMBLEA/",
@@ -344,7 +354,7 @@ async def descargar_todos_documentos(empresa_id: str):
                 ruta_final = ""
                 
                 if tipo in CLAVES_REPRESENTANTE:
-                    rep_folder = "1. REPRESENTANTES LEGALES/1. GENERALES"
+                    rep_folder = f"1. REPRESENTANTES LEGALES/{global_rep_name}/1. GENERALES"
                     if tipo == "ine_representante":
                         ruta_final = f"{rep_folder}/1. INE/{nombre_archivo}"
                     elif tipo == "csf_representante":
@@ -354,7 +364,9 @@ async def descargar_todos_documentos(empresa_id: str):
                     elif tipo == "acta_matrimonio":
                         ruta_final = f"{rep_folder}/5. ACTA MATRIMONIO/{nombre_archivo}"
                     elif tipo == "buro_representante":
-                        ruta_final = f"{rep_folder}/6. BURO DE CREDITO/{nombre_archivo}"
+                        ruta_final = f"1. REPRESENTANTES LEGALES/{global_rep_name}/3. BURÓ DE CRÉDITO/{nombre_archivo}"
+                    elif tipo == "buro_score_representante":
+                        ruta_final = f"1. REPRESENTANTES LEGALES/{global_rep_name}/3. BURÓ DE CRÉDITO/{nombre_archivo}"
                     else:
                         ruta_final = f"{rep_folder}/PREVIOS/{nombre_archivo}"
                 else:
@@ -757,7 +769,7 @@ async def export_to_teaser(empresa_id: str):
             
     return {"success": True, "count": count}
 
-def _get_drive_path_and_name(doc: dict, empresa_nombre: str) -> tuple[list[str], str]:
+def _get_drive_path_and_name(doc: dict, empresa_nombre: str, global_rep_name: str = "Representante Legal") -> tuple[list[str], str]:
     """
     Determina la ruta de carpetas y el nombre de archivo final para subir a Drive.
     Sigue la estructura del PDF de especificaciones:
@@ -777,18 +789,13 @@ def _get_drive_path_and_name(doc: dict, empresa_nombre: str) -> tuple[list[str],
         m = re.search(r'(20\d{2})', key)
         return m.group(1) if m else str(date.today().year)
 
-    # Helper: extraer nombre del representante desde cualquier archivo del representante
-    def _extract_rep_name(nombre_arch):
-        m = re.search(r'^(?:1\.\s*INE|2\.\s*CSF|3\.\s*CD|4\.\s*ACTA NACIMIENTO|5\.\s*ACTA MATRIMONIO|BC(?: SCORE)?)\s*-\s*([^-]+?)(?:\s*-|\.\w+$)', nombre_arch, re.IGNORECASE)
-        return m.group(1).strip() if m else "Representante Legal"
-
     # ─────────────────────────────────────────────────────────────────────
     # REPRESENTANTES LEGALES
     # ─────────────────────────────────────────────────────────────────────
     if tipo in ("ine_representante", "csf_representante", "comprobante_domicilio_representante",
                 "acta_matrimonio", "buro_representante", "buro_score_representante"):
 
-        rep_name = _extract_rep_name(nombre_arch)
+        rep_name = global_rep_name
 
         if tipo == "ine_representante":
             path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "1. INE"]
@@ -882,6 +889,16 @@ def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, root_id: 
     success_count = 0
     error_count = 0
 
+    # Extraer el nombre global del representante basado en su documento INE
+    global_rep_name = "Representante Legal"
+    import re
+    for doc in docs2.data or []:
+        if doc.get("tipo_documento") == "ine_representante":
+            m = re.search(r'INE\s*-\s*([^-]+?)(?:\s*-|\.\w+$)', doc.get("nombre_archivo", ""), re.IGNORECASE)
+            if m:
+                global_rep_name = m.group(1).strip()
+            break
+
     for doc in all_docs:
         if not doc.get("storage_path") or doc.get("estado") in ["FALTANTE", "RECHAZADO"]:
             continue
@@ -889,7 +906,7 @@ def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, root_id: 
         try:
             file_bytes = sb.storage.from_("expedientes_clientes").download(doc["storage_path"])
 
-            path_parts, drive_filename = _get_drive_path_and_name(doc, empresa_nombre)
+            path_parts, drive_filename = _get_drive_path_and_name(doc, empresa_nombre, global_rep_name)
 
             folder_id = get_or_create_path(service, root_id, path_parts, cache=path_cache)
 
