@@ -43,6 +43,10 @@ function App() {
   const [batchOutput, setBatchOutput] = useState(null)
   const [preview, setPreview] = useState(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importingEmpresaId, setImportingEmpresaId] = useState(null)
+  const [empresasList, setEmpresasList] = useState([])
+  const [loadingEmpresas, setLoadingEmpresas] = useState(false)
   const fileInputRef = useRef(null)
 
   // ─── AutoCAF States ───
@@ -516,7 +520,18 @@ function App() {
         {activeSection === 'teaser' && (
           <main className="max-w-6xl w-full mx-auto px-6 py-8 space-y-6 flex-1">
             {/* Drop Zone */}
-            <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider"> Subir Los documentos de estados financieros- Esto es una beta puede contener errores faor de revisar la veracidad de la informacion.</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider"> Subir Los documentos de estados financieros- Esto es una beta puede contener errores faor de revisar la veracidad de la informacion.</h2>
+              {documents.length === 0 && (
+                <button onClick={() => {
+                  setShowImportModal(true)
+                  setLoadingEmpresas(true)
+                  api.getEmpresas().then(res => setEmpresasList(res.empresas || [])).catch(err => showToast(err.message, true)).finally(() => setLoadingEmpresas(false))
+                }} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 font-bold bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 shadow-glow">
+                  <Database className="w-4 h-4" /> Importar de Expedientes
+                </button>
+              )}
+            </div>
             <div
               className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-300
                 ${isDragging ? 'border-primary-500 bg-primary-500/5 shadow-glow scale-[1.01]' : 'border-border hover:border-primary-500/40 bg-surface/40'}`}
@@ -547,9 +562,18 @@ function App() {
               <>
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider">Documentos ({documents.length})</h2>
-                  <button onClick={handleClearAll} className="text-xs text-text-muted hover:text-rose-400 transition-colors flex items-center gap-1">
-                    <Trash2 className="w-3.5 h-3.5" /> Limpiar todos
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => {
+                      setShowImportModal(true)
+                      setLoadingEmpresas(true)
+                      api.getEmpresas().then(res => setEmpresasList(res.empresas || [])).catch(err => showToast(err.message, true)).finally(() => setLoadingEmpresas(false))
+                    }} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 font-bold bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
+                      <Database className="w-3.5 h-3.5" /> Importar de Expedientes
+                    </button>
+                    <button onClick={handleClearAll} className="text-xs text-text-muted hover:text-rose-400 transition-colors flex items-center gap-1">
+                      <Trash2 className="w-3.5 h-3.5" /> Limpiar todos
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -760,6 +784,72 @@ function App() {
 
 
       </div>
+
+      {/* ── Import Modal ── */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[900]">
+          <div className="bg-surface border border-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-4 border-b border-border bg-[#15151a]">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-lg font-bold">Importar Expediente</h3>
+              </div>
+              <button onClick={() => setShowImportModal(false)} className="p-1 hover:bg-white/5 rounded-lg text-text-muted transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto custom-scrollbar">
+              {loadingEmpresas ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mb-3" />
+                  <p className="text-sm text-text-muted">Cargando empresas...</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {empresasList.map(emp => (
+                    <button
+                      key={emp.id}
+                      onClick={async () => {
+                        try {
+                          setImportingEmpresaId(emp.id)
+                          await api.exportToTeaser(emp.id)
+                          showToast('Documentos importados correctamente')
+                          setShowImportModal(false)
+                          // Reload documents in Teaser
+                          axios.get(`${API_BASE}/api/documents`).then(r => setDocuments(r.data.documents || []))
+                        } catch (err) {
+                          showToast(err.message, true)
+                        } finally {
+                          setImportingEmpresaId(null)
+                        }
+                      }}
+                      disabled={importingEmpresaId}
+                      className={`w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all group
+                        ${importingEmpresaId === emp.id ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-[#15151a] border-border hover:border-indigo-500/30 hover:bg-indigo-500/5'}`}
+                    >
+                      <div>
+                        <p className="font-semibold text-sm text-text-main group-hover:text-indigo-300 transition-colors">{emp.nombre}</p>
+                        <p className="text-xs text-text-muted mt-0.5">{emp.rfc || 'Sin RFC'} · {emp.documentos_count || 0} docs</p>
+                      </div>
+                      {importingEmpresaId === emp.id ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                      ) : (
+                        <Download className="w-4 h-4 text-text-muted group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" />
+                      )}
+                    </button>
+                  ))}
+                  {empresasList.length === 0 && (
+                    <div className="text-center py-6 text-text-muted text-sm">
+                      No se encontraron empresas con documentos pendientes/aprobados.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Toast ── */}
       <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-xl border shadow-2xl transition-all duration-300 z-[60] flex items-center gap-2 backdrop-blur-md

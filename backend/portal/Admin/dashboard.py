@@ -16,7 +16,7 @@ from typing import List
 from pydantic import BaseModel
 
 import concurrent.futures
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse
 
 from portal.shared.supabase_db import get_supabase_admin
@@ -579,7 +579,7 @@ async def descargar_documento_individual(empresa_id: str, doc_id: str, is_rep: b
 
 
 @router.get("/empresas/{empresa_id}/buro-mops")
-async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
+async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito", refresh: bool = False):
     """
     Descarga el PDF de Buró de Crédito de la empresa (o representante) y extrae el análisis de MOPs
     (Manera de Pago / Histórico de Pagos).
@@ -621,7 +621,15 @@ async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
         raise HTTPException(status_code=400, detail="El Buró de Crédito aún no tiene un archivo subido")
 
     # Extraer MOPs (de base de datos o procesar y guardar)
-    if doc.get("extracted_data"):
+    # Solo usar caché si: tenemos datos, no es refresh, y cuentas NO está vacío
+    cached = doc.get("extracted_data")
+    has_valid_cache = (
+        cached
+        and "cuentas" in cached
+        and len(cached.get("cuentas", [])) > 0
+        and not refresh
+    )
+    if has_valid_cache:
         resultado = doc["extracted_data"]
     else:
         resultado = extraer_mops_desde_storage(storage_path, sb)
@@ -641,7 +649,7 @@ async def get_buro_mops(empresa_id: str, tipo_buro: str = "buro_credito"):
 from app.Buro_Credito.score_extractor import extraer_score_desde_storage
 
 @router.get("/empresas/{empresa_id}/buro-score")
-async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_representante"):
+async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_representante", refresh: bool = False):
     """
     Descarga el PDF de Buró de Crédito Mi Score y extrae el puntaje.
     """
@@ -671,7 +679,7 @@ async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_represent
     if not storage_path:
         raise HTTPException(status_code=400, detail="El Mi Score aún no tiene archivo")
 
-    if doc.get("extracted_data"):
+    if doc.get("extracted_data") and not refresh:
         resultado = doc["extracted_data"]
     else:
         resultado = extraer_score_desde_storage(storage_path, sb)
@@ -684,4 +692,151 @@ async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_represent
     resultado["documento_id"] = doc.get("id")
     
     return resultado
+
+from app.config import UPLOAD_DIR
+from app.pdf_extractor import extract_text
+from app.bank_detector import detect_bank
+import uuid
+import os
+from datetime import datetime
+
+@router.post("/empresas/{empresa_id}/export-to-teaser")
+async def export_to_teaser(empresa_id: str):
+    """
+    Descarga los estados de cuenta de la empresa desde Supabase
+    y los carga directamente en la memoria local de AutoTeaser.
+    """
+    sb = get_supabase_admin()
+    
+    # 1. Obtener documentos de expedientes para la empresa que sean estados de cuenta válidos
+    docs_resp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).in_("estado", ["PENDIENTE", "APROBADO"]).execute()
+    if not docs_resp.data:
+        raise HTTPException(status_code=404, detail="No hay documentos para exportar")
+        
+    bank_docs = [d for d in docs_resp.data if d.get("cuenta_bancaria_id")]
+    if not bank_docs:
+        raise HTTPException(status_code=404, detail="No hay estados de cuenta para exportar")
+
+    # 2. Limpiar documentos actuales de AutoTeaser para no mezclarlos
+    import app.main
+    app.main.documents.clear()
+    
+    count = 0
+    # 3. Descargar y procesar cada documento
+    for doc in bank_docs:
+        storage_path = doc.get("storage_path")
+        if not storage_path: continue
+        
+        try:
+            file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+            doc_id = str(uuid.uuid4())[:8]
+            safe_name = f"{doc_id}_{doc['nombre_archivo']}"
+            file_path = UPLOAD_DIR / safe_name
+            
+            with open(file_path, "wb") as f:
+                f.write(file_bytes)
+                
+            extraction = extract_text(file_path)
+            detected_bank = detect_bank(pdf_path=file_path, text=extraction["full_text"]) or doc.get("nombre_carpeta")
+            
+            app.main.documents[doc_id] = {
+                "id": doc_id,
+                "file_name": doc["nombre_archivo"],
+                "file_path": str(file_path),
+                "uploaded_at": datetime.now().isoformat(),
+                "extraction": extraction,
+                "detected_bank": detected_bank,
+                "status": "uploaded",
+                "parsed_data": None,
+                "output_file": None,
+            }
+            count += 1
+        except Exception as e:
+            print(f"Error procesando {doc['nombre_archivo']} para exportación: {e}")
+            continue
+            
+    return {"success": True, "count": count}
+
+def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, estructura: dict, service):
+    sb = get_supabase_admin()
+    docs1 = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
+    docs2 = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
+    all_docs = (docs1.data or []) + (docs2.data or [])
+    
+    from app.drive_service import upload_file_to_drive
+    
+    for doc in all_docs:
+        if not doc.get("storage_path") or doc.get("estado") in ["FALTANTE", "RECHAZADO"]:
+            continue
+            
+        try:
+            res = sb.storage.from_("expedientes_clientes").download(doc["storage_path"])
+            
+            tipo_documento = doc["tipo_documento"]
+            if "representante" in tipo_documento:
+                folder_key = "representante"
+            elif tipo_documento.startswith("ec_") or "estado_cuenta" in tipo_documento:
+                folder_key = "estados_cuenta"
+            elif "buro" in tipo_documento:
+                folder_key = "buro_credito"
+            elif "declaracion" in tipo_documento or "csf" in tipo_documento or "opinion" in tipo_documento:
+                folder_key = "declaraciones"
+            elif "acta" in tipo_documento or "poder" in tipo_documento:
+                folder_key = "legal"
+            elif "eeff" in tipo_documento or "estados_financieros" in tipo_documento:
+                folder_key = "financieros"
+            else:
+                folder_key = "vigentes"
+                
+            folder_id = estructura[folder_key]
+            
+            content_type = "application/pdf"
+            if doc["nombre_archivo"].endswith(".xml"): content_type = "application/xml"
+            if doc["nombre_archivo"].endswith(".zip"): content_type = "application/zip"
+            
+            upload_file_to_drive(service, res, doc["nombre_archivo"], content_type, folder_id)
+        except Exception as e:
+            logger.error(f"Error syncing doc {doc.get('nombre_archivo')} to Drive: {e}")
+
+@router.post("/empresas/{empresa_id}/drive/init")
+async def init_drive(empresa_id: str):
+    from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure
+    sb = get_supabase_admin()
+    empresa_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    empresa_nombre = empresa_resp.data["nombre"]
+    try:
+        service = get_drive_service()
+        parent_id = get_shared_parent_folder(service)
+        estructura = create_empresa_structure(service, empresa_nombre, parent_id)
+        
+        root_folder_id = estructura["root"]["id"]
+        return {"success": True, "message": "Carpeta generada correctamente.", "link": f"https://drive.google.com/drive/folders/{root_folder_id}"}
+    except Exception as e:
+        logger.error(f"Error init Drive: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/empresas/{empresa_id}/drive/sync")
+async def sync_drive(empresa_id: str, background_tasks: BackgroundTasks):
+    from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure
+    sb = get_supabase_admin()
+    empresa_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
+    if not empresa_resp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    empresa_nombre = empresa_resp.data["nombre"]
+    try:
+        service = get_drive_service()
+        parent_id = get_shared_parent_folder(service)
+        estructura = create_empresa_structure(service, empresa_nombre, parent_id)
+        
+        background_tasks.add_task(background_sync_all_to_drive, empresa_id, empresa_nombre, estructura, service)
+        
+        root_folder_id = estructura["root"]["id"]
+        return {"success": True, "message": "Sincronización iniciada en segundo plano. La carpeta puede tardar unos minutos en reflejar los archivos.", "link": f"https://drive.google.com/drive/folders/{root_folder_id}"}
+    except Exception as e:
+        logger.error(f"Error sync Drive: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 

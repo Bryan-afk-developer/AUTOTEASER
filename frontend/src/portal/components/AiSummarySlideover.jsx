@@ -3,16 +3,25 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 
-export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl, fetchPdfUrl }) {
-  const [dynamicPdfUrl, setDynamicPdfUrl] = useState(null)
+export default function AiSummarySlideover({ isOpen, onClose, docsWithSummary = [], empresaId, fetchPdfUrl }) {
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [dynamicPdfUrl, setDynamicPdfUrl] = useState({})
   const [loadingPdf, setLoadingPdf] = useState(false)
 
+  const activeDoc = docsWithSummary[selectedIndex]
+  const aiSummary = activeDoc?.ai_summary
+
   useEffect(() => {
-    if (isOpen && fetchPdfUrl && !pdfUrl && !dynamicPdfUrl) {
+    if (isOpen && fetchPdfUrl && activeDoc) {
+      const docId = activeDoc.id || activeDoc.documento_id;
+      if (dynamicPdfUrl[docId]) return;
+
       let cancelled = false;
       setLoadingPdf(true);
-      fetchPdfUrl().then(res => {
-        if (!cancelled && res?.url) setDynamicPdfUrl(res.url)
+      fetchPdfUrl(docId).then(res => {
+        if (!cancelled && res?.url) {
+          setDynamicPdfUrl(prev => ({ ...prev, [docId]: res.url }))
+        }
       }).catch(err => {
         console.error("Error fetching PDF for summary:", err);
       }).finally(() => {
@@ -20,11 +29,11 @@ export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl,
       });
       return () => { cancelled = true; }
     }
-  }, [isOpen, fetchPdfUrl, pdfUrl, dynamicPdfUrl])
+  }, [isOpen, fetchPdfUrl, activeDoc, dynamicPdfUrl])
 
-  if (!aiSummary) return null;
+  if (!docsWithSummary || docsWithSummary.length === 0 || !aiSummary) return null;
 
-  const finalPdfUrl = pdfUrl || dynamicPdfUrl;
+  const finalPdfUrl = dynamicPdfUrl[activeDoc.id || activeDoc.documento_id];
   const isSplitView = !!finalPdfUrl || loadingPdf;
 
   return createPortal(
@@ -78,13 +87,33 @@ export default function AiSummarySlideover({ isOpen, onClose, aiSummary, pdfUrl,
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(99,102,241,0.1)] relative z-10">
                   <Sparkles className="w-5 h-5 text-indigo-400" />
                 </div>
-                <div className="relative z-10">
+                <div className="relative z-10 w-full pr-4">
                   <h2 className="text-lg font-bold text-white leading-tight">
                     Resumen de IA
                   </h2>
-                  <p className="text-xs text-indigo-300">Acta Principal Extraída</p>
+                  <p className="text-xs text-indigo-300">Actas Extraídas ({docsWithSummary.length})</p>
                 </div>
               </div>
+              
+              {docsWithSummary.length > 1 && (
+                <div className="px-6 pt-4">
+                  <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                    {docsWithSummary.map((doc, idx) => (
+                      <button
+                        key={doc.id || doc.documento_id}
+                        onClick={() => setSelectedIndex(idx)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors border ${
+                          idx === selectedIndex 
+                            ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50' 
+                            : 'bg-surface border-border text-text-muted hover:bg-surface/80 hover:text-white'
+                        }`}
+                      >
+                        {doc.nombre_archivo?.replace('.pdf', '') || `Acta ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               <div className="flex-1 p-6 space-y-6 relative">
                 <div className="absolute top-1/4 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>

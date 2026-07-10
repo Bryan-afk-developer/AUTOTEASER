@@ -133,9 +133,12 @@ export const api = {
 
   getEmpresaDocumentos: (empresaId) => request('GET', `/api/portal/admin/empresas/${empresaId}/documentos`),
 
-  getBuroMops: (empresaId, tipo = 'buro_credito') => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-mops?tipo_buro=${tipo}`),
+  getBuroMops: (empresaId, tipo = 'buro_credito', refresh = false) => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-mops?tipo_buro=${tipo}&refresh=${refresh}`),
   
-  getBuroScore: (empresaId, tipo = 'buro_score_representante') => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-score?tipo_buro=${tipo}`),
+  getBuroScore: (empresaId, tipo = 'buro_score_representante', refresh = false) => request('GET', `/api/portal/admin/empresas/${empresaId}/buro-score?tipo_buro=${tipo}&refresh=${refresh}`),
+
+  exportToTeaser: (empresaId) => request('POST', `/api/portal/admin/empresas/${empresaId}/export-to-teaser`),
+  exportToCaf: (empresaId) => request('POST', `/api/caf/empresas/${empresaId}/export`),
 
   // Admin - Revisión
   getDocumentoDetalle: (docId) =>

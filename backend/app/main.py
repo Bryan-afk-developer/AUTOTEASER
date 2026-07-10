@@ -83,6 +83,7 @@ app.include_router(portal_upload.router,       prefix="/api/portal/cliente", tag
 app.include_router(portal_expedientes.router,  prefix="/api/portal/cliente", tags=["Portal Cliente"])
 app.include_router(portal_dashboard.router,    prefix="/api/portal/admin",   tags=["Portal Admin"])
 app.include_router(portal_revision.router,     prefix="/api/portal/admin",   tags=["Portal Admin"])
+app.include_router(caf_router)
 
 # In-memory store
 documents = {}

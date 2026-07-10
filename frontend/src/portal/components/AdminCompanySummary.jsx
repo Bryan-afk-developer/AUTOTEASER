@@ -250,6 +250,19 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
     }
   }
 
+  // --- RFC Extraction and Comparison ---
+  const buroEmpresaDoc = documentos?.find(d => d.tipo_documento === 'buro_credito')
+  const rfcCsfEmpresa = csfEmpresaDoc?.extracted_data?.rfc
+  const rfcBuroEmpresa = buroEmpresaDoc?.extracted_data?.rfc
+  const hasRfcMatchEmpresa = rfcCsfEmpresa && rfcBuroEmpresa && rfcCsfEmpresa === rfcBuroEmpresa
+  const hasRfcMismatchEmpresa = rfcCsfEmpresa && rfcBuroEmpresa && rfcCsfEmpresa !== rfcBuroEmpresa
+
+  const buroRepDoc = documentos?.find(d => d.tipo_documento === 'buro_representante')
+  const rfcCsfRep = csfRepDoc?.extracted_data?.rfc
+  const rfcBuroRep = buroRepDoc?.extracted_data?.rfc
+  const hasRfcMatchRep = rfcCsfRep && rfcBuroRep && rfcCsfRep === rfcBuroRep
+  const hasRfcMismatchRep = rfcCsfRep && rfcBuroRep && rfcCsfRep !== rfcBuroRep
+
   const isUploaded = (clave) => {
     const doc = documentos?.find(d => d.tipo_documento === clave)
     return doc && doc.estado !== 'FALTANTE'
@@ -395,6 +408,39 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
                 {csfEmpresaName}
               </p>
             </div>
+
+            {/* Verificación RFC */}
+            {(rfcCsfEmpresa || rfcBuroEmpresa) && (
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Verificación RFC</span>
+                  </div>
+                </div>
+                {hasRfcMatchEmpresa ? (
+                  <div className="mt-1 p-2.5 rounded-lg text-xs border bg-emerald-500/10 border-emerald-500/30 text-emerald-400">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> RFC Coincide ({rfcCsfEmpresa})
+                    </div>
+                  </div>
+                ) : hasRfcMismatchEmpresa ? (
+                  <div className="mt-1 p-2.5 rounded-lg text-xs border bg-rose-500/10 border-rose-500/30 text-rose-400">
+                    <div className="font-bold mb-1 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Discrepancia de RFC
+                    </div>
+                    <p className="opacity-90">CSF: {rfcCsfEmpresa || 'N/A'} | Buró: {rfcBuroEmpresa || 'N/A'}</p>
+                  </div>
+                ) : (
+                  <div className="mt-1 p-2.5 rounded-lg text-xs border bg-slate-500/10 border-slate-500/30 text-slate-400">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5" /> Esperando documentos para comparar RFC
+                    </div>
+                    <p className="opacity-90 mt-1">CSF: {rfcCsfEmpresa || 'N/A'} | Buró: {rfcBuroEmpresa || 'N/A'}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Verificación Gemini */}
             {(hasCDEmpresa && hasCSFEmpresa) && (
@@ -576,6 +622,39 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
             </p>
           </div>
 
+          {/* Verificación RFC */}
+          {(rfcCsfRep || rfcBuroRep) && (
+            <div className="pt-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5 text-text-muted" />
+                  <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Verificación RFC (Representante)</span>
+                </div>
+              </div>
+              {hasRfcMatchRep ? (
+                <div className="mt-1 p-2.5 rounded-lg text-xs border bg-emerald-500/10 border-emerald-500/30 text-emerald-400">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> RFC Coincide ({rfcCsfRep})
+                  </div>
+                </div>
+              ) : hasRfcMismatchRep ? (
+                <div className="mt-1 p-2.5 rounded-lg text-xs border bg-rose-500/10 border-rose-500/30 text-rose-400">
+                  <div className="font-bold mb-1 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Discrepancia de RFC
+                  </div>
+                  <p className="opacity-90">CSF: {rfcCsfRep || 'N/A'} | Buró: {rfcBuroRep || 'N/A'}</p>
+                </div>
+              ) : (
+                <div className="mt-1 p-2.5 rounded-lg text-xs border bg-slate-500/10 border-slate-500/30 text-slate-400">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5" /> Esperando documentos para comparar RFC
+                  </div>
+                  <p className="opacity-90 mt-1">CSF: {rfcCsfRep || 'N/A'} | Buró: {rfcBuroRep || 'N/A'}</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Verificación Gemini (Rep) */}
           {(hasCDRep && hasCSF) && (
             <div className="pt-2">
@@ -637,8 +716,8 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
 
       {/* Resumen de Acta Principal (IA) */}
       {(() => {
-        const docWithSummary = documentos?.find(d => d.ai_summary);
-        if (!docWithSummary) return null;
+        const docsWithSummary = documentos?.filter(d => d.ai_summary) || [];
+        if (docsWithSummary.length === 0) return null;
         return (
           <>
             <div className="bg-surface border border-indigo-500/30 rounded-xl p-5 w-[320px] shadow-[0_0_20px_rgba(99,102,241,0.15)] flex flex-col gap-3 relative overflow-hidden">
@@ -655,7 +734,7 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
                 onClick={() => setIsAiSummaryOpen(true)}
                 className="mt-2 w-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-between shadow-glow relative z-10"
               >
-                <span className="flex items-center gap-2">Ver Resumen Completo</span>
+                <span className="flex items-center gap-2">Ver Resumen Completo ({docsWithSummary.length})</span>
                 <ChevronRight className="w-4 h-4 opacity-70" />
               </button>
             </div>
@@ -663,8 +742,9 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
             <AiSummarySlideover 
               isOpen={isAiSummaryOpen} 
               onClose={() => setIsAiSummaryOpen(false)} 
-              aiSummary={docWithSummary.ai_summary} 
-              fetchPdfUrl={() => api.descargarDocumentoIndividual(empresa.id, docWithSummary.id || docWithSummary.documento_id, false, true)}
+              docsWithSummary={docsWithSummary} 
+              empresaId={empresa.id}
+              fetchPdfUrl={(docId) => api.descargarDocumentoIndividual(empresa.id, docId, false, true)}
             />
           </>
         )

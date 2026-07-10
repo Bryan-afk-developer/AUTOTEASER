@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form, BackgroundTasks
 from pydantic import BaseModel
 from typing import List
 
@@ -25,7 +25,7 @@ from portal.shared.supabase_db import get_supabase_admin
 from portal.Cliente.expedientes import DOCUMENTOS_REPRESENTANTE, calcular_estados_de_cuenta
 from app.INE.extractor import extract_name_from_ine
 from app.Comprobante_Domicilio.extractor import extract_location_from_cd
-from app.SAT.CSF_Location_Extractor import extract_csf_location
+
 
 # Bank detection imports
 try:
@@ -51,11 +51,40 @@ BUCKET_NAME = "expedientes_clientes"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
 
+def background_upload_to_drive(empresa_nombre: str, content: bytes, safe_filename: str, content_type: str, tipo_documento: str):
+    try:
+        from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure, upload_file_to_drive
+        service = get_drive_service()
+        parent_id = get_shared_parent_folder(service)
+        estructura = create_empresa_structure(service, empresa_nombre, parent_id)
+        
+        # Determinar la carpeta correcta
+        if "representante" in tipo_documento:
+            folder_key = "representante"
+        elif tipo_documento.startswith("ec_") or "estado_cuenta" in tipo_documento:
+            folder_key = "estados_cuenta"
+        elif "buro" in tipo_documento:
+            folder_key = "buro_credito"
+        elif "declaracion" in tipo_documento or "csf" in tipo_documento or "opinion" in tipo_documento:
+            folder_key = "declaraciones"
+        elif "acta" in tipo_documento or "poder" in tipo_documento:
+            folder_key = "legal"
+        elif "eeff" in tipo_documento or "estados_financieros" in tipo_documento:
+            folder_key = "financieros"
+        else:
+            folder_key = "vigentes"
+            
+        folder_id = estructura[folder_key]
+        upload_file_to_drive(service, content, safe_filename, content_type, folder_id)
+    except Exception as e:
+        logger.error(f"Error subiendo a Google Drive: {e}")
+
 @router.post("/subir-documento")
 async def subir_documento(
     tipo_documento: str = Form(...),
     file: UploadFile = File(...),
     authorization: str = Header(None),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Sube un PDF al bucket de Supabase Storage y registra el documento en la BD.
@@ -81,10 +110,11 @@ async def subir_documento(
         )
 
     # 3. Obtener empresa del usuario
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada para este usuario")
     empresa_id = empresa_resp.data["id"]
+    empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
 
     # 4. Determinar si es de banco y su path
     nombre_carpeta = None
@@ -135,15 +165,26 @@ async def subir_documento(
             
     elif tipo_documento in ["csf_empresa", "csf_representante"]:
         try:
-            extracted_loc = extract_csf_location(file_bytes=content, filename=file.filename)
+            from app.SAT.CSF_Location_Extractor import extract_csf_info
+            csf_info = extract_csf_info(file_bytes=content, filename=file.filename)
+            extracted_loc = csf_info.get("location")
             if extracted_loc and extracted_loc != "Ubicacion no detectada":
                 ext = ""
                 if "." in file.filename:
                     ext = "." + file.filename.split(".")[-1]
                 prefix = "3. CSF - " if "representante" in tipo_documento else "1. CSF - "
                 original_filename = f"{prefix}{extracted_loc}{ext}"
+                
+            # Extract RFC
+            if csf_info.get("rfc"):
+                if "extracted_data" not in locals():
+                    # Just initialized empty in case other things need it, wait, doc_data is defined later.
+                    # We will store it in a variable to inject into doc_data later.
+                    pass
+                # We'll save it into a local variable and add it to doc_data later
+                extracted_csf_rfc = csf_info.get("rfc")
         except Exception as e:
-            logger.error(f"Error extrayendo ubicacion de CSF durante subida: {e}")
+            logger.error(f"Error extrayendo información de CSF durante subida: {e}")
 
     safe_filename = sanitize_filename(original_filename)
     file_id = str(uuid.uuid4())[:8]
@@ -164,6 +205,12 @@ async def subir_documento(
     except Exception as e:
         logger.error(f"Error subiendo a Supabase Storage: {e}")
         raise HTTPException(status_code=500, detail=f"Error al subir archivo: {str(e)}")
+
+    if background_tasks:
+        background_tasks.add_task(
+            background_upload_to_drive,
+            empresa_nombre, content, safe_filename, file.content_type or "application/octet-stream", tipo_documento
+        )
 
     # 6. Obtener URL del documento (URL firmada de 7 días para acceso del admin)
     try:
@@ -216,6 +263,11 @@ async def subir_documento(
                         requires_justification = True
         except Exception as e:
             logger.warning(f"No se pudo leer Opinión de Cumplimiento: {e}")
+
+    # --- Extracción de RFC para Constancia de Situación Fiscal ---
+    if "extracted_csf_rfc" in locals() and extracted_csf_rfc:
+        doc_data["extracted_data"] = {"rfc": extracted_csf_rfc}
+        logger.info(f"RFC guardado exitosamente: {extracted_csf_rfc}")
 
     # --- Extracción de Buro de Crédito (MOPs y Score) ---
     if "buro_credito" in tipo_documento or "buro_representante" in tipo_documento:
@@ -348,6 +400,7 @@ async def subir_documentos_banco(
     cuenta_bancaria_id: str = Form(...),
     files: List[UploadFile] = File(...),
     authorization: str = Header(None),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Sube múltiples PDFs a la vez para una cuenta bancaria.
@@ -357,10 +410,11 @@ async def subir_documentos_banco(
     sb = get_supabase_admin()
 
     # 1. Validar empresa
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
+    empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
 
     # 2. Validar banco
     banco_resp = sb.table("cuentas_bancarias").select("*").eq("id", cuenta_bancaria_id).eq("empresa_id", empresa_id).single().execute()
@@ -407,6 +461,11 @@ async def subir_documentos_banco(
                 file=content,
                 file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "true"},
             )
+            if background_tasks:
+                background_tasks.add_task(
+                    background_upload_to_drive,
+                    empresa_nombre, content, file.filename, file.content_type or "application/octet-stream", tipo_documento
+                )
         except Exception as e:
             logger.error(f"Error subiendo a Storage: {e}")
             continue
@@ -491,6 +550,7 @@ def _get_next_slot(sb, cuenta_bancaria_id: str, banco: dict) -> str | None:
 async def subir_estados_cuenta_auto(
     files: List[UploadFile] = File(...),
     authorization: str = Header(None),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Recibe múltiples PDFs, detecta el banco automáticamente usando bank_detector
@@ -502,10 +562,11 @@ async def subir_estados_cuenta_auto(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
+    empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
 
     ahora = datetime.now(timezone.utc).isoformat()
     resultados = []
@@ -611,6 +672,11 @@ async def subir_estados_cuenta_auto(
                 file=content,
                 file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "true"},
             )
+            if background_tasks:
+                background_tasks.add_task(
+                    background_upload_to_drive,
+                    empresa_nombre, content, nuevo_nombre_archivo, file.content_type or "application/octet-stream", next_slot
+                )
         except Exception as e:
             logger.error(f"Error uploading {file.filename}: {e}")
             err_msg = str(e)
@@ -746,6 +812,7 @@ def sanitize_filename(filename: str) -> str:
 async def subir_declaraciones_auto(
     files: List[UploadFile] = File(...),
     authorization: str = Header(None),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Recibe múltiples PDFs del SAT, detecta automáticamente si es Acuse o Declaración
@@ -757,10 +824,11 @@ async def subir_declaraciones_auto(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
+    empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
 
     ahora = datetime.now(timezone.utc).isoformat()
     detectados = []
@@ -832,8 +900,13 @@ async def subir_declaraciones_auto(
             sb.storage.from_(BUCKET_NAME).upload(
                 path=storage_path,
                 file=content,
-                file_options={"content-type": file.content_type or "application/pdf", "upsert": "true"},
+                file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "true"},
             )
+            if background_tasks:
+                background_tasks.add_task(
+                    background_upload_to_drive,
+                    empresa_nombre, content, nuevo_nombre, file.content_type or "application/octet-stream", tipo_clave
+                )
         except Exception as e:
             logger.error(f"Error uploading SAT file {file.filename}: {e}")
             no_detectados.append({"nombre": file.filename, "razon": "Error al guardar en la nube"})
@@ -882,6 +955,7 @@ async def subir_declaracion_manual(
     year: str = Form(...),      # "2025", "2024", "2023"
     file: UploadFile = File(...),
     authorization: str = Header(None),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Sube un PDF del SAT asignando manualmente su tipo (acuse/declaracion) y año.
@@ -890,10 +964,11 @@ async def subir_declaracion_manual(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
+    empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
 
     if tipo not in ("acuse", "declaracion"):
         raise HTTPException(status_code=400, detail="tipo debe ser 'acuse' o 'declaracion'")
@@ -915,6 +990,11 @@ async def subir_declaracion_manual(
             file=content,
             file_options={"content-type": file.content_type or "application/pdf", "upsert": "true"},
         )
+        if background_tasks:
+            background_tasks.add_task(
+                background_upload_to_drive,
+                empresa_nombre, content, nuevo_nombre, file.content_type or "application/pdf", tipo_clave
+            )
     except Exception as e:
         logger.error(f"Error uploading SAT manual file: {e}")
         raise HTTPException(status_code=500, detail="Error al guardar en la nube")

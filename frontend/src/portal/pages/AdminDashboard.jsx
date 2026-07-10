@@ -7,7 +7,7 @@ import { formatMopText } from '../lib/utils'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
   XCircle, Clock, Eye, Download, RefreshCw, ChevronDown, ChevronUp,
-  BarChart2, AlertTriangle, X, ChevronRight,
+  BarChart2, AlertTriangle, X, ChevronRight, Sparkles,
 } from 'lucide-react'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -190,9 +190,32 @@ function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
   const [data, setData] = useState(mopsCache[cacheKey] || null)
   const [loading, setLoading] = useState(!mopsCache[cacheKey])
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState('mops')
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    if (!empresaId) return
+    setRefreshing(true)
+    setError('')
+    try {
+      // Limpiar caché antes de re-extraer para que los datos nuevos se muestren
+      delete mopsCache[cacheKey]
+      const res = await api.getBuroMops(empresaId, tipoBuro, true)
+      mopsCache[cacheKey] = res
+      setData(res)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    if (!isOpen || !empresaId) return
+    if (!isOpen) {
+      setActiveTab('mops')
+      return
+    }
+    if (!empresaId) return
     if (mopsCache[cacheKey]) {
       setData(mopsCache[cacheKey])
       setLoading(false)
@@ -245,15 +268,60 @@ function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
             </motion.button>
 
             {/* Header */}
-            <div className="flex items-center gap-3 px-6 py-5 border-b border-border bg-surface flex-shrink-0">
-              <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(139,92,246,0.1)]">
-                <BarChart2 className="w-5 h-5 text-violet-400" />
+            <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-surface flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(139,92,246,0.1)]">
+                  <BarChart2 className="w-5 h-5 text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-text-main leading-tight">Análisis de MOPs</h2>
+                  <p className="text-xs text-text-muted">Buró de Crédito — Histórico de Pagos</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-text-main leading-tight">Análisis de MOPs</h2>
-                <p className="text-xs text-text-muted">Buró de Crédito — Histórico de Pagos</p>
-              </div>
+              
+              {data && !loading && (
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                  title="Volver a analizar el archivo PDF en busca de MOPs/Cuentas"
+                >
+                  {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  {refreshing ? 'Actualizando...' : 'Actualizar'}
+                </button>
+              )}
             </div>
+
+            {/* Tabs */}
+            {data && !loading && (
+              <div className="flex border-b border-border bg-[#111113] px-6 flex-shrink-0">
+                <button
+                  className={`py-3 px-4 font-semibold text-sm border-b-2 transition-all ${
+                    activeTab === 'mops'
+                      ? 'border-violet-500 text-violet-400 font-bold'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                  onClick={() => setActiveTab('mops')}
+                >
+                  Historial de MOPs
+                </button>
+                <button
+                  className={`py-3 px-4 font-semibold text-sm border-b-2 transition-all relative ${
+                    activeTab === 'cuentas'
+                      ? 'border-violet-500 text-violet-400 font-bold'
+                      : 'border-transparent text-text-muted hover:text-text-main'
+                  }`}
+                  onClick={() => setActiveTab('cuentas')}
+                >
+                  Detalle de Créditos
+                  {data.cuentas?.length > 0 && (
+                    <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-violet-500/20 text-violet-400">
+                      {data.cuentas.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 relative">
@@ -280,9 +348,9 @@ function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
                   </motion.div>
                 )}
 
-                {data && !loading && (
+                {data && !loading && activeTab === 'mops' && (
                   <motion.div 
-                    key="content"
+                    key="mops-content"
                     initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ staggerChildren: 0.1 }}
                     className="space-y-6"
@@ -329,100 +397,201 @@ function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
                       </div>
                     </motion.div>
 
-              {/* Tabla principal */}
-              {anios.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Tabla de Histórico de Pagos</h3>
-                  <div className="bg-card border border-border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-surface/70 border-b border-border">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">NIVEL</th>
-                          {anios.map(anio => (
-                            <th key={anio} className="px-4 py-3 text-center text-xs font-bold text-text-muted uppercase tracking-wider">
-                              AÑO {anio}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/50">
-                        {MOP_NIVEL_CONFIG.map(cfg => {
-                          const nivelData = niveles[String(cfg.nivel)] || niveles[cfg.nivel] || {}
-                          const hasAnyData = Object.values(nivelData).some(v => v > 0)
-                          const hasAlert = cfg.alerta && hasAnyData
-                          return (
-                            <tr
-                              key={cfg.nivel}
-                              className={`transition-colors ${hasAlert ? 'bg-red-500/5 hover:bg-red-500/10'
-                                  : cfg.nivel === 2 && hasAnyData ? 'bg-yellow-500/5 hover:bg-yellow-500/10'
-                                    : 'hover:bg-surface/30'
-                                }`}
-                            >
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                                  {cfg.alerta && <AlertTriangle className="w-2.5 h-2.5" />}
-                                  NIVEL {cfg.nivel}
-                                </span>
-                              </td>
-                              {anios.map(anio => {
-                                const count = nivelData[anio] || 0
+                    {/* Tabla principal */}
+                    {anios.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Tabla de Histórico de Pagos</h3>
+                        <div className="bg-card border border-border rounded-xl overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-surface/70 border-b border-border">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">NIVEL</th>
+                                {anios.map(anio => (
+                                  <th key={anio} className="px-4 py-3 text-center text-xs font-bold text-text-muted uppercase tracking-wider">
+                                    AÑO {anio}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/50">
+                              {MOP_NIVEL_CONFIG.map(cfg => {
+                                const nivelData = niveles[String(cfg.nivel)] || niveles[cfg.nivel] || {}
+                                const hasAnyData = Object.values(nivelData).some(v => v > 0)
+                                const hasAlert = cfg.alerta && hasAnyData
                                 return (
-                                  <td key={anio} className="px-4 py-3 text-center">
-                                    <span className={`text-sm font-bold ${count === 0 ? 'text-text-muted/40'
-                                        : hasAlert ? 'text-red-300'
-                                          : cfg.nivel === 2 ? 'text-yellow-300'
-                                            : 'text-emerald-300'
-                                      }`}>
-                                      {count}
-                                    </span>
-                                  </td>
+                                  <tr
+                                    key={cfg.nivel}
+                                    className={`transition-colors ${hasAlert ? 'bg-red-500/5 hover:bg-red-500/10'
+                                        : cfg.nivel === 2 && hasAnyData ? 'bg-yellow-500/5 hover:bg-yellow-500/10'
+                                          : 'hover:bg-surface/30'
+                                      }`}
+                                  >
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                                        {cfg.alerta && <AlertTriangle className="w-2.5 h-2.5" />}
+                                        NIVEL {cfg.nivel}
+                                      </span>
+                                    </td>
+                                    {anios.map(anio => {
+                                      const count = nivelData[anio] || 0
+                                      return (
+                                        <td key={anio} className="px-4 py-3 text-center">
+                                          <span className={`text-sm font-bold ${count === 0 ? 'text-text-muted/40'
+                                              : hasAlert ? 'text-red-300'
+                                                : cfg.nivel === 2 ? 'text-yellow-300'
+                                                  : 'text-emerald-300'
+                                            }`}>
+                                            {count}
+                                          </span>
+                                        </td>
+                                      )
+                                    })}
+                                  </tr>
                                 )
                               })}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Detalle alertas */}
-              {data.mops_alerta?.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Detalle de Alertas</h3>
-                  <div className="space-y-2">
-                    {data.mops_alerta.map((alerta, i) => (
-                      <div key={i} className="flex items-center justify-between px-4 py-3 bg-red-500/5 border border-red-500/20 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <AlertTriangle className="w-4 h-4 text-red-400" />
-                          <span className="text-sm font-semibold text-text-main">
-                            NIVEL {alerta.nivel} — Año {alerta.anio || alerta.año}
-                          </span>
+                            </tbody>
+                          </table>
                         </div>
-                        <span className="text-sm font-bold text-red-300 bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full">
-                          {alerta.conteo} ocurrencia{alerta.conteo !== 1 ? 's' : ''}
-                        </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    )}
 
-              {/* Footer */}
-              <div className="text-xs text-text-muted/60 pt-2 border-t border-border mt-6">
-                📄 {data.nombre_archivo || 'Buró de Crédito'}
-                {data.total_mops_nivel2_plus > 0 && (
-                  <span className="ml-3">· Total MOPs nivel 2+: <strong>{data.total_mops_nivel2_plus}</strong></span>
+                    {/* Detalle alertas */}
+                    {data.mops_alerta?.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Detalle de Alertas</h3>
+                        <div className="space-y-2">
+                          {data.mops_alerta.map((alerta, i) => (
+                            <div key={i} className="flex items-center justify-between px-4 py-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+                              <div className="flex items-center gap-3">
+                                <AlertTriangle className="w-4 h-4 text-red-400" />
+                                <span className="text-sm font-semibold text-text-main">
+                                  NIVEL {alerta.nivel} — Año {alerta.anio || alerta.año}
+                                </span>
+                              </div>
+                              <span className="text-sm font-bold text-red-300 bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full">
+                                {alerta.conteo} ocurrencia{alerta.conteo !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
                 )}
-              </div>
-            </motion.div>
-          )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-      </>
-    )}
+
+                {data && !loading && activeTab === 'cuentas' && (
+                  <motion.div
+                    key="cuentas-content"
+                    initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                    className="space-y-4"
+                  >
+                    {!data.cuentas || data.cuentas.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 text-text-muted text-center">
+                        <FileText className="w-12 h-12 opacity-30 mb-3" />
+                        <p className="text-sm font-semibold">No se encontraron cuentas de crédito detalladas</p>
+                        <p className="text-xs opacity-60 mt-1">Este reporte podría no tener la sección de "Detalle de Créditos" o estar vacío.</p>
+                      </div>
+                    ) : (
+                      data.cuentas.map((cuenta, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-card border border-border rounded-xl p-4 hover:border-violet-500/30 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:shadow-[0_4px_25px_rgba(139,92,246,0.05)] relative overflow-hidden group"
+                        >
+                          <div className={`absolute left-0 top-0 h-full w-1 ${cuenta.estado === 'ACTIVO' ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+                          
+                          <div className="flex items-start justify-between gap-4 pl-2">
+                            <div>
+                              <h4 className="font-bold text-text-main group-hover:text-violet-400 transition-colors leading-tight">
+                                {cuenta.otorgante}
+                              </h4>
+                              <p className="text-xs text-text-muted mt-1 font-mono">
+                                Contrato: <span className="text-text-main">{cuenta.contrato}</span>
+                              </p>
+                            </div>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              cuenta.estado === 'ACTIVO'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                            }`}>
+                              {cuenta.estado}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 pl-2 text-xs border-t border-border/40 pt-3">
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Tipo Crédito</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{cuenta.tipo_credito}</span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Responsabilidad</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{cuenta.responsabilidad}</span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Moneda</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{cuenta.moneda}</span>
+                            </div>
+
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Saldo Actual</span>
+                              <span className={`font-bold mt-0.5 block ${cuenta.saldo_actual > 0 ? 'text-violet-300' : 'text-text-muted/60'}`}>
+                                ${cuenta.saldo_actual?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Saldo Vencido</span>
+                              <span className={`font-bold mt-0.5 block ${cuenta.saldo_vencido > 0 ? 'text-red-400 animate-pulse' : 'text-text-muted/60'}`}>
+                                ${cuenta.saldo_vencido?.toLocaleString() || '0'}
+                              </span>
+                            </div>
+                            {cuenta.estado === 'ACTIVO' ? (
+                              <div>
+                                <span className="text-text-muted block text-[10px] uppercase tracking-wider">Límite Crédito</span>
+                                <span className="font-semibold text-text-main mt-0.5 block">
+                                  ${cuenta.limite_credito?.toLocaleString() || '0'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="text-text-muted block text-[10px] uppercase tracking-wider">Cierre</span>
+                                <span className="font-semibold text-text-main mt-0.5 block">{cuenta.fecha_cierre}</span>
+                              </div>
+                            )}
+
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Apertura</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{cuenta.apertura}</span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Actualizado</span>
+                              <span className="font-semibold text-text-main mt-0.5 block">{cuenta.actualizado}</span>
+                            </div>
+                            <div>
+                              <span className="text-text-muted block text-[10px] uppercase tracking-wider">Días Atraso</span>
+                              <span className={`font-bold mt-0.5 block ${cuenta.dias_atraso > 0 ? 'text-red-400 font-extrabold' : 'text-emerald-400'}`}>
+                                {cuenta.dias_atraso}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Footer */}
+                {data && !loading && (
+                  <div className="text-xs text-text-muted/60 pt-2 border-t border-border mt-6">
+                    📄 {data.nombre_archivo || 'Buró de Crédito'}
+                    {data.total_mops_nivel2_plus > 0 && (
+                      <span className="ml-3">· Total MOPs nivel 2+: <strong>{data.total_mops_nivel2_plus}</strong></span>
+                    )}
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        </>
+      )}
     </AnimatePresence>,
     document.body
   )
@@ -433,6 +602,7 @@ function MopsDrawer({ isOpen, empresaId, tipoBuro = 'buro_credito', onClose }) {
 function ReviewModal({ doc, onClose, onSuccess }) {
   const [estado, setEstado] = useState('APROBADO')
   const [comentario, setComentario] = useState('')
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pdfUrl, setPdfUrl] = useState(null)
@@ -562,6 +732,8 @@ export default function AdminDashboard() {
   const [mopsEmpresaId, setMopsEmpresaId] = useState(null)
   const [mopsTipoBuro, setMopsTipoBuro] = useState('buro_credito')
   const [pdfViewerDoc, setPdfViewerDoc] = useState(null)
+  const [exportingTeaser, setExportingTeaser] = useState(false)
+  const [exportingCaf, setExportingCaf] = useState(false)
 
   const toggleSection = title =>
     setCollapsedSections(prev => ({ ...prev, [title]: !prev[title] }))
@@ -936,6 +1108,44 @@ export default function AdminDashboard() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary-400' : ''}`} />
           </button>
+          <button
+            onClick={async () => {
+              setExportingTeaser(true)
+              try {
+                await api.exportToTeaser(selectedEmpresa.id)
+                window.location.href = '/'
+              } catch (err) {
+                alert(`Error al exportar a AutoTeaser: ${err.message}`)
+              } finally {
+                setExportingTeaser(false)
+              }
+            }}
+            disabled={exportingTeaser}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-xl font-semibold shadow-sm transition-colors text-sm disabled:opacity-50"
+          >
+            {exportingTeaser ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {exportingTeaser ? 'Exportando...' : 'Generar AutoTeaser'}
+          </button>
+
+          <button
+            onClick={async () => {
+              setExportingCaf(true)
+              try {
+                await api.exportToCaf(selectedEmpresa.id)
+                window.location.href = '/CAF'
+              } catch (err) {
+                alert(`Error al exportar a AutoCAF: ${err.message}`)
+              } finally {
+                setExportingCaf(false)
+              }
+            }}
+            disabled={exportingCaf}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/30 rounded-xl font-semibold shadow-sm transition-colors text-sm disabled:opacity-50"
+          >
+            {exportingCaf ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart2 className="w-4 h-4" />}
+            {exportingCaf ? 'Exportando...' : 'Generar AutoCAF'}
+          </button>
+
           <button
             onClick={async () => {
               setDownloading(true)

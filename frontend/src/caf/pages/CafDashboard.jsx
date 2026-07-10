@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
-import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify, Crop } from 'lucide-react'
+import { UploadCloud, FileText, CheckCircle2, Download, Loader2, X, AlertTriangle, Maximize2, Columns, AlignJustify, Crop, Database } from 'lucide-react'
 import RegionSelector from '../components/RegionSelector'
+import { api } from '../../portal/lib/api'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -18,7 +19,36 @@ export default function CafDashboard() {
   const [missingYearDocs, setMissingYearDocs] = useState(null)
   const [yearOverrides, setYearOverrides] = useState({})
 
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [empresasList, setEmpresasList] = useState([])
+  const [loadingEmpresas, setLoadingEmpresas] = useState(false)
+  const [importingEmpresaId, setImportingEmpresaId] = useState(null)
+
   const fileInputRef = useRef(null)
+
+  const initDoc = (d) => ({
+    ...d,
+    doc_id: d.doc_id || d.id,
+    selectedPages: d.selectedPages || [],
+    pageLayouts: d.pageLayouts || {},
+    thumbnails: d.thumbnails || [],
+    docType: d.docType || 'financiero',
+    useOcr: d.useOcr !== false
+  })
+
+  const loadDocuments = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/caf/documents`)
+      const initialized = (res.data.documents || []).map(initDoc)
+      setDocuments(initialized)
+    } catch (err) {
+      console.error("Error loading documents:", err)
+    }
+  }
+
+  useEffect(() => {
+    loadDocuments()
+  }, [])
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || [])
@@ -41,7 +71,7 @@ export default function CafDashboard() {
         }
       })
       
-      const newDocs = await Promise.all(uploadPromises)
+      const newDocs = (await Promise.all(uploadPromises)).map(initDoc)
       setDocuments(prev => [...prev, ...newDocs])
       // Reset the excel url since we have new data
       setExcelUrl(null)
@@ -135,6 +165,7 @@ export default function CafDashboard() {
   }
 
   const removeDocument = (docId) => {
+    axios.delete(`${API_BASE}/api/caf/documents/${docId}`).catch(() => {})
     setDocuments(prev => prev.filter(d => d.doc_id !== docId))
     setExcelUrl(null)
   }
@@ -209,10 +240,25 @@ export default function CafDashboard() {
       
       {/* ── Step 1: Upload & Select ── */}
       <section className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <span className="bg-primary-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> 
-          Subir PDFs y Seleccionar Páginas
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <span className="bg-primary-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span> 
+            Subir PDFs y Seleccionar Páginas
+          </h2>
+          <button
+            onClick={() => {
+              setShowImportModal(true)
+              setLoadingEmpresas(true)
+              api.getEmpresas()
+                .then(res => setEmpresasList(res.empresas || []))
+                .catch(err => alert("Error al cargar empresas: " + err.message))
+                .finally(() => setLoadingEmpresas(false))
+            }}
+            className="text-xs text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1 font-bold bg-violet-500/10 px-3 py-1.5 rounded-lg border border-violet-500/20"
+          >
+            <Database className="w-3.5 h-3.5" /> Importar de Expedientes
+          </button>
+        </div>
         
         <div 
           className="border-2 border-dashed border-border hover:border-primary-500/50 bg-surface/30 rounded-xl p-6 text-center cursor-pointer transition-all mb-6"
@@ -403,9 +449,9 @@ export default function CafDashboard() {
                   <tbody>
                     {documents.filter(d => d.status === 'processed').map((doc) => (
                       <React.Fragment key={doc.doc_id}>
-                        {doc.extractedData?.pages.map(page => (
-                          page.tables.map((table, tIdx) => (
-                            table.map((row, rIdx) => {
+                        {doc.extractedData?.pages?.map(page => (
+                          page.tables?.map((table, tIdx) => (
+                            table?.map((row, rIdx) => {
                               if (!row || row.length === 0) return null;
                               const firstCell = row[0];
                               const context = row.slice(1).map(c => c.text).filter(Boolean).join(" | ");
@@ -628,6 +674,70 @@ export default function CafDashboard() {
           onSave={handleSaveRegions}
           onCancel={() => setRegionSelectorState(null)}
         />
+      )}
+
+      {/* ── Import Modal ── */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[900]">
+          <div className="bg-[#0f0f13] border border-white/10 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-4 border-b border-white/5 bg-[#15151a]">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-violet-400" />
+                <h3 className="text-lg font-bold">Importar Estados Financieros</h3>
+              </div>
+              <button onClick={() => setShowImportModal(false)} className="p-1 hover:bg-white/5 rounded-lg text-text-muted transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto custom-scrollbar">
+              {loadingEmpresas ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <Loader2 className="w-8 h-8 animate-spin text-violet-400 mb-3" />
+                  <p className="text-sm text-text-muted">Cargando empresas...</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {empresasList.map(emp => (
+                    <button
+                      key={emp.id}
+                      onClick={async () => {
+                        try {
+                          setImportingEmpresaId(emp.id)
+                          await api.exportToCaf(emp.id)
+                          setShowImportModal(false)
+                          loadDocuments()
+                        } catch (err) {
+                          alert(err.message)
+                        } finally {
+                          setImportingEmpresaId(null)
+                        }
+                      }}
+                      disabled={importingEmpresaId}
+                      className={`w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all group
+                        ${importingEmpresaId === emp.id ? 'bg-violet-500/10 border-violet-500/30' : 'bg-[#15151a] border-border hover:border-violet-500/30 hover:bg-violet-500/5'}`}
+                    >
+                      <div>
+                        <p className="font-semibold text-sm text-text-main group-hover:text-violet-300 transition-colors">{emp.nombre}</p>
+                        <p className="text-xs text-text-muted mt-0.5">{emp.rfc || 'Sin RFC'} · {emp.documentos_count || 0} docs</p>
+                      </div>
+                      {importingEmpresaId === emp.id ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+                      ) : (
+                        <Download className="w-4 h-4 text-text-muted group-hover:text-violet-400 opacity-0 group-hover:opacity-100 transition-all" />
+                      )}
+                    </button>
+                  ))}
+                  {empresasList.length === 0 && (
+                    <div className="text-center py-6 text-text-muted text-sm">
+                      No se encontraron empresas con documentos.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </>
   )

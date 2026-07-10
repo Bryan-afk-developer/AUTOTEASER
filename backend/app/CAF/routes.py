@@ -97,6 +97,90 @@ async def list_caf_templates():
                     templates.append({"name": f.name})
     return {"templates": templates}
 
+@router.post("/empresas/{empresa_id}/export")
+async def export_to_caf(empresa_id: str):
+    """
+    Descarga los estados financieros de la empresa desde Supabase
+    y los carga directamente en la memoria local de AutoCAF.
+    """
+    try:
+        from portal.shared.supabase_db import get_supabase_admin
+        sb = get_supabase_admin()
+    except Exception as e:
+        logger.error(f"Error importing get_supabase_admin: {e}")
+        raise HTTPException(status_code=500, detail="Error de configuración de base de datos")
+
+    # 1. Obtener documentos de expedientes para la empresa que sean estados financieros válidos
+    try:
+        docs_resp = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).in_("estado", ["PENDIENTE", "APROBADO"]).execute()
+    except Exception as e:
+        logger.error(f"Error querying Supabase: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al consultar documentos: {e}")
+
+    if not docs_resp.data:
+        raise HTTPException(status_code=404, detail="No hay documentos para exportar")
+
+    # Los estados financieros pertenecen al grupo 'financieros' (clave empieza con 'financiero_eeff_')
+    eeff_docs = [d for d in docs_resp.data if d.get("grupo") == "financieros" and d.get("storage_path")]
+    if not eeff_docs:
+        raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos (grupo 'financieros') para exportar")
+
+    # 2. Limpiar documentos actuales de AutoCAF para no mezclarlos
+    caf_docs.clear()
+
+    count = 0
+    import json as _json
+
+    # 3. Descargar y procesar cada documento
+    for doc in eeff_docs:
+        storage_path = doc.get("storage_path")
+        if not storage_path:
+            continue
+
+        try:
+            file_bytes = sb.storage.from_("expedientes_clientes").download(storage_path)
+            doc_id = str(uuid.uuid4())
+            file_path = UPLOAD_DIR / f"{doc_id}.pdf"
+
+            with open(file_path, "wb") as f:
+                f.write(file_bytes)
+
+            # Generar miniaturas para previsualización
+            pdf = fitz.open(file_path)
+            page_count = len(pdf)
+            thumbnails = []
+            for i in range(page_count):
+                page = pdf[i]
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                thumbnails.append({
+                    "page_num": i,
+                    "image": f"data:image/png;base64,{img_b64}"
+                })
+            pdf.close()
+
+            # Guardar metadata sidecar
+            meta_path = file_path.with_suffix(".json")
+            with open(meta_path, "w", encoding="utf-8") as mf:
+                _json.dump({"filename": doc["nombre_archivo"]}, mf)
+
+            caf_docs[doc_id] = {
+                "id": doc_id,
+                "filename": doc["nombre_archivo"],
+                "path": str(file_path),
+                "page_count": page_count,
+                "thumbnails": thumbnails,
+                "status": "uploaded",
+                "extracted_data": None,
+                "excel_path": None
+            }
+            count += 1
+        except Exception as e:
+            logger.error(f"Error procesando {doc['nombre_archivo']} para exportación a AutoCAF: {e}")
+            continue
+
+    return {"success": True, "count": count}
+
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
@@ -330,13 +414,17 @@ async def delete_doc(doc_id: str):
 
 @router.get("/documents")
 async def list_documents():
-    # Return brief info without thumbnails to save bandwidth
     docs = []
     for d in caf_docs.values():
         docs.append({
-            "id": d["id"],
+            "doc_id": d["id"],
             "filename": d["filename"],
             "page_count": d["page_count"],
-            "status": d["status"]
+            "status": d["status"],
+            "thumbnails": d.get("thumbnails", []),
+            "extractedData": d.get("extracted_data"),
+            "pageLayouts": d.get("page_layouts", {}),
+            "docType": d.get("docType", "financiero"),
+            "useOcr": d.get("useOcr", True)
         })
     return {"documents": docs}

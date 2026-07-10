@@ -4,20 +4,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def extract_csf_location(file_bytes: bytes, filename: str) -> str:
+def extract_csf_info(file_bytes: bytes, filename: str) -> dict:
     """
-    Lee un PDF de Constancia de Situación Fiscal y extrae la ubicación usando RegEx.
+    Lee un PDF de Constancia de Situación Fiscal y extrae la ubicación y el RFC.
     Funciona tanto para Personas Morales como Personas Físicas.
-    Devuelve un string en formato: "Colonia, Municipio, Estado, CP".
+    Devuelve un diccionario: {"location": "Colonia, Municipio...", "rfc": "ABC123456789"}
     """
+    result = {"location": "Ubicacion no detectada", "rfc": None}
+    
     try:
         if not filename.lower().endswith('.pdf'):
-            return "Ubicacion no detectada"
+            return result
 
         doc = fitz.open("pdf", file_bytes)
         if len(doc) == 0:
             doc.close()
-            return "Ubicacion no detectada"
+            return result
             
         # Revisamos las primeras 3 páginas
         text = ""
@@ -27,13 +29,19 @@ def extract_csf_location(file_bytes: bytes, filename: str) -> str:
             
         doc.close()
         
+        # ── Extraer RFC ──
+        # El RFC en México tiene formato de 3 o 4 letras, 6 números y 3 caracteres alfanuméricos.
+        # Generalmente viene precedido por "Registro Federal de Contribuyentes" o simplemente "RFC"
+        rfc_match = re.search(r'([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})', text)
+        if rfc_match:
+            result["rfc"] = rfc_match.group(1)
+        
         # ── Paso 1: Aislar la sección "Datos del domicilio registrado" ──
-        # Esto evita tomar datos de "Lugar y Fecha de Emisión" u otras secciones
         domicilio_section = _extract_domicilio_section(text)
         
         if not domicilio_section:
             logger.warning("CSF: No se encontró la sección 'Datos del domicilio registrado'")
-            return "Ubicacion no detectada"
+            return result
         
         # ── Paso 2: Extraer campos específicos de esa sección ──
         cp = _extract_field(domicilio_section, r'C[óo]digo Postal[:\s]*(\d{5})')
@@ -45,7 +53,7 @@ def extract_csf_location(file_bytes: bytes, filename: str) -> str:
         
         if not (municipio and estado and cp):
             logger.warning(f"CSF: Campos incompletos - CP:{cp}, Municipio:{municipio}, Estado:{estado}")
-            return "Ubicacion no detectada"
+            return result
         
         # Construir la ubicación con calle incluida
         parts = []
@@ -74,18 +82,17 @@ def extract_csf_location(file_bytes: bytes, filename: str) -> str:
             return " ".join(title_words)
             
         location = smart_title(location)
-        # Opcional: Agregar el prefijo "SAT - " para que encaje con el formato "PROVEEDOR - Dirección"
-        # de los comprobantes de domicilio (e.g. "CFE - ...")
         location = f"SAT - {location}"
         
         if len(location) > 120:
             location = location[:117] + "..."
             
-        return location
+        result["location"] = location
+        return result
         
     except Exception as e:
-        logger.error(f"Error extrayendo ubicación de CSF: {e}")
-        return "Ubicacion no detectada"
+        logger.error(f"Error extrayendo información de CSF: {e}")
+        return result
 
 
 def _extract_domicilio_section(text: str) -> str:
