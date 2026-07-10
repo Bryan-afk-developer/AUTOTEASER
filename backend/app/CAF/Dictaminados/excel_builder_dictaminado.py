@@ -401,11 +401,6 @@ def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int,
     ws[f"D{row_num}"].border = THIN
     img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
 
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
-    e.border = THIN
 
     ws.row_dimensions[row_num].height = max(20, img_height)
 
@@ -519,11 +514,6 @@ def _write_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b
     ws[f"D{row_num}"].border = THIN
     img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
 
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
-    e.border = THIN
 
     ws.row_dimensions[row_num].height = max(20, img_height)
 
@@ -565,7 +555,6 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             "B": ("Monto Extraído", 18),
             "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
-            "E": ("Input / Ajuste", 18),
         }
         for col, (title, width) in col_headers.items():
             cell = ws[f"{col}1"]

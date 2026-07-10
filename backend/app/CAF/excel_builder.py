@@ -246,7 +246,6 @@ def build_caf_excel(docs_data: list) -> bytes:
             "B": ("Monto Extraído", 18),
             "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
-            "E": ("Input / Ajuste", 18),
         }
         for col, (title, width) in headers.items():
             cell = ws[f"{col}1"]
@@ -399,12 +398,6 @@ def build_caf_excel(docs_data: list) -> bytes:
                                 except Exception as e:
                                     logger.error(f"Error insertando imagen de evidencia: {e}")
 
-                            # Col E: Input / Ajuste
-                            e = ws[f"E{data_row}"]
-                            e.fill = INPUT_FILL
-                            e.alignment = Alignment(horizontal="right", vertical="center")
-                            e.number_format = '#,##0.00'
-                            e.border = THIN
 
                             ws.row_dimensions[data_row].height = max(20, img_height)
                             data_row += 1
