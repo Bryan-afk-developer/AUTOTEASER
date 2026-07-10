@@ -777,9 +777,9 @@ def _get_drive_path_and_name(doc: dict, empresa_nombre: str) -> tuple[list[str],
         m = re.search(r'(20\d{2})', key)
         return m.group(1) if m else str(date.today().year)
 
-    # Helper: extraer nombre del representante desde nombre_arch de INE ya procesado (ej: "1. INE - JUAN PEREZ.pdf")
-    def _rep_name_from_ine(nombre_arch):
-        m = re.search(r'INE\s*-\s*(.+?)(?:\.\w+)?$', nombre_arch, re.IGNORECASE)
+    # Helper: extraer nombre del representante desde cualquier archivo del representante
+    def _extract_rep_name(nombre_arch):
+        m = re.search(r'^(?:1\.\s*INE|2\.\s*CSF|3\.\s*CD|4\.\s*ACTA NACIMIENTO|5\.\s*ACTA MATRIMONIO|BC(?: SCORE)?)\s*-\s*([^-]+?)(?:\s*-|\.\w+$)', nombre_arch, re.IGNORECASE)
         return m.group(1).strip() if m else "Representante Legal"
 
     # ─────────────────────────────────────────────────────────────────────
@@ -788,10 +788,9 @@ def _get_drive_path_and_name(doc: dict, empresa_nombre: str) -> tuple[list[str],
     if tipo in ("ine_representante", "csf_representante", "comprobante_domicilio_representante",
                 "acta_matrimonio", "buro_representante", "buro_score_representante"):
 
-        rep_name = "Representante Legal"
+        rep_name = _extract_rep_name(nombre_arch)
 
         if tipo == "ine_representante":
-            rep_name = _rep_name_from_ine(nombre_arch)
             path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "1. INE"]
             drive_name = nombre_arch  # ya viene con el formato correcto del upload
 
