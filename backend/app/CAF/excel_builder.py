@@ -238,13 +238,13 @@ def build_caf_excel(docs_data: list) -> bytes:
 
         ws = wb.create_sheet(title=sheet_name)
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         # HEADERS
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         headers = {
-            "A": ("Cuenta Extra├¡da", 28),
-            "B": ("Monto Extra├¡do", 18),
-            "C": ("P├ígina", 8),
+            "A": ("Cuenta Extraída", 28),
+            "B": ("Monto Extraído", 18),
+            "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
             "E": ("Input / Ajuste", 18),
         }
@@ -257,7 +257,7 @@ def build_caf_excel(docs_data: list) -> bytes:
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # Separador + Headers del mapa estructurado (m├ís a la derecha)
+        # Separador + Headers del mapa estructurado (más a la derecha)
         ws.column_dimensions["F"].width = 3  # separador
         for col, (title, width) in {"G": ("Concepto", 32), "H": ("Importe (Input)", 18)}.items():
             cell = ws[f"{col}1"]
@@ -268,9 +268,9 @@ def build_caf_excel(docs_data: list) -> bytes:
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # COLUMNAS A-E: Datos extra├¡dos del PDF (una fila por dato)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # COLUMNAS A-E: Datos extraídos del PDF (una fila por dato)
+        # ──────────────────────────────────────────────────────────
         page_layouts = doc.get("page_layouts", {})
         if not page_layouts and "extracted_data" in doc:
             page_layouts = doc["extracted_data"].get("page_layouts", {})
@@ -297,14 +297,14 @@ def build_caf_excel(docs_data: list) -> bytes:
                         if not row:
                             continue
 
-                        # ÔöÇÔöÇ Extraer la imagen de evidencia de la fila completa ÔöÇÔöÇ
+                        # ── Extraer la imagen de evidencia de la fila completa ──
                         evidence_b64 = None
                         for cell_data in row:
                             if cell_data and cell_data.get("evidence_b64"):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # ÔöÇÔöÇ Decidir estrategia seg├║n layout ÔöÇÔöÇ
+                        # ── Decidir estrategia según layout ──
                         if layout_type == "two_column":
                             l_pairs, r_pairs = _extract_pairs_two_column(row, page_width, regions)
                             for c, m in l_pairs: page_left_pairs.append((c, m, evidence_b64))
@@ -317,11 +317,11 @@ def build_caf_excel(docs_data: list) -> bytes:
                                 elif cell.get("is_amount"): amount_text = cell.get("text", "")
                             page_single_pairs.append((concept_text, amount_text, evidence_b64))
                         else:
-                            # single_column o auto ÔåÆ lineal
+                            # single_column o auto → lineal
                             pairs = _extract_pairs_single_column(row)
                             for c, m in pairs: page_single_pairs.append((c, m, evidence_b64))
 
-                # Unir orfandades antes de escribir (si el OCR separ├│ conceptos y montos en filas distintas)
+                # Unir orfandades antes de escribir (si el OCR separó conceptos y montos en filas distintas)
                 def _cleanup_orphan_pairs(pairs_list):
                     cleaned = []
                     pending_concepts = []
@@ -349,7 +349,7 @@ def build_caf_excel(docs_data: list) -> bytes:
                 else:
                     all_page_pairs = _cleanup_orphan_pairs(page_single_pairs)
 
-                # ÔöÇÔöÇ Escribir cada par como fila en Excel ÔöÇÔöÇ
+                # ── Escribir cada par como fila en Excel ──
                 for concepto, monto, evidence_b64 in all_page_pairs:
                             if not concepto and not monto:
                                 continue
@@ -371,9 +371,9 @@ def build_caf_excel(docs_data: list) -> bytes:
                             if isinstance(parsed_monto, (int, float)):
                                 b.number_format = '#,##0.00'
 
-                            # Col C: P├ígina
+                            # Col C: Página
                             c = ws[f"C{data_row}"]
-                            c.value = f"P├íg {p_num}"
+                            c.value = f"Pág {p_num}"
                             c.alignment = Alignment(vertical="center", horizontal="center")
                             c.border = THIN
 
@@ -409,10 +409,10 @@ def build_caf_excel(docs_data: list) -> bytes:
                             ws.row_dimensions[data_row].height = max(20, img_height)
                             data_row += 1
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         # COLUMNAS G-H: Inputs estructurados del mapa.json
         # (enlazados a la plantilla de Balance / Edo de resultados)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         input_row = 2
         section_rows = {}  # Track where each section header and its items are
 
@@ -422,9 +422,9 @@ def build_caf_excel(docs_data: list) -> bytes:
 
             concepts = mapa[tpl_sheet][year]
 
-            # Encabezado de secci├│n principal
+            # Encabezado de sección principal
             hdr = ws[f"G{input_row}"]
-            hdr.value = f"ÔöÇÔöÇ {tpl_sheet.upper()} ÔöÇÔöÇ"
+            hdr.value = f"── {tpl_sheet.upper()} ──"
             hdr.font = Font(bold=True, color="FFFFFF", size=11)
             hdr.fill = HEADER_FILL
             hdr.alignment = Alignment(horizontal="center", vertical="center")
@@ -480,7 +480,7 @@ def build_caf_excel(docs_data: list) -> bytes:
                 h.number_format = '#,##0.00'
                 h.border = THIN
 
-                # F├│rmula en la plantilla
+                # Fórmula en la plantilla
                 if tpl_sheet in wb.sheetnames and target_cell:
                     wb[tpl_sheet][target_cell] = f"='{sheet_name}'!H{input_row}"
 
@@ -496,9 +496,9 @@ def build_caf_excel(docs_data: list) -> bytes:
 
             input_row += 1
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # INYECTAR F├ôRMULAS DE SUMA EN HEADERS DE SECCI├ôN (Col H)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # INYECTAR FÓRMULAS DE SUMA EN HEADERS DE SECCIÓN (Col H)
+        # ──────────────────────────────────────────────────────────
         SUM_FONT = Font(bold=True, color="FFFFFF", size=10)
         COMPROBACION_FILL = PatternFill("solid", fgColor="1565C0")
         COMPROBACION_FONT = Font(bold=True, color="FFFFFF", size=11)
@@ -515,14 +515,14 @@ def build_caf_excel(docs_data: list) -> bytes:
             h_cell.number_format = '#,##0.00'
             h_cell.alignment = Alignment(horizontal="right", vertical="center")
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # COLUMNA J-K: BLOQUE DE COMPROBACI├ôN CONTABLE
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # COLUMNA J-K: BLOQUE DE COMPROBACIÓN CONTABLE
+        # ──────────────────────────────────────────────────────────
         ws.column_dimensions["I"].width = 3  # separador
         ws.column_dimensions["J"].width = 26
         ws.column_dimensions["K"].width = 20
 
-        # J1: Header "COMPROBACI├ôN"
+        # J1: Header "COMPROBACIÓN"
         j1 = ws["J1"]
         j1.value = "COMPROBACION"
         j1.font = COMPROBACION_FONT
