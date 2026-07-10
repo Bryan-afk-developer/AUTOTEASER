@@ -1113,7 +1113,7 @@ export default function AdminDashboard() {
               setExportingTeaser(true)
               try {
                 await api.exportToTeaser(selectedEmpresa.id)
-                window.location.href = '/'
+                window.location.href = '/Teaser'
               } catch (err) {
                 alert(`Error al exportar a AutoTeaser: ${err.message}`)
               } finally {
