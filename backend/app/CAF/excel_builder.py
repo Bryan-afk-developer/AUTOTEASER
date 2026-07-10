@@ -618,6 +618,17 @@ def build_caf_excel(docs_data: list) -> bytes:
         ws["K12"].alignment = Alignment(horizontal="center", vertical="center")
         ws["K12"].border = THIN
 
+    # Reemplazar nombre de la empresa "BRIGHTEC" en la plantilla
+    if docs_data and "Balance" in wb.sheetnames:
+        raw_filename = docs_data[0].get("filename", "EMPRESA")
+        # Clean filename: remove extension, remove years, trim, upper
+        clean_name = re.sub(r'(?i)\.pdf$', '', raw_filename)
+        clean_name = re.sub(r'\b(20[1-2]\d)\b', '', clean_name)
+        clean_name = clean_name.replace("_", " ").replace("-", " ").strip().upper()
+        if not clean_name:
+            clean_name = "EMPRESA SIN NOMBRE"
+        wb["Balance"]["D1"].value = clean_name
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
