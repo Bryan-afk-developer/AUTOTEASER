@@ -120,10 +120,10 @@ async def export_to_caf(empresa_id: str):
     if not docs_resp.data:
         raise HTTPException(status_code=404, detail="No hay documentos para exportar")
 
-    # Los estados financieros pertenecen al grupo 'financieros' (clave empieza con 'financiero_eeff_')
-    eeff_docs = [d for d in docs_resp.data if d.get("grupo") == "financieros" and d.get("storage_path")]
+    # Los estados financieros tienen "financiero" o "eeff" en tipo_documento
+    eeff_docs = [d for d in docs_resp.data if ("financiero" in str(d.get("tipo_documento", "")).lower() or "eeff" in str(d.get("tipo_documento", "")).lower()) and d.get("storage_path")]
     if not eeff_docs:
-        raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos (grupo 'financieros') para exportar")
+        raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos para exportar")
 
     # 2. Limpiar documentos actuales de AutoCAF para no mezclarlos
     caf_docs.clear()
