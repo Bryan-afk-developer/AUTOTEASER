@@ -28,7 +28,8 @@ function App() {
     if (window.location.pathname.startsWith('/CAF')) return <CafApp />
   }
 
-  const [activeSection, setActiveSection] = useState('teaser') // 'teaser' | 'caf' | 'portal'
+  const initialSection = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('section') || 'teaser') : 'teaser'
+  const [activeSection, setActiveSection] = useState(initialSection) // 'teaser' | 'caf' | 'portal'
   const [isOnline, setIsOnline] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
