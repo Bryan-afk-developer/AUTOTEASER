@@ -103,14 +103,16 @@ def create_empresa_structure(service, empresa_nombre, parent_id):
     empresa_id = empresa_folder['id']
     
     carpetas = {
-        "legal": "2.1. Actas Legales",
-        "financieros": "2.2. Estados Financieros",
-        "estados_cuenta": "2.3. Estados de Cuenta",
-        "buro_credito": "2.4. Buró de Crédito",
-        "declaraciones": "2.5. Declaraciones",
-        "vigentes": "2.6. Generales / Vigentes",
-        "otros": "2.7. Otros Documentos",
-        "representante": "1. Representante Legal"
+        "representante": "1. REPRESENTANTES LEGALES",
+        "vigentes": "1. GENERALES",
+        "estados_cuenta": "2. ESTADOS DE CUENTA",
+        "buro_credito": "3. BURÓ DE CRÉDITO",
+        "declaraciones": "4. DECLARACIONES",
+        "pre_analisis": "0. PRE ANÁLISIS",
+        "legal": "1. ACTAS",
+        "financieros": "2. ESTADOS FINANCIEROS",
+        "garantias": "3. GARANTÍAS",
+        "solicitudes": "4. SOLICITUDES"
     }
     
     estructura = {"root": empresa_folder}
