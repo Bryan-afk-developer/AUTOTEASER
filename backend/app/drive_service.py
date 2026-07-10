@@ -98,29 +98,37 @@ def get_shared_parent_folder(service, target_folder_name="AutoTeaser"):
     logger.info(f"Usando primera carpeta compartida encontrada: {files[0]['name']}")
     return files[0]['id']
 
-def create_empresa_structure(service, empresa_nombre, parent_id):
-    empresa_folder = find_or_create_folder(service, empresa_nombre, parent_id)
-    empresa_id = empresa_folder['id']
-    
-    carpetas = {
-        "representante": "1. REPRESENTANTES LEGALES",
-        "vigentes": "1. GENERALES",
-        "estados_cuenta": "2. ESTADOS DE CUENTA",
-        "buro_credito": "3. BURÓ DE CRÉDITO",
-        "declaraciones": "4. DECLARACIONES",
-        "pre_analisis": "0. PRE ANÁLISIS",
-        "legal": "1. ACTAS",
-        "financieros": "2. ESTADOS FINANCIEROS",
-        "garantias": "3. GARANTÍAS",
-        "solicitudes": "4. SOLICITUDES"
-    }
-    
-    estructura = {"root": empresa_folder}
-    for key, name in carpetas.items():
-        sub = find_or_create_folder(service, name, empresa_id)
-        estructura[key] = sub['id']
+def create_root_structure(service, empresa_nombre, parent_id):
+    """
+    Crea la carpeta raíz del grupo.
+    Ej: GRUPO - Mi Empresa
+    """
+    root_name = f"GRUPO - {empresa_nombre}"
+    root_folder = find_or_create_folder(service, root_name, parent_id)
+    return {"root": root_folder, "id": root_folder["id"]}
+
+def get_or_create_path(service, root_id, path_parts, cache=None):
+    """
+    Recorre `path_parts` (lista de nombres de carpeta) desde `root_id`
+    y las crea si no existen.
+    Usa `cache` (dict) para evitar múltiples llamadas a Drive API por rutas repetidas.
+    """
+    if cache is None:
+        cache = {}
         
-    return estructura
+    current_parent = root_id
+    current_path_str = ""
+    
+    for part in path_parts:
+        current_path_str += f"/{part}"
+        if current_path_str in cache:
+            current_parent = cache[current_path_str]
+        else:
+            folder = find_or_create_folder(service, part, current_parent)
+            current_parent = folder['id']
+            cache[current_path_str] = current_parent
+            
+    return current_parent
 
 def upload_file_to_drive(service, file_bytes, filename, mime_type, parent_id):
     query = f"name='{filename}' and '{parent_id}' in parents and trashed=false"

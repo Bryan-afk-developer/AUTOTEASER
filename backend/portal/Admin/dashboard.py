@@ -757,85 +757,210 @@ async def export_to_teaser(empresa_id: str):
             
     return {"success": True, "count": count}
 
-def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, estructura: dict, service):
+def _get_drive_path_and_name(doc: dict, empresa_nombre: str) -> tuple[list[str], str]:
+    """
+    Determina la ruta de carpetas y el nombre de archivo final para subir a Drive.
+    Sigue la estructura del PDF de especificaciones:
+      - Representantes → 1. REPRESENTANTES LEGALES / {Nombre} / ...
+      - Empresa → 2. EMPRESAS DEL GRUPO / {Empresa} / ...
+    El nombre del archivo usa el nombre_archivo del doc con fallback a placeholders.
+    """
+    import re
+    from datetime import date
+
+    tipo = doc.get("tipo_documento", "")
+    nombre_arch = doc.get("nombre_archivo", "archivo")
+    nombre_carpeta = doc.get("nombre_carpeta")  # Banco para estados de cuenta
+
+    # Helper: extraer año de la clave del documento
+    def _year_from_key(key):
+        m = re.search(r'(20\d{2})', key)
+        return m.group(1) if m else str(date.today().year)
+
+    # Helper: extraer nombre del representante desde nombre_arch de INE ya procesado (ej: "1. INE - JUAN PEREZ.pdf")
+    def _rep_name_from_ine(nombre_arch):
+        m = re.search(r'INE\s*-\s*(.+?)(?:\.\w+)?$', nombre_arch, re.IGNORECASE)
+        return m.group(1).strip() if m else "Representante Legal"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # REPRESENTANTES LEGALES
+    # ─────────────────────────────────────────────────────────────────────
+    if tipo in ("ine_representante", "csf_representante", "comprobante_domicilio_representante",
+                "acta_matrimonio", "buro_representante", "buro_score_representante"):
+
+        rep_name = "Representante Legal"
+
+        if tipo == "ine_representante":
+            rep_name = _rep_name_from_ine(nombre_arch)
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "1. INE"]
+            drive_name = nombre_arch  # ya viene con el formato correcto del upload
+
+        elif tipo == "csf_representante":
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "2. CONSTANCIA SITUACIÓN FISCAL"]
+            drive_name = nombre_arch
+
+        elif tipo == "comprobante_domicilio_representante":
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "3. COMPROBANTE DOMICILIO"]
+            drive_name = nombre_arch
+
+        elif tipo == "acta_matrimonio":
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "1. GENERALES", "5. ACTA MATRIMONIO"]
+            drive_name = nombre_arch
+
+        elif "buro_score" in tipo:
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "3. BURÓ DE CRÉDITO"]
+            drive_name = nombre_arch
+
+        else:  # buro_representante
+            path = ["1. REPRESENTANTES LEGALES", rep_name, "3. BURÓ DE CRÉDITO"]
+            drive_name = nombre_arch
+
+        return path, drive_name
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: ESTADOS DE CUENTA
+    # ─────────────────────────────────────────────────────────────────────
+    if tipo.startswith("ec_"):
+        banco_folder = nombre_carpeta or "Banco"
+        # Intentar extraer año del nombre del archivo (ej. "2023.05 - BBVA") o del tipo
+        year_match = re.search(r'(20\d{2})', nombre_arch)
+        año = year_match.group(1) if year_match else _year_from_key(tipo)
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "3. ESTADOS DE CUENTA", banco_folder, año]
+        return path, nombre_arch
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: DECLARACIONES
+    # ─────────────────────────────────────────────────────────────────────
+    if tipo.startswith("declaracion_"):
+        año = _year_from_key(tipo)
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "5. DECLARACIONES", año]
+        return path, nombre_arch
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: ACTAS
+    # ─────────────────────────────────────────────────────────────────────
+    if "acta_constitutiva" in tipo or "asamblea" in tipo or "acta" in tipo or "poder" in tipo:
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "1. ACTAS"]
+        return path, nombre_arch
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: ESTADOS FINANCIEROS
+    # ─────────────────────────────────────────────────────────────────────
+    if "financiero_eeff" in tipo or "eeff" in tipo:
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "2. ESTADOS FINANCIEROS"]
+        return path, nombre_arch
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: BURÓ DE CRÉDITO
+    # ─────────────────────────────────────────────────────────────────────
+    if "buro" in tipo:
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "4. BURÓ DE CRÉDITO"]
+        return path, nombre_arch
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EMPRESA: GENERALES (CSF, Domicilio, Opinión, Currículum, Buró Score empresa)
+    # ─────────────────────────────────────────────────────────────────────
+    if tipo in ("csf_empresa", "comprobante_domicilio_empresa", "opinion_cumplimiento",
+                "curriculum_empresa", "buro_credito", "buro_score_empresa"):
+        path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "6. GENERALES"]
+        return path, nombre_arch
+
+    # Fallback: generales de empresa
+    path = ["2. EMPRESAS DEL GRUPO", empresa_nombre, "6. GENERALES"]
+    return path, nombre_arch
+
+
+def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, root_id: str, service):
+    """Sincroniza todos los docs aprobados/pendientes de la empresa a Drive con estructura dinámica anidada."""
+    from app.drive_service import upload_file_to_drive, get_or_create_path
+
     sb = get_supabase_admin()
     docs1 = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
     docs2 = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
     all_docs = (docs1.data or []) + (docs2.data or [])
-    
-    from app.drive_service import upload_file_to_drive
-    
+
+    path_cache = {}  # Cache de IDs de carpetas ya creadas para evitar llamadas repetidas
+    success_count = 0
+    error_count = 0
+
     for doc in all_docs:
         if not doc.get("storage_path") or doc.get("estado") in ["FALTANTE", "RECHAZADO"]:
             continue
-            
+
         try:
-            res = sb.storage.from_("expedientes_clientes").download(doc["storage_path"])
-            
-            tipo_documento = doc["tipo_documento"]
-            if "representante" in tipo_documento:
-                folder_key = "representante"
-            elif tipo_documento.startswith("ec_") or "estado_cuenta" in tipo_documento:
-                folder_key = "estados_cuenta"
-            elif "buro" in tipo_documento:
-                folder_key = "buro_credito"
-            elif "declaracion" in tipo_documento or "csf" in tipo_documento or "opinion" in tipo_documento:
-                folder_key = "declaraciones"
-            elif "acta" in tipo_documento or "poder" in tipo_documento:
-                folder_key = "legal"
-            elif "eeff" in tipo_documento or "estados_financieros" in tipo_documento:
-                folder_key = "financieros"
-            else:
-                folder_key = "vigentes"
-                
-            folder_id = estructura[folder_key]
-            
+            file_bytes = sb.storage.from_("expedientes_clientes").download(doc["storage_path"])
+
+            path_parts, drive_filename = _get_drive_path_and_name(doc, empresa_nombre)
+
+            folder_id = get_or_create_path(service, root_id, path_parts, cache=path_cache)
+
             content_type = "application/pdf"
-            if doc["nombre_archivo"].endswith(".xml"): content_type = "application/xml"
-            if doc["nombre_archivo"].endswith(".zip"): content_type = "application/zip"
-            
-            upload_file_to_drive(service, res, doc["nombre_archivo"], content_type, folder_id)
+            if drive_filename.endswith(".xml"): content_type = "application/xml"
+            if drive_filename.endswith(".zip"): content_type = "application/zip"
+
+            upload_file_to_drive(service, file_bytes, drive_filename, content_type, folder_id)
+            logger.info(f"Drive sync OK: {'/'.join(path_parts)}/{drive_filename}")
+            success_count += 1
+
         except Exception as e:
             logger.error(f"Error syncing doc {doc.get('nombre_archivo')} to Drive: {e}")
+            error_count += 1
+
+    logger.info(f"Drive sync completado para empresa {empresa_nombre}: {success_count} OK, {error_count} errores")
+
 
 @router.post("/empresas/{empresa_id}/drive/init")
 async def init_drive(empresa_id: str):
-    from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure
+    """Crea la estructura raíz de carpetas en Drive para la empresa."""
+    from app.drive_service import get_drive_service, get_shared_parent_folder, create_root_structure
     sb = get_supabase_admin()
     empresa_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    
+
     empresa_nombre = empresa_resp.data["nombre"]
     try:
         service = get_drive_service()
         parent_id = get_shared_parent_folder(service)
-        estructura = create_empresa_structure(service, empresa_nombre, parent_id)
-        
+        estructura = create_root_structure(service, empresa_nombre, parent_id)
+
         root_folder_id = estructura["root"]["id"]
-        return {"success": True, "message": "Carpeta generada correctamente.", "link": f"https://drive.google.com/drive/folders/{root_folder_id}"}
+        return {
+            "success": True,
+            "message": "Carpeta raíz generada correctamente.",
+            "link": f"https://drive.google.com/drive/folders/{root_folder_id}"
+        }
     except Exception as e:
         logger.error(f"Error init Drive: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/empresas/{empresa_id}/drive/sync")
 async def sync_drive(empresa_id: str, background_tasks: BackgroundTasks):
-    from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure
+    """Sincroniza todos los documentos de una empresa a Google Drive en segundo plano."""
+    from app.drive_service import get_drive_service, get_shared_parent_folder, create_root_structure
     sb = get_supabase_admin()
     empresa_resp = sb.table("empresas").select("nombre").eq("id", empresa_id).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    
+
     empresa_nombre = empresa_resp.data["nombre"]
     try:
         service = get_drive_service()
         parent_id = get_shared_parent_folder(service)
-        estructura = create_empresa_structure(service, empresa_nombre, parent_id)
-        
-        background_tasks.add_task(background_sync_all_to_drive, empresa_id, empresa_nombre, estructura, service)
-        
-        root_folder_id = estructura["root"]["id"]
-        return {"success": True, "message": "Sincronización iniciada en segundo plano. La carpeta puede tardar unos minutos en reflejar los archivos.", "link": f"https://drive.google.com/drive/folders/{root_folder_id}"}
+        estructura = create_root_structure(service, empresa_nombre, parent_id)
+        root_id = estructura["root"]["id"]
+
+        background_tasks.add_task(
+            background_sync_all_to_drive,
+            empresa_id, empresa_nombre, root_id, service
+        )
+
+        return {
+            "success": True,
+            "message": "Sincronización iniciada en segundo plano. La carpeta puede tardar unos minutos en reflejar los archivos.",
+            "link": f"https://drive.google.com/drive/folders/{root_id}"
+        }
     except Exception as e:
         logger.error(f"Error sync Drive: {e}")
         raise HTTPException(status_code=500, detail=str(e))
