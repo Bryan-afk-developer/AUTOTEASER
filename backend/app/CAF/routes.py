@@ -151,11 +151,11 @@ async def export_to_caf(empresa_id: str):
             thumbnails = []
             for i in range(page_count):
                 page = pdf[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                pix = page.get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
+                img_b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
                 thumbnails.append({
                     "page_num": i,
-                    "image": f"data:image/png;base64,{img_b64}"
+                    "image": f"data:image/jpeg;base64,{img_b64}"
                 })
             pdf.close()
 
@@ -200,12 +200,12 @@ async def upload_pdf(file: UploadFile = File(...)):
         thumbnails = []
         for i in range(page_count):
             page = doc[i]
-            # High resolution for thumbnails
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+            # Low resolution for fast thumbnails
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
+            img_b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
             thumbnails.append({
                 "page_num": i,
-                "image": f"data:image/png;base64,{img_b64}"
+                "image": f"data:image/jpeg;base64,{img_b64}"
             })
             
         doc.close()
