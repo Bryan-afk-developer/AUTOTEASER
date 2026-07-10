@@ -13,6 +13,38 @@ from app.CAF.Dictaminados.excel_builder_dictaminado import inject_dictaminado_sh
 
 logger = logging.getLogger(__name__)
 
+def parse_amount(value: str):
+    import re
+    if not value:
+        return value
+    s = str(value).strip()
+    
+    negative = s.startswith('(') and s.endswith(')')
+    if negative:
+        s = s[1:-1]
+        
+    s = re.sub(r'[$€£\s]', '', s)
+    if not s:
+        return value
+        
+    last_dot = s.rfind('.')
+    last_comma = s.rfind(',')
+    
+    if last_dot > last_comma:
+        s = s.replace(',', '')
+    elif last_comma > last_dot:
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    else:
+        s = s.replace(',', '.')
+        
+    try:
+        result = float(s)
+        return -result if negative else result
+    except ValueError:
+        return value
+
+
 TEMPLATE_PATH = Path("templates/CAF - BRIGHTEC - 2026.02 - plantilla-balance (1).xlsx")
 MAPA_PATH = Path("templates/mapa.json")
 
@@ -332,9 +364,12 @@ def build_caf_excel(docs_data: list) -> bytes:
 
                             # Col B: Monto
                             b = ws[f"B{data_row}"]
-                            b.value = monto
+                            parsed_monto = parse_amount(monto)
+                            b.value = parsed_monto
                             b.alignment = Alignment(vertical="center", horizontal="right")
                             b.border = THIN
+                            if isinstance(parsed_monto, (int, float)):
+                                b.number_format = '#,##0.00'
 
                             # Col C: P├ígina
                             c = ws[f"C{data_row}"]
