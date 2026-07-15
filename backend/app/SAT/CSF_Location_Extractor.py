@@ -6,11 +6,13 @@ logger = logging.getLogger(__name__)
 
 def extract_csf_info(file_bytes: bytes, filename: str) -> dict:
     """
-    Lee un PDF de Constancia de Situación Fiscal y extrae la ubicación y el RFC.
-    Funciona tanto para Personas Morales como Personas Físicas.
-    Devuelve un diccionario: {"location": "Colonia, Municipio...", "rfc": "ABC123456789"}
+    Lee un PDF de Constancia de Situación Fiscal y extrae:
+    - nombre: Nombre del contribuyente (persona física o moral)
+    - rfc: RFC del contribuyente
+    - fecha: Fecha de emisión de la CSF (AAAA.MM.DD)
+    - location: Dirección (legacy, se mantiene por compatibilidad)
     """
-    result = {"location": "Ubicacion no detectada", "rfc": None}
+    result = {"location": "Ubicacion no detectada", "rfc": None, "nombre": None, "fecha": None}
     
     try:
         if not filename.lower().endswith('.pdf'):
@@ -30,64 +32,65 @@ def extract_csf_info(file_bytes: bytes, filename: str) -> dict:
         doc.close()
         
         # ── Extraer RFC ──
-        # El RFC en México tiene formato de 3 o 4 letras, 6 números y 3 caracteres alfanuméricos.
-        # Generalmente viene precedido por "Registro Federal de Contribuyentes" o simplemente "RFC"
         rfc_match = re.search(r'([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})', text)
         if rfc_match:
             result["rfc"] = rfc_match.group(1)
         
-        # ── Paso 1: Aislar la sección "Datos del domicilio registrado" ──
+        # ── Extraer Nombre del Contribuyente ──
+        # En la CSF el nombre aparece después de etiquetas como:
+        # "Nombre (s)" / "Primer Apellido" / "Segundo Apellido" (persona física)
+        # o "Denominación/Razón Social" (persona moral)
+        
+        # Persona moral: Denominación/Razón Social
+        razon_match = re.search(
+            r'Denominaci[oó]n[/ ]+Raz[oó]n Social[:\s]*([^\n]+)',
+            text, re.IGNORECASE
+        )
+        if razon_match:
+            nombre = razon_match.group(1).strip()
+            if nombre:
+                result["nombre"] = nombre.upper()
+        
+        # Persona física: combinamos Nombre(s) + Primer Apellido + Segundo Apellido
+        if not result["nombre"]:
+            nombre_match = re.search(r'Nombre \(s\)[:\s]*([^\n]+)', text, re.IGNORECASE)
+            ap1_match = re.search(r'Primer Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
+            ap2_match = re.search(r'Segundo Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
+            
+            partes = []
+            if ap1_match: partes.append(ap1_match.group(1).strip())
+            if ap2_match: partes.append(ap2_match.group(1).strip())
+            if nombre_match: partes.append(nombre_match.group(1).strip())
+            
+            if partes:
+                result["nombre"] = " ".join(p for p in partes if p).upper()
+
+        # ── Extraer Fecha de Emisión ──
+        # Buscar patrón "Fecha de emisión: DD/MM/AAAA" o "DD de mes de AAAA"
+        fecha_match = re.search(
+            r'Fecha de [Ee]misi[oó]n[:\s]*(\d{2})[/-](\d{2})[/-](\d{4})',
+            text
+        )
+        if fecha_match:
+            d, m, y = fecha_match.group(1), fecha_match.group(2), fecha_match.group(3)
+            result["fecha"] = f"{y}.{m}.{d}"
+        
+        if not result["fecha"]:
+            # Formato alternativo: DD/MM/AAAA suelto en texto
+            fecha_match2 = re.search(r'\b(\d{2})[/-](\d{2})[/-](\d{4})\b', text)
+            if fecha_match2:
+                d, m, y = fecha_match2.group(1), fecha_match2.group(2), fecha_match2.group(3)
+                result["fecha"] = f"{y}.{m}.{d}"
+
+        # ── Legacy: también guardamos la ubicación por si algo la usa ──
         domicilio_section = _extract_domicilio_section(text)
-        
-        if not domicilio_section:
-            logger.warning("CSF: No se encontró la sección 'Datos del domicilio registrado'")
-            return result
-        
-        # ── Paso 2: Extraer campos específicos de esa sección ──
-        cp = _extract_field(domicilio_section, r'C[óo]digo Postal[:\s]*(\d{5})')
-        vialidad = _extract_field(domicilio_section, r'Nombre de Vialidad[:\s]*([^\n]+)')
-        num_ext = _extract_field(domicilio_section, r'N[úu]mero Exterior[:\s]*([^\n]+)')
-        colonia = _extract_field(domicilio_section, r'Nombre de la Colonia[:\s]*([^\n]+)')
-        municipio = _extract_multiline_field(domicilio_section, r'Nombre del Municipio o Demarcaci[óo]n Territorial[:\s]*([^\n]+)', r'Nombre de la Entidad')
-        estado = _extract_field(domicilio_section, r'Nombre de la Entidad Federativa[:\s]*([^\n]+)')
-        
-        if not (municipio and estado and cp):
-            logger.warning(f"CSF: Campos incompletos - CP:{cp}, Municipio:{municipio}, Estado:{estado}")
-            return result
-        
-        # Construir la ubicación con calle incluida
-        parts = []
-        if vialidad:
-            calle = vialidad
-            if num_ext:
-                calle += f" #{num_ext}"
-            parts.append(calle)
-        if colonia:
-            parts.append(colonia)
-        parts.append(municipio)
-        parts.append(estado)
-        parts.append(cp)
-        
-        location = ", ".join(parts)
-        
-        # Limpiar el string para nombre de archivo
-        location = re.sub(r'[<>:"/\\|?*]', '', location)
-        location = " ".join(location.split())
-        
-        # Formatear a Title Case para que coincida visualmente con los Comprobantes de Domicilio
-        def smart_title(s):
-            # Convierte a minúsculas y luego capitaliza cada palabra
-            words = s.lower().split()
-            title_words = [w.capitalize() if not re.match(r'^c\.?p\.?$', w, re.IGNORECASE) else 'CP' for w in words]
-            return " ".join(title_words)
-            
-        location = smart_title(location)
-        location = f"SAT - {location}"
-        
-        if len(location) > 120:
-            location = location[:117] + "..."
-            
-        result["location"] = location
+        if domicilio_section:
+            cp = _extract_field(domicilio_section, r'C[óo]digo Postal[:\s]*(\d{5})')
+            municipio = _extract_multiline_field(domicilio_section, r'Nombre del Municipio o Demarcaci[óo]n Territorial[:\s]*([^\n]+)', r'Nombre de la Entidad')
+            estado = _extract_field(domicilio_section, r'Nombre de la Entidad Federativa[:\s]*([^\n]+)')
+            if municipio and estado:
+                result["location"] = f"{municipio}, {estado}, {cp}"
+
         return result
         
     except Exception as e:

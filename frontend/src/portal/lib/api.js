@@ -7,13 +7,13 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getToken() {
-  return localStorage.getItem('portal_token')
-}
+let activeEmpresaId = null
 
 function authHeaders() {
-  const token = getToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  if (activeEmpresaId) {
+    return { Authorization: `Empresa ${activeEmpresaId}` }
+  }
+  return {}
 }
 
 async function request(method, path, body = null, isFormData = false) {
@@ -32,38 +32,20 @@ async function request(method, path, body = null, isFormData = false) {
   return data
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Endpoints ─────────────────────────────────────────────────────────────────
 
 export const api = {
-  // Cliente - Auth
-  registro: (email, password, nombre_empresa, rfc = null) =>
-    request('POST', '/api/portal/cliente/registro', { email, password, nombre_empresa, rfc }),
+  // Contexto activo (para cuando el admin actúa como cliente)
+  setActiveEmpresa: (id) => { activeEmpresaId = id },
+  getActiveEmpresa: () => activeEmpresaId,
 
-  login: async (email, password) => {
-    const data = await request('POST', '/api/portal/cliente/login', { email, password })
-    if (data.access_token) {
-      localStorage.setItem('portal_token', data.access_token)
-      localStorage.setItem('portal_user', JSON.stringify(data.user))
-    }
-    return data
-  },
+  crearEmpresa: (nombre, rfc = null) => 
+    request('POST', '/api/portal/admin/empresas', { nombre, rfc }),
 
-  logout: () => {
-    localStorage.removeItem('portal_token')
-    localStorage.removeItem('portal_user')
-  },
+  eliminarEmpresa: (empresaId) => 
+    request('DELETE', `/api/portal/admin/empresas/${empresaId}`),
 
-  perfil: () => request('GET', '/api/portal/cliente/perfil'),
-
-  getUser: () => {
-    try {
-      return JSON.parse(localStorage.getItem('portal_user'))
-    } catch {
-      return null
-    }
-  },
-
-  isAuthenticated: () => !!getToken(),
+  getUser: () => null,
 
   // Cliente - Expediente
   getExpediente: () => request('GET', '/api/portal/cliente/expediente'),
@@ -73,6 +55,13 @@ export const api = {
     formData.append('tipo_documento', tipoDocumento)
     formData.append('file', file)
     return request('POST', '/api/portal/cliente/subir-documento', formData, true)
+  },
+
+  subirEstadosFinancierosAuto: (empresaId, file) => {
+    const formData = new FormData()
+    formData.append('empresa_id', empresaId)
+    formData.append('file', file)
+    return request('POST', '/api/portal/cliente/subir-estados-financieros-auto', formData, true)
   },
 
   subirDocumentosBanco: (cuentaId, files) => {

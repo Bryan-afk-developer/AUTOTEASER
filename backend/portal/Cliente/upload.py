@@ -51,30 +51,35 @@ BUCKET_NAME = "expedientes_clientes"
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
 
-def background_upload_to_drive(empresa_nombre: str, content: bytes, safe_filename: str, content_type: str, tipo_documento: str):
+def background_upload_to_drive(empresa_nombre: str, content: bytes, safe_filename: str, content_type: str, tipo_documento: str, banco_nombre: str = None):
     try:
-        from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure, upload_file_to_drive
+        from app.drive_service import get_drive_service, get_shared_parent_folder, create_empresa_structure, upload_file_to_drive, get_ec_subfolder
         service = get_drive_service()
         parent_id = get_shared_parent_folder(service)
         estructura = create_empresa_structure(service, empresa_nombre, parent_id)
         
-        # Determinar la carpeta correcta
+        # Determinar la carpeta correcta según tipo de documento
         if "representante" in tipo_documento:
-            folder_key = "representante"
+            folder_id = estructura["representante"]
         elif tipo_documento.startswith("ec_") or "estado_cuenta" in tipo_documento:
-            folder_key = "estados_cuenta"
+            # Estados de cuenta van en: 3. ESTADOS DE CUENTA > BANCO-CUENTA > AAAA
+            # Extraer año del nombre del archivo: "2025.09 - BANORTE 4215.pdf" -> "2025"
+            import re
+            year_match = re.match(r'^(\d{4})\.', safe_filename)
+            year = year_match.group(1) if year_match else "Sin Año"
+            bname = banco_nombre or "Desconocido"
+            folder_id = get_ec_subfolder(service, estructura, bname, year)
         elif "buro" in tipo_documento:
-            folder_key = "buro_credito"
+            folder_id = estructura["buro_credito"]
         elif "declaracion" in tipo_documento or "csf" in tipo_documento or "opinion" in tipo_documento:
-            folder_key = "declaraciones"
+            folder_id = estructura["declaraciones"]
         elif "acta" in tipo_documento or "poder" in tipo_documento:
-            folder_key = "legal"
+            folder_id = estructura["legal"]
         elif "eeff" in tipo_documento or "estados_financieros" in tipo_documento:
-            folder_key = "financieros"
+            folder_id = estructura["financieros"]
         else:
-            folder_key = "vigentes"
+            folder_id = estructura["vigentes"]
             
-        folder_id = estructura[folder_key]
         upload_file_to_drive(service, content, safe_filename, content_type, folder_id)
     except Exception as e:
         logger.error(f"Error subiendo a Google Drive: {e}")
@@ -110,7 +115,7 @@ async def subir_documento(
         )
 
     # 3. Obtener empresa del usuario
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada para este usuario")
     empresa_id = empresa_resp.data["id"]
@@ -139,6 +144,33 @@ async def subir_documento(
         # Colapsar guiones bajos múltiples
         return re.sub(r'_+', '_', name)
 
+    def _extract_date_from_pdf(file_bytes: bytes) -> str:
+        """Extrae la fecha más reciente de un PDF en formato AAAA.MM.DD."""
+        try:
+            import fitz
+            doc = fitz.open("pdf", file_bytes)
+            text = ""
+            for i in range(min(3, len(doc))):
+                text += doc.load_page(i).get_text()
+            doc.close()
+            # Buscar fechas en distintos formatos
+            # DD/MM/AAAA o DD-MM-AAAA
+            matches = re.findall(r'\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b', text)
+            if matches:
+                # Tomar la fecha con año más reciente
+                best = sorted(matches, key=lambda x: (int(x[2]), int(x[1]), int(x[0])), reverse=True)[0]
+                d, m, y = best[0].zfill(2), best[1].zfill(2), best[2]
+                return f"{y}.{m}.{d}"
+            # AAAA/MM/DD o AAAA-MM-DD
+            matches2 = re.findall(r'\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b', text)
+            if matches2:
+                best = sorted(matches2, key=lambda x: (int(x[0]), int(x[1]), int(x[2])), reverse=True)[0]
+                y, m, d = best[0], best[1].zfill(2), best[2].zfill(2)
+                return f"{y}.{m}.{d}"
+        except Exception:
+            pass
+        return ""
+
     original_filename = file.filename
     if tipo_documento == "ine_representante":
         try:
@@ -153,38 +185,100 @@ async def subir_documento(
             
     elif tipo_documento in ["comprobante_domicilio_representante", "comprobante_domicilio_empresa"]:
         try:
-            extracted_loc = extract_location_from_cd(file_bytes=content, filename=file.filename)
-            if extracted_loc and extracted_loc != "Ubicacion no detectada":
-                ext = ""
-                if "." in file.filename:
-                    ext = "." + file.filename.split(".")[-1]
-                prefix = "2. CD - " if "representante" in tipo_documento else "3. CD - "
-                original_filename = f"{prefix}{extracted_loc}{ext}"
+            fecha_cd = _extract_date_from_pdf(content) if file.filename.lower().endswith('.pdf') else ""
+            entity = "PF" if "representante" in tipo_documento else "PM"
+            prefix = "2. CD" if "representante" in tipo_documento else "2. CD"
+            ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+            if fecha_cd:
+                original_filename = f"{prefix} - {entity} - {fecha_cd}{ext}"
+            else:
+                original_filename = f"{prefix} - {entity}{ext}"
         except Exception as e:
-            logger.error(f"Error extrayendo ubicacion de CD durante subida: {e}")
-            
+            logger.error(f"Error generando nombre de CD durante subida: {e}")
+
     elif tipo_documento in ["csf_empresa", "csf_representante"]:
         try:
             from app.SAT.CSF_Location_Extractor import extract_csf_info
             csf_info = extract_csf_info(file_bytes=content, filename=file.filename)
-            extracted_loc = csf_info.get("location")
-            if extracted_loc and extracted_loc != "Ubicacion no detectada":
-                ext = ""
-                if "." in file.filename:
-                    ext = "." + file.filename.split(".")[-1]
-                prefix = "3. CSF - " if "representante" in tipo_documento else "1. CSF - "
-                original_filename = f"{prefix}{extracted_loc}{ext}"
-                
-            # Extract RFC
+            fecha_csf = csf_info.get("fecha") or ""
+            ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+
+            if "representante" in tipo_documento:
+                # Persona Física: usar nombre real extraído
+                nombre = (csf_info.get("nombre") or "").strip()
+                nombre_safe = re.sub(r'[<>:"/\\|?*]', '', nombre).strip()
+                if nombre_safe and fecha_csf:
+                    original_filename = f"2. CSF - {nombre_safe} - {fecha_csf}{ext}"
+                elif nombre_safe:
+                    original_filename = f"2. CSF - {nombre_safe}{ext}"
+                elif fecha_csf:
+                    original_filename = f"2. CSF - PF - {fecha_csf}{ext}"
+                else:
+                    original_filename = f"2. CSF - PF{ext}"
+            else:
+                # Persona Moral: usar label "PM" + fecha
+                if fecha_csf:
+                    original_filename = f"1. CSF - PM - {fecha_csf}{ext}"
+                else:
+                    original_filename = f"1. CSF - PM{ext}"
+
+            # Extract RFC for DB
             if csf_info.get("rfc"):
-                if "extracted_data" not in locals():
-                    # Just initialized empty in case other things need it, wait, doc_data is defined later.
-                    # We will store it in a variable to inject into doc_data later.
-                    pass
-                # We'll save it into a local variable and add it to doc_data later
                 extracted_csf_rfc = csf_info.get("rfc")
         except Exception as e:
             logger.error(f"Error extrayendo información de CSF durante subida: {e}")
+
+    elif tipo_documento == "opinion_cumplimiento":
+        try:
+            fecha_opc = _extract_date_from_pdf(content) if file.filename.lower().endswith('.pdf') else ""
+            ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+            if fecha_opc:
+                original_filename = f"3. OPC - PM - {fecha_opc}{ext}"
+            else:
+                original_filename = f"3. OPC - PM{ext}"
+        except Exception as e:
+            logger.error(f"Error generando nombre de OPC durante subida: {e}")
+
+    elif tipo_documento in ["fiel_empresa", "fiel_representante", "fiel"]:
+        try:
+            fecha_fiel = _extract_date_from_pdf(content) if file.filename.lower().endswith('.pdf') else ""
+            entity = "PF" if "representante" in tipo_documento else "PM"
+            ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+            if fecha_fiel:
+                original_filename = f"4. FIEL - {entity} - {fecha_fiel}{ext}"
+            else:
+                original_filename = f"4. FIEL - {entity}{ext}"
+        except Exception as e:
+            logger.error(f"Error generando nombre de FIEL durante subida: {e}")
+
+    elif tipo_documento.startswith("acta_constitutiva"):
+        try:
+            from app.acta_processor import analyze_acta
+            ai_data = analyze_acta(content)
+            
+            fecha = ai_data.get('fecha_documento') or 'SIN_FECHA'
+            if fecha and len(fecha) >= 10:
+                fecha = fecha[:10].replace('-', '.') # AAAA.MM.DD
+            else:
+                fecha = 'SIN_FECHA'
+                
+            num = ai_data.get('numero_acta') or 'SIN_NUM'
+            tipo_ai = (ai_data.get('tipo_documento') or '').upper()
+            pm = empresa_nombre.upper()
+            
+            if 'CONSTITUTIVA' in tipo_ai:
+                original_filename = f'{fecha} - No. {num} - ACTA CONSTITUTIVA - {pm}.pdf'
+            elif 'ASAMBLEA' in tipo_ai:
+                original_filename = f'{fecha} - No. {num} - ASAMBLEA - {pm}.pdf'
+            elif 'REGISTRO' in tipo_ai or 'RPC' in tipo_ai:
+                original_filename = f'{fecha} - RPC - {pm}.pdf'
+            else:
+                original_filename = f'{fecha} - No. {num} - {tipo_ai} - {pm}.pdf'
+                
+            extracted_acta_summary = ai_data
+            logger.info(f"Acta procesada y renombrada a: {original_filename}")
+        except Exception as e:
+            logger.error(f"Error procesando acta con IA durante subida: {e}")
 
     safe_filename = sanitize_filename(original_filename)
     file_id = str(uuid.uuid4())[:8]
@@ -268,6 +362,11 @@ async def subir_documento(
     if "extracted_csf_rfc" in locals() and extracted_csf_rfc:
         doc_data["extracted_data"] = {"rfc": extracted_csf_rfc}
         logger.info(f"RFC guardado exitosamente: {extracted_csf_rfc}")
+
+    # --- Resumen IA para Actas Constitutivas ---
+    if "extracted_acta_summary" in locals() and extracted_acta_summary:
+        doc_data["ai_summary"] = extracted_acta_summary
+        logger.info("Resumen de IA de Acta guardado exitosamente.")
 
     # --- Extracción de Buro de Crédito (MOPs y Score) ---
     if "buro_credito" in tipo_documento or "buro_representante" in tipo_documento:
@@ -364,7 +463,7 @@ async def eliminar_documento(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -410,7 +509,7 @@ async def subir_documentos_banco(
     sb = get_supabase_admin()
 
     # 1. Validar empresa
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -562,7 +661,7 @@ async def subir_estados_cuenta_auto(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -675,7 +774,7 @@ async def subir_estados_cuenta_auto(
             if background_tasks:
                 background_tasks.add_task(
                     background_upload_to_drive,
-                    empresa_nombre, content, nuevo_nombre_archivo, file.content_type or "application/octet-stream", next_slot
+                    empresa_nombre, content, nuevo_nombre_archivo, file.content_type or "application/octet-stream", next_slot, nombre_banco
                 )
         except Exception as e:
             logger.error(f"Error uploading {file.filename}: {e}")
@@ -738,7 +837,7 @@ async def mover_documento_banco(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -824,7 +923,7 @@ async def subir_declaraciones_auto(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -964,7 +1063,7 @@ async def subir_declaracion_manual(
     user_info = get_user_from_token(authorization)
     sb = get_supabase_admin()
 
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     empresa_id = empresa_resp.data["id"]
@@ -1023,3 +1122,122 @@ async def subir_declaracion_manual(
         "year": year,
         "clave": tipo_clave,
     }
+
+# ── Subida de Estados Financieros (Automático con IA) ──────────────────────────
+
+@router.post("/subir-estados-financieros-auto")
+async def subir_estados_financieros_auto(
+    empresa_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    try:
+        content_bytes = await file.read()
+        
+        # 1. Extract text from first 5 pages
+        try:
+            import fitz
+            doc = fitz.open(stream=content_bytes, filetype="pdf")
+            text = ""
+            for i in range(min(5, len(doc))):
+                text += doc[i].get_text()
+            doc.close()
+        except Exception as e:
+            logger.warning(f"Could not extract text from PDF: {e}")
+            text = ""
+            
+        if not text.strip():
+            logger.info("EEFF PDF without native text -> using Document AI OCR")
+            try:
+                from app.acta_processor import _ocr_with_docai
+                text = _ocr_with_docai(content_bytes, max_pages=5)
+            except Exception as e:
+                logger.error(f"Error Document AI OCR for EEFF: {e}")
+        
+        # 2. Use Gemini to find the year
+        import json
+        anio = None
+        if text.strip():
+            try:
+                from app.llm_processor import configure_gemini
+                from vertexai.generative_models import GenerativeModel
+                configure_gemini()
+                model = GenerativeModel("gemini-2.5-flash")
+                prompt = f"""
+Eres un asistente experto en finanzas. Revisa este texto extraído de las primeras páginas de un documento.
+Identifica a qué año (ejercicio fiscal) corresponden estos Estados Financieros. 
+Suele decir 'al 31 de diciembre de 2024' o 'Ejercicio 2024'. 
+Responde ÚNICAMENTE con un JSON con la clave 'anio' y el valor en 4 dígitos. Si no lo encuentras, devuelve null.
+
+Texto:
+{text[:4000]}
+"""
+                response = model.generate_content(prompt)
+                resp_text = response.text.replace('```json', '').replace('```', '').strip()
+                try:
+                    data = json.loads(resp_text)
+                    anio = data.get('anio')
+                except:
+                    import re
+                    match = re.search(r'"anio"\s*:\s*"(\d{4})"', resp_text)
+                    if match:
+                        anio = match.group(1)
+            except Exception as e:
+                logger.error(f"Error with Gemini detecting year: {e}")
+        
+        if not anio:
+            raise HTTPException(status_code=400, detail="No se pudo detectar el año de los Estados Financieros en el documento.")
+        
+        # 3. Get empresa name
+        sb = get_supabase_admin()
+        emp_res = sb.table("empresas").select("nombre").eq("id", empresa_id).execute()
+        if not emp_res.data:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        empresa_nombre = emp_res.data[0]['nombre']
+        
+        # 4. Generate filename and update DB
+        clave = f"financiero_eeff_{anio}"
+        
+        # Check if already exists to avoid overwriting or to append suffix
+        existing = sb.table("documentos_expediente").select("id").eq("empresa_id", empresa_id).eq("tipo_documento", clave).execute()
+        
+        safe_emp = sanitize_filename(empresa_nombre)
+        if existing.data:
+            suffix = f"_v{len(existing.data) + 1}"
+            new_filename = f"EEFF - {safe_emp} - {anio}{suffix}.pdf"
+            import time
+            clave = f"financiero_eeff_{anio}_{int(time.time())}"
+        else:
+            new_filename = f"EEFF - {safe_emp} - {anio}.pdf"
+        
+        # Subir a Google Drive
+        background_upload_to_drive(
+            empresa_nombre=empresa_nombre,
+            content=content_bytes,
+            safe_filename=new_filename,
+            content_type=file.content_type,
+            tipo_documento="Estados Financieros"
+        )
+        
+        from datetime import datetime, timezone
+        ahora = datetime.now(timezone.utc).isoformat()
+        
+        # Guardar en DB
+        doc_data = {
+            "empresa_id": empresa_id,
+            "tipo_documento": clave,
+            "nombre_archivo": new_filename,
+            "storage_path": None, # Opcional: si subimos a Supabase Storage también. Por ahora solo va a GDrive
+            "estado": "PENDIENTE",
+            "subido_en": ahora,
+            "revisado_en": None,
+            "comentario_admin": None
+        }
+        sb.table("documentos_expediente").insert(doc_data).execute()
+        
+        return {"success": True, "message": f"Estados Financieros {anio} procesados.", "anio": anio}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en subir_estados_financieros_auto: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

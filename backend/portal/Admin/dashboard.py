@@ -9,6 +9,7 @@ Endpoint:
 """
 import io
 import logging
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from typing import List
@@ -119,6 +120,39 @@ async def get_pendientes(
         "estadisticas": stats,
     }
 
+
+class CrearEmpresaRequest(BaseModel):
+    nombre: str
+    rfc: str | None = None
+
+@router.post("/empresas")
+async def crear_empresa(req: CrearEmpresaRequest):
+    sb = get_supabase_admin()
+    empresa_data = {
+        "nombre": req.nombre,
+        "rfc": req.rfc,
+        "user_id": str(uuid.uuid4())  # UUID único por empresa, sin login
+    }
+    try:
+        db_response = sb.table("empresas").insert(empresa_data).execute()
+        if not db_response.data:
+            raise HTTPException(status_code=500, detail="Error al guardar empresa")
+        return db_response.data[0]
+    except Exception as e:
+        logger.error(f"Error creando empresa: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/empresas/{empresa_id}")
+async def eliminar_empresa(empresa_id: str):
+    sb = get_supabase_admin()
+    try:
+        db_response = sb.table("empresas").delete().eq("id", empresa_id).execute()
+        # En Supabase v2, delete().execute() puede retornar data=[] si no encuentra nada o si no se usa .select()
+        # Así que mejor no dependemos de db_response.data para el 404. Asumimos éxito si no lanza excepción.
+        return {"success": True, "message": "Empresa eliminada exitosamente"}
+    except Exception as e:
+        logger.error(f"Error eliminando empresa: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/empresas")
 async def get_empresas():
@@ -758,12 +792,13 @@ async def export_to_teaser(empresa_id: str):
     return {"success": True, "count": count}
 
 def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, estructura: dict, service):
+    import re
     sb = get_supabase_admin()
     docs1 = sb.table("documentos_expediente").select("*").eq("empresa_id", empresa_id).execute()
     docs2 = sb.table("documentos_representante").select("*").eq("empresa_id", empresa_id).execute()
     all_docs = (docs1.data or []) + (docs2.data or [])
     
-    from app.drive_service import upload_file_to_drive
+    from app.drive_service import upload_file_to_drive, get_ec_subfolder
     
     for doc in all_docs:
         if not doc.get("storage_path") or doc.get("estado") in ["FALTANTE", "RECHAZADO"]:
@@ -773,28 +808,33 @@ def background_sync_all_to_drive(empresa_id: str, empresa_nombre: str, estructur
             res = sb.storage.from_("expedientes_clientes").download(doc["storage_path"])
             
             tipo_documento = doc["tipo_documento"]
-            if "representante" in tipo_documento:
-                folder_key = "representante"
+            nombre_archivo = doc["nombre_archivo"] or ""
+
+            if "representante" in tipo_documento or doc.get("_tabla") == "representante":
+                folder_id = estructura["representante"]
             elif tipo_documento.startswith("ec_") or "estado_cuenta" in tipo_documento:
-                folder_key = "estados_cuenta"
+                # 3. ESTADOS DE CUENTA > [BANCO - CUENTA (BANCO XXXX)] > [AAAA]
+                year_match = re.match(r'^(\d{4})\.', nombre_archivo)
+                year = year_match.group(1) if year_match else "Sin Año"
+                # nombre_carpeta field holds the bank folder name (e.g. "Banorte - CUENTA (BANORTE 4215)")
+                banco_nombre = doc.get("nombre_carpeta") or "Desconocido"
+                folder_id = get_ec_subfolder(service, estructura, banco_nombre, year)
             elif "buro" in tipo_documento:
-                folder_key = "buro_credito"
+                folder_id = estructura["buro_credito"]
             elif "declaracion" in tipo_documento or "csf" in tipo_documento or "opinion" in tipo_documento:
-                folder_key = "declaraciones"
+                folder_id = estructura["declaraciones"]
             elif "acta" in tipo_documento or "poder" in tipo_documento:
-                folder_key = "legal"
+                folder_id = estructura["legal"]
             elif "eeff" in tipo_documento or "estados_financieros" in tipo_documento:
-                folder_key = "financieros"
+                folder_id = estructura["financieros"]
             else:
-                folder_key = "vigentes"
+                folder_id = estructura["vigentes"]
                 
-            folder_id = estructura[folder_key]
-            
             content_type = "application/pdf"
-            if doc["nombre_archivo"].endswith(".xml"): content_type = "application/xml"
-            if doc["nombre_archivo"].endswith(".zip"): content_type = "application/zip"
+            if nombre_archivo.endswith(".xml"): content_type = "application/xml"
+            if nombre_archivo.endswith(".zip"): content_type = "application/zip"
             
-            upload_file_to_drive(service, res, doc["nombre_archivo"], content_type, folder_id)
+            upload_file_to_drive(service, res, nombre_archivo, content_type, folder_id)
         except Exception as e:
             logger.error(f"Error syncing doc {doc.get('nombre_archivo')} to Drive: {e}")
 

@@ -34,21 +34,11 @@ class LoginRequest(BaseModel):
 # ── Helper: verificar JWT y obtener user_id ───────────────────────────────────
 
 def get_user_from_token(authorization: str) -> dict:
-    """Extrae y valida el JWT de Supabase. Devuelve el usuario o lanza 401."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Token de autorización requerido")
-    token = authorization.split("Bearer ")[1]
-    try:
-        sb = get_supabase_anon()
-        response = sb.auth.get_user(token)
-        if not response or not response.user:
-            raise HTTPException(status_code=401, detail="Token inválido o expirado")
-        return {"user_id": response.user.id, "email": response.user.email, "token": token}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error verificando token: {e}")
-        raise HTTPException(status_code=401, detail="No se pudo verificar el token")
+    """Extrae el empresa_id del header (sin autenticación JWT, versión interna)."""
+    if not authorization or not authorization.startswith("Empresa "):
+        raise HTTPException(status_code=401, detail="Header de empresa requerido")
+    empresa_id = authorization.split("Empresa ")[1]
+    return {"user_id": "internal_admin", "email": "admin@local", "empresa_id": empresa_id}
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -161,7 +151,7 @@ async def perfil(authorization: str = Header(None)):
     user_info = get_user_from_token(authorization)
     sb_admin = get_supabase_admin()
 
-    empresa_resp = sb_admin.table("empresas").select("*").eq("user_id", user_info["user_id"]).single().execute()
+    empresa_resp = sb_admin.table("empresas").select("*").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada para este usuario")
 

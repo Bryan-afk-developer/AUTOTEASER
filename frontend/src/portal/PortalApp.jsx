@@ -6,53 +6,68 @@
  *   - AdminDashboard   → /portal/admin
  */
 import { useState, useEffect } from 'react'
-import LoginPage from './pages/LoginPage'
 import ClienteDashboard from './pages/ClienteDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import api from './lib/api'
 
 export default function PortalApp() {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const path = window.location.pathname
+  const parts = path.split('/').filter(Boolean)
+  const isCompanyView = parts.length > 1
+  const companyId = isCompanyView ? parts[1] : null
 
-  // Al montar, intenta restaurar sesión desde localStorage
+  const [company, setCompany] = useState(null)
+  const [loading, setLoading] = useState(isCompanyView)
+
   useEffect(() => {
-    const savedUser = api.getUser()
-    if (savedUser && api.isAuthenticated()) {
-      setUser(savedUser)
+    if (isCompanyView && companyId) {
+      api.setActiveEmpresa(companyId)
+      api.getEmpresas().then(data => {
+        const found = data.empresas?.find(e => String(e.id) === String(companyId))
+        if (found) setCompany(found)
+        setLoading(false)
+      }).catch(() => setLoading(false))
     }
-    setLoading(false)
-  }, [])
+  }, [isCompanyView, companyId])
 
-  const handleLogin = (userData) => {
-    setUser(userData)
-  }
+  if (isCompanyView) {
+    if (loading) {
+      return (
+        <div style={styles.loadingPage}>
+          <div style={styles.spinner} />
+        </div>
+      )
+    }
+    
+    if (!company) {
+      return (
+        <div style={styles.loadingPage}>
+          <div className="text-white text-center">
+            <h2 className="text-2xl font-bold text-rose-500 mb-2">Empresa no encontrada</h2>
+            <button onClick={() => window.location.href = '/portal'} className="mt-4 px-4 py-2 bg-surface border border-border rounded-lg text-text-main hover:bg-surface/50">Volver al Directorio</button>
+          </div>
+        </div>
+      )
+    }
 
-  const handleLogout = () => {
-    api.logout()
-    setUser(null)
-  }
+    const dummyUser = {
+      empresa_id: company.id,
+      nombre_empresa: company.nombre,
+      rfc: company.rfc
+    }
 
-  if (loading) {
     return (
-      <div style={styles.loadingPage}>
-        <div style={styles.spinner} />
-      </div>
+      <ClienteDashboard 
+        user={dummyUser} 
+        onLogout={() => window.location.href = '/portal'} 
+        isInternalMode={true} 
+      />
     )
   }
 
-  if (!user) {
-    return <LoginPage onLogin={handleLogin} />
-  }
-
-  // Determinar si es admin
-  const esAdmin = user.es_admin || false
-
-  if (esAdmin) {
-    return <AdminDashboard user={user} onLogout={handleLogout} />
-  }
-
-  return <ClienteDashboard user={user} onLogout={handleLogout} />
+  return (
+    <AdminDashboard />
+  )
 }
 
 const styles = {

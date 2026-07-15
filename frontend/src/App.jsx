@@ -23,12 +23,15 @@ function fmt(n) {
 
 function App() {
   // ── Portal routing: si la URL empieza con /portal, mostrar el portal ──
-  if (typeof window !== 'undefined') {
-    if (window.location.pathname.startsWith('/portal')) return <PortalApp />
-    if (window.location.pathname.startsWith('/CAF')) return <CafApp />
-  }
+  // Ya no retornamos temprano para no perder el Sidebar. Se manejará con activeSection.
 
-  const [activeSection, setActiveSection] = useState('teaser') // 'teaser' | 'caf' | 'portal'
+  const initialSection = (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) 
+    ? 'portal' 
+    : (typeof window !== 'undefined' && window.location.pathname.startsWith('/CAF'))
+      ? 'caf'
+      : 'teaser';
+
+  const [activeSection, setActiveSection] = useState(initialSection)
   const [isOnline, setIsOnline] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -778,7 +781,9 @@ function App() {
 
         {/* ── Section: Portal Admin ── */}
         {activeSection === 'portal' && (
-          <AdminDashboard />
+          <div className="flex-1 overflow-auto bg-background">
+            <PortalApp />
+          </div>
         )}
 
 

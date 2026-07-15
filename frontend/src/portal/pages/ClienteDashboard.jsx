@@ -14,6 +14,164 @@ const ESTADO_CONFIG = {
 // UPLOAD MODAL — acepta cualquier tipo de archivo
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── EEFF AI Upload Modal ────────────────────────────────────────────────────────
+
+function EEFFAIAUploadModal({ empresaId, onClose, onSuccess }) {
+  const [files, setFiles] = useState([])
+  const [dragging, setDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragging(false)
+    const droppedFiles = Array.from(e.dataTransfer.files)
+    if (droppedFiles.length > 0) { 
+      setFiles(prev => [...prev, ...droppedFiles])
+      setError('') 
+    }
+  }, [])
+
+  const handleFileChange = (e) => {
+    const selectedFiles = Array.from(e.target.files)
+    if (selectedFiles.length > 0) { 
+      setFiles(prev => [...prev, ...selectedFiles])
+      setError('') 
+    }
+  }
+
+  const handleRemoveFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleUpload = async () => {
+    if (files.length === 0) return
+    setUploading(true)
+    setError('')
+    
+    const remainingFiles = []
+    let successCount = 0
+    let lastError = ""
+
+    for (const file of files) {
+      try {
+        await api.subirEstadosFinancierosAuto(empresaId, file)
+        successCount++
+      } catch (err) {
+        remainingFiles.push(file)
+        lastError = err.message || 'Error al subir un documento'
+      }
+    }
+
+    setFiles(remainingFiles)
+    setUploading(false)
+
+    if (successCount > 0 && remainingFiles.length === 0) {
+      alert(`¡Éxito! ${successCount} archivo(s) procesados con IA.`)
+      onSuccess()
+      onClose()
+    } else if (successCount > 0 && remainingFiles.length > 0) {
+      setError(`Se subieron ${successCount} archivo(s), pero fallaron otros. Error: ${lastError}`)
+      onSuccess() // update UI for the ones that succeeded
+    } else {
+      setError(lastError || 'No se pudo subir ningún archivo.')
+    }
+  }
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={{ ...modalStyles.modal, maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h3 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📊 Subir Estados Financieros
+          </h3>
+          <button style={modalStyles.closeButton} onClick={onClose}>✕</button>
+        </div>
+        <div style={modalStyles.body}>
+          <p className="text-sm text-text-muted mb-4 text-center">
+            Arrastra aquí tus archivos PDF de los Estados Financieros. Nuestra IA leerá las primeras páginas para detectar el año de cada uno automáticamente.
+          </p>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-xl p-10 text-center transition-all ${
+              dragging ? 'border-primary-500 bg-primary-500/10' : 'border-border bg-surface'
+            }`}
+          >
+            {files.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2">
+                  {files.map((file, idx) => (
+                    <div key={idx} className="p-3 bg-background rounded-lg border border-border flex items-center justify-between">
+                      <div className="flex flex-col text-left">
+                        <p className="text-sm font-semibold text-text-main flex items-center gap-2">
+                          📄 <span className="truncate max-w-[200px]">{file.name}</span>
+                        </p>
+                        <p className="text-xs text-text-muted mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveFile(idx)}
+                        className="text-xs text-rose-400 hover:text-rose-300 font-semibold px-2 py-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <label className="cursor-pointer text-sm font-semibold text-primary-400 hover:text-primary-300 transition-colors inline-block mt-2">
+                  <span>+ Agregar más archivos</span>
+                  <input type="file" accept=".pdf" multiple className="hidden" onChange={handleFileChange} />
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="w-12 h-12 bg-primary-500/10 rounded-full flex items-center justify-center mx-auto text-primary-400 text-2xl">
+                  📄
+                </div>
+                <p className="text-sm text-text-main font-semibold">
+                  Arrastra tus PDFs aquí o
+                </p>
+                <label className="cursor-pointer text-sm font-semibold text-primary-400 hover:text-primary-300 transition-colors inline-block">
+                  <span>Selecciona archivos</span>
+                  <input type="file" accept=".pdf" multiple className="hidden" onChange={handleFileChange} />
+                </label>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="mt-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0">⚠️</span>
+              <p>{error}</p>
+            </div>
+          )}
+
+          <div style={modalStyles.footer} className="mt-6">
+            <button style={modalStyles.buttonSecondary} onClick={onClose} disabled={uploading}>
+              Cancelar
+            </button>
+            <button 
+              style={{...modalStyles.buttonPrimary, opacity: (files.length === 0 || uploading) ? 0.5 : 1}} 
+              onClick={handleUpload} 
+              disabled={files.length === 0 || uploading}
+              className="flex items-center gap-2"
+            >
+              {uploading ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Analizando con IA...
+                </>
+              ) : 'Subir y Analizar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function UploadModal({ doc, onClose, onSuccess }) {
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
@@ -666,7 +824,7 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
 // MAIN DASHBOARD — 2 secciones: Empresa + Representante Legal
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function ClienteDashboard({ user, onLogout }) {
+export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
   const [expediente, setExpediente] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -674,18 +832,20 @@ export default function ClienteDashboard({ user, onLogout }) {
   const [showFinancierosModal, setShowFinancierosModal] = useState(false)
   
   const [activeView, setActiveView] = useState(() => {
-    if (window.location.pathname === '/portal/actas') return 'actas'
-    if (window.location.pathname === '/portal/bancos') return 'bancos'
+    const isActas = window.location.pathname.endsWith('/actas')
+    const isBancos = window.location.pathname.endsWith('/bancos')
+    if (isActas) return 'actas'
+    if (isBancos) return 'bancos'
     return 'main'
   })
 
   useEffect(() => {
-    const basePath = '/portal'
+    const basePath = isInternalMode ? `/portal/${user.empresa_id}` : '/portal'
     const newPath = activeView === 'main' ? basePath : `${basePath}/${activeView}`
     if (window.location.pathname !== newPath) {
-      window.history.pushState(null, '', newPath)
+      window.history.replaceState(null, '', newPath)
     }
-  }, [activeView])
+  }, [activeView, isInternalMode, user.empresa_id])
 
   const fetchExpediente = useCallback(async () => {
     setLoading(true)
@@ -738,7 +898,7 @@ export default function ClienteDashboard({ user, onLogout }) {
               <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
             </div>
           </div>
-          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>{isInternalMode ? 'Volver al Directorio' : 'Cerrar Sesión'}</button>
         </header>
         <main style={dashStyles.main}>
           <ActasView
@@ -771,7 +931,7 @@ export default function ClienteDashboard({ user, onLogout }) {
               <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
             </div>
           </div>
-          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>{isInternalMode ? 'Volver al Directorio' : 'Cerrar Sesión'}</button>
         </header>
         <main style={dashStyles.main}>
           <BancosView
@@ -804,7 +964,7 @@ export default function ClienteDashboard({ user, onLogout }) {
               <p style={dashStyles.headerSub}>{user?.nombre_empresa || user?.email}</p>
             </div>
           </div>
-          <button onClick={onLogout} style={dashStyles.logoutBtn}>Cerrar Sesión</button>
+          <button onClick={onLogout} style={dashStyles.logoutBtn}>{isInternalMode ? 'Volver al Directorio' : 'Cerrar Sesión'}</button>
         </header>
         <main style={dashStyles.main}>
           <DeclaracionesView
@@ -1058,13 +1218,9 @@ export default function ClienteDashboard({ user, onLogout }) {
       {/* ── MODALS ── */}
 
       {showFinancierosModal && (
-        <GroupedModal
-          title="Estados Financieros"
-          icon="📊"
-          description="Un solo archivo por periodo que incluya Balance General, Estado de Resultados, Analíticas y Firmado"
-          docs={docsFinancieros}
+        <EEFFAIAUploadModal
+          empresaId={user?.empresa_id}
           onClose={() => setShowFinancierosModal(false)}
-          onUpload={handleUploadFromModal}
           onSuccess={fetchExpediente}
         />
       )}

@@ -9,7 +9,7 @@ from app.config import BASE_DIR
 logger = logging.getLogger(__name__)
 
 CREDENTIALS_FILE = os.path.join(BASE_DIR, "google-credentials.json")
-SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 def get_drive_service():
     # Primero intentar cargar token de usuario (OAuth 2.0)
@@ -99,26 +99,64 @@ def get_shared_parent_folder(service, target_folder_name="AutoTeaser"):
     return files[0]['id']
 
 def create_empresa_structure(service, empresa_nombre, parent_id):
+    """
+    Crea la estructura de carpetas de la empresa en Google Drive:
+
+    [PM] (empresa_nombre)
+    ├── 1. Representante Legal
+    └── 2. EMPRESA
+        ├── 1. ACTAS
+        ├── 2. ESTADOS FINANCIEROS
+        ├── 3. ESTADOS DE CUENTA
+        │   └── [BANCO - CUENTA (BANCO XXXX)]  (dinámico)
+        │       └── [AAAA]                      (dinámico)
+        ├── 4. BURÓ DE CRÉDITO
+        ├── 5. DECLARACIONES
+        └── 6. GENERALES
+    """
     empresa_folder = find_or_create_folder(service, empresa_nombre, parent_id)
     empresa_id = empresa_folder['id']
-    
-    carpetas = {
-        "legal": "2.1. Actas Legales",
-        "financieros": "2.2. Estados Financieros",
-        "estados_cuenta": "2.3. Estados de Cuenta",
-        "buro_credito": "2.4. Buró de Crédito",
-        "declaraciones": "2.5. Declaraciones",
-        "vigentes": "2.6. Generales / Vigentes",
-        "otros": "2.7. Otros Documentos",
-        "representante": "1. Representante Legal"
+
+    # 1. Representante Legal (al nivel de la empresa)
+    rep_folder = find_or_create_folder(service, "1. Representante Legal", empresa_id)
+
+    # 2. EMPRESA (carpeta contenedora de todo lo de la empresa)
+    empresa_sub = find_or_create_folder(service, "2. EMPRESA", empresa_id)
+    empresa_sub_id = empresa_sub['id']
+
+    # Subcarpetas dentro de 2. EMPRESA
+    actas_folder        = find_or_create_folder(service, "1. ACTAS",              empresa_sub_id)
+    financieros_folder  = find_or_create_folder(service, "2. ESTADOS FINANCIEROS", empresa_sub_id)
+    ec_folder           = find_or_create_folder(service, "3. ESTADOS DE CUENTA",  empresa_sub_id)
+    buro_folder         = find_or_create_folder(service, "4. BURÓ DE CRÉDITO",    empresa_sub_id)
+    declaraciones_folder= find_or_create_folder(service, "5. DECLARACIONES",      empresa_sub_id)
+    generales_folder    = find_or_create_folder(service, "6. GENERALES",          empresa_sub_id)
+
+    estructura = {
+        "root":         empresa_folder,
+        "representante": rep_folder['id'],
+        "empresa_sub":  empresa_sub_id,
+        "legal":        actas_folder['id'],
+        "financieros":  financieros_folder['id'],
+        "estados_cuenta": ec_folder['id'],
+        "buro_credito": buro_folder['id'],
+        "declaraciones": declaraciones_folder['id'],
+        "vigentes":     generales_folder['id'],
+        "otros":        generales_folder['id'],  # fallback a GENERALES
     }
-    
-    estructura = {"root": empresa_folder}
-    for key, name in carpetas.items():
-        sub = find_or_create_folder(service, name, empresa_id)
-        estructura[key] = sub['id']
-        
+
     return estructura
+
+
+def get_ec_subfolder(service, estructura, banco_nombre, year):
+    """
+    Devuelve el ID de la carpeta: 3. ESTADOS DE CUENTA > [banco_nombre] > [year]
+    Crea las subcarpetas si no existen.
+    """
+    ec_root_id = estructura["estados_cuenta"]
+    banco_folder = find_or_create_folder(service, banco_nombre, ec_root_id)
+    year_folder = find_or_create_folder(service, str(year), banco_folder['id'])
+    return year_folder['id']
 
 def upload_file_to_drive(service, file_bytes, filename, mime_type, parent_id):
     query = f"name='{filename}' and '{parent_id}' in parents and trashed=false"

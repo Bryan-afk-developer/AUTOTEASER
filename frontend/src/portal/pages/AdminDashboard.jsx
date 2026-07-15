@@ -7,7 +7,7 @@ import { formatMopText } from '../lib/utils'
 import {
   FileText, Loader2, Search, ArrowLeft, Building2, CheckCircle2,
   XCircle, Clock, Eye, Download, RefreshCw, ChevronDown, ChevronUp,
-  BarChart2, AlertTriangle, X, ChevronRight, Sparkles,
+  BarChart2, AlertTriangle, X, ChevronRight, Sparkles, Plus, Trash2
 } from 'lucide-react'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -717,7 +717,7 @@ function ReviewModal({ doc, onClose, onSuccess }) {
 
 // ── AdminDashboard ────────────────────────────────────────────────────────────
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onOpenClientDashboard }) {
   const [empresas, setEmpresas] = useState([])
   const [selectedEmpresa, setSelectedEmpresa] = useState(null)
   const [documentos, setDocumentos] = useState([])
@@ -726,6 +726,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [reviewDoc, setReviewDoc] = useState(null)
+  
+  // New Empresa modal
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newEmpresa, setNewEmpresa] = useState({ nombre: '', rfc: '' })
+  const [creatingEmpresa, setCreatingEmpresa] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState({})
   const [downloadingSection, setDownloadingSection] = useState(null)
@@ -782,6 +787,35 @@ export default function AdminDashboard() {
     else loadDocumentos(selectedEmpresa.id)
   }, [selectedEmpresa, loadEmpresas, loadDocumentos])
 
+  const handleCreateEmpresa = async (e) => {
+    e.preventDefault()
+    if (!newEmpresa.nombre) return
+    setCreatingEmpresa(true)
+    try {
+      await api.crearEmpresa(newEmpresa.nombre, newEmpresa.rfc)
+      setShowCreateModal(false)
+      setNewEmpresa({ nombre: '', rfc: '' })
+      loadEmpresas()
+    } catch (err) {
+      alert("Error al crear empresa: " + err.message)
+    } finally {
+      setCreatingEmpresa(false)
+    }
+  }
+
+  const handleDeleteEmpresa = async (e, emp) => {
+    e.stopPropagation()
+    const msg = `⚠️ ¡ADVERTENCIA!\n\nEstás a punto de ELIMINAR COMPLETAMENTE la empresa "${emp.nombre}".\nEsta acción es irreversible y borrará todo el expediente.\n\n¿Estás completamente seguro de continuar?`
+    if (window.confirm(msg)) {
+      try {
+        await api.eliminarEmpresa(emp.id)
+        loadEmpresas()
+      } catch (err) {
+        alert("Error al eliminar empresa: " + err.message)
+      }
+    }
+  }
+
   const filteredEmpresas = empresas.filter(emp =>
     emp.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (emp.rfc && emp.rfc.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -796,6 +830,13 @@ export default function AdminDashboard() {
             <Building2 className="w-4 h-4 text-primary-400" /> Directorio de Empresas
           </h2>
           <div className="flex items-center gap-3 w-full md:w-auto">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="p-2.5 bg-primary-600 hover:bg-primary-500 rounded-xl text-white transition-colors shadow-sm flex-shrink-0 flex items-center gap-2 font-bold text-sm"
+              title="Crear Nueva Empresa"
+            >
+              <Plus className="w-4 h-4" /> Crear Empresa
+            </button>
             <button
               onClick={loadEmpresas} disabled={loading}
               className={`p-2.5 bg-surface border border-border hover:border-primary-500/50 rounded-xl text-text-muted hover:text-primary-400 transition-colors shadow-sm flex-shrink-0 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -832,7 +873,7 @@ export default function AdminDashboard() {
               <div
                 key={emp.id}
                 onClick={() => setSelectedEmpresa(emp)}
-                className="bg-card border border-border hover:border-primary-500/50 rounded-xl p-5 cursor-pointer transition-all hover:shadow-[0_0_15px_rgba(225,29,72,0.05)] group flex flex-col h-full"
+                className="relative bg-card border border-border hover:border-primary-500/50 rounded-xl p-5 cursor-pointer transition-all hover:shadow-[0_0_15px_rgba(225,29,72,0.05)] group flex flex-col h-full"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="min-w-0">
@@ -853,14 +894,64 @@ export default function AdminDashboard() {
                       </span>
                     )}
                   </div>
-                  <span className="text-xs font-semibold text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                    Ver Expediente →
-                  </span>
+                  <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); window.open('/portal/' + emp.id, '_blank'); }}
+                      className="text-xs font-semibold text-text-main hover:text-primary-400 transition-colors flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" /> Añadir Docs
+                    </button>
+                    <span className="text-xs font-semibold text-primary-400">
+                      Ver Expediente →
+                    </span>
+                  </div>
                 </div>
+                
+                {/* Botón Borrar Empresa */}
+                <button
+                  onClick={(e) => { e.preventDefault(); handleDeleteEmpresa(e, emp); }}
+                  className="absolute top-4 right-4 p-1.5 rounded-lg text-text-muted hover:text-rose-400 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-all z-10"
+                  title="Eliminar Empresa"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))}
           </div>
         )}
+
+        {/* Modal Crear Empresa */}
+        <AnimatePresence>
+          {showCreateModal && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-card border border-border rounded-xl w-full max-w-md overflow-hidden shadow-2xl"
+              >
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
+                  <h3 className="font-bold text-text-main">Crear Nueva Empresa</h3>
+                  <button onClick={() => setShowCreateModal(false)} className="text-text-muted hover:text-text-main">✕</button>
+                </div>
+                <form onSubmit={handleCreateEmpresa} className="p-6 space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1 block">Nombre de la Empresa *</label>
+                    <input type="text" required autoFocus value={newEmpresa.nombre} onChange={e => setNewEmpresa({...newEmpresa, nombre: e.target.value})} className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-text-main focus:outline-none focus:border-primary-500" placeholder="Ej: Distribuidora XYZ S.A. de C.V." />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-text-muted uppercase mb-1 block">RFC (Opcional)</label>
+                    <input type="text" value={newEmpresa.rfc} onChange={e => setNewEmpresa({...newEmpresa, rfc: e.target.value})} className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-text-main focus:outline-none focus:border-primary-500" placeholder="Ej: DXY991231ABC" />
+                  </div>
+                  <div className="pt-4 flex justify-end gap-3">
+                    <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-semibold text-text-muted hover:text-text-main">Cancelar</button>
+                    <button type="submit" disabled={creatingEmpresa} className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50">
+                      {creatingEmpresa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Crear
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </main>
     )
   }
