@@ -866,6 +866,44 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
 
   useEffect(() => { fetchExpediente() }, [fetchExpediente])
 
+  // ── Accionistas ──
+  const [accionistas, setAccionistas] = useState([])
+  const [accionistaLoading, setAccionistaLoading] = useState(false)
+  const [accionistaUpload, setAccionistaUpload] = useState(null) // { accionista_id, tipo, nombre }
+
+  const fetchAccionistas = useCallback(async () => {
+    try {
+      const data = await api.getAccionistas()
+      setAccionistas(data.accionistas || [])
+    } catch (e) {
+      console.error('Error cargando accionistas:', e)
+    }
+  }, [])
+
+  useEffect(() => { fetchAccionistas() }, [fetchAccionistas])
+
+  const handleCrearAccionista = async () => {
+    setAccionistaLoading(true)
+    try {
+      await api.crearAccionista()
+      await fetchAccionistas()
+    } catch (e) {
+      alert('Error al crear accionista: ' + e.message)
+    } finally {
+      setAccionistaLoading(false)
+    }
+  }
+
+  const handleEliminarAccionista = async (id) => {
+    if (!confirm('¿Eliminar este accionista y todos sus documentos?')) return
+    try {
+      await api.eliminarAccionista(id)
+      await fetchAccionistas()
+    } catch (e) {
+      alert('Error: ' + e.message)
+    }
+  }
+
   // ── Filter docs by group ──
   const byGroup = (grupo) =>
     expediente ? expediente.documentos.filter(d => d.grupo === grupo) : []
@@ -1213,6 +1251,46 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
             </div>
           </div>
         )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* SECCIÓN: ACCIONISTAS                                             */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {!loading && !error && (
+          <div style={dashStyles.section}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '10px', borderBottom: '1px solid rgba(251,191,36,0.2)' }}>
+              <h2 style={{ ...dashStyles.sectionTitle, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}>
+                👥 Accionistas
+              </h2>
+              <button
+                onClick={handleCrearAccionista}
+                disabled={accionistaLoading}
+                style={{ ...cardStyles.uploadBtn, background: 'linear-gradient(135deg, #f59e0b, #d97706)', padding: '7px 18px', fontSize: '13px' }}
+              >
+                {accionistaLoading ? 'Creando...' : '+ Añadir Accionista'}
+              </button>
+            </div>
+
+            {accionistas.length === 0 ? (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '32px', borderRadius: '16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Aún no has añadido accionistas. Presiona el botón para agregar uno.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {accionistas.map((acc, idx) => (
+                  <AccionistaCard
+                    key={acc.id}
+                    accionista={acc}
+                    index={idx + 1}
+                    onUpload={(tipo) => setAccionistaUpload({ accionista_id: acc.id, tipo, nombre: acc.nombre })}
+                    onEliminar={() => handleEliminarAccionista(acc.id)}
+                    onRename={async (nombre) => { await api.actualizarAccionista(acc.id, nombre); fetchAccionistas() }}
+                    onSuccess={fetchAccionistas}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* ── MODALS ── */}
@@ -1231,6 +1309,180 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
           onClose={() => setUploadDoc(null)}
           onSuccess={fetchExpediente}
         />
+      )}
+
+      {accionistaUpload && (
+        <AccionistaUploadModal
+          accionista_id={accionistaUpload.accionista_id}
+          tipo={accionistaUpload.tipo}
+          nombre={accionistaUpload.nombre}
+          onClose={() => setAccionistaUpload(null)}
+          onSuccess={fetchAccionistas}
+        />
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACCIONISTA UPLOAD MODAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+function AccionistaUploadModal({ accionista_id, tipo, nombre, onClose, onSuccess }) {
+  const [file, setFile] = useState(null)
+  const [dragging, setDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); setDragging(false)
+    const f = e.dataTransfer.files[0]; if (f) { setFile(f); setError('') }
+  }, [])
+
+  const handleUpload = async () => {
+    if (!file) return
+    setUploading(true); setError('')
+    try {
+      await api.subirDocumentoAccionista(accionista_id, tipo, file)
+      onSuccess(); onClose()
+    } catch (err) { setError(err.message) } finally { setUploading(false) }
+  }
+
+  const tipoLabel = {
+    ine_accionista: 'INE / Identificación',
+    csf_accionista: 'Constancia de Situación Fiscal',
+    comprobante_domicilio_accionista: 'Comprobante de Domicilio',
+    buro_accionista: 'Buró de Crédito',
+  }
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h3 style={modalStyles.title}>👤 {tipoLabel[tipo] || tipo}</h3>
+          <button onClick={onClose} style={modalStyles.closeBtn}>✕</button>
+        </div>
+        {nombre && <p style={{ color: '#94a3b8', fontSize: '13px', margin: '-4px 0 12px' }}>Accionista: <strong style={{ color: '#e2e8f0' }}>{nombre}</strong></p>}
+        <div
+          style={{ ...modalStyles.dropzone, ...(dragging ? modalStyles.dropzoneDrag : {}) }}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => document.getElementById('acc-file-input').click()}
+        >
+          <input id="acc-file-input" type="file" onChange={(e) => { const f = e.target.files[0]; if (f) { setFile(f); setError('') } }} style={{ display: 'none' }} />
+          {file ? (
+            <div>
+              <div style={{ fontSize: '32px', marginBottom: '8px' }}>📄</div>
+              <p style={{ color: '#e2e8f0', fontWeight: 600, margin: 0 }}>{file.name}</p>
+              <p style={{ color: '#94a3b8', fontSize: '12px', margin: '4px 0 0' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: '40px', marginBottom: '12px' }}>☁️</div>
+              <p style={{ color: '#cbd5e1', fontWeight: 600, margin: 0 }}>Arrastra tu archivo aquí</p>
+              <p style={{ color: '#64748b', fontSize: '13px', margin: '6px 0 0' }}>o haz clic para seleccionar</p>
+            </div>
+          )}
+        </div>
+        {error && <p style={modalStyles.error}>⚠️ {error}</p>}
+        <div style={modalStyles.actions}>
+          <button onClick={onClose} style={modalStyles.btnSecondary}>Cancelar</button>
+          <button onClick={handleUpload} disabled={!file || uploading} style={{ ...modalStyles.btnPrimary, ...(!file || uploading ? modalStyles.btnDisabled : {}) }}>
+            {uploading ? '⏳ Subiendo...' : 'Subir Documento'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACCIONISTA CARD — acordeón colapsable por accionista
+// ══════════════════════════════════════════════════════════════════════════════
+
+function AccionistaCard({ accionista, index, onUpload, onEliminar, onRename, onSuccess }) {
+  const [expanded, setExpanded] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [nombreEdit, setNombreEdit] = useState(accionista.nombre || '')
+
+  const docs = accionista.documentos || []
+  const aprobados = docs.filter(d => d.estado === 'APROBADO').length
+
+  const handleSaveNombre = async () => {
+    if (nombreEdit.trim()) { await onRename(nombreEdit.trim()) }
+    setEditing(false)
+  }
+
+  return (
+    <div style={{ border: '1px solid rgba(251,191,36,0.25)', borderRadius: '16px', overflow: 'hidden', background: 'rgba(15,23,42,0.7)' }}>
+      {/* Header del acordeón */}
+      <div
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', cursor: 'pointer', background: 'rgba(251,191,36,0.04)' }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: '#f59e0b', fontWeight: 800, fontSize: '16px' }}>1.{index}</span>
+          {editing ? (
+            <input
+              value={nombreEdit}
+              onChange={e => setNombreEdit(e.target.value)}
+              onClick={e => e.stopPropagation()}
+              onKeyDown={e => { if (e.key === 'Enter') { handleSaveNombre(); e.stopPropagation() } }}
+              autoFocus
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(251,191,36,0.4)', color: '#f8fafc', padding: '4px 10px', borderRadius: '8px', fontSize: '15px', fontWeight: 700, minWidth: '220px' }}
+            />
+          ) : (
+            <span style={{ color: '#f8fafc', fontWeight: 700, fontSize: '15px' }}>{accionista.nombre}</span>
+          )}
+          <span style={{ fontSize: '12px', color: '#64748b', background: 'rgba(255,255,255,0.04)', padding: '3px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {aprobados}/{docs.length} docs
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={e => e.stopPropagation()}>
+          {editing ? (
+            <button onClick={handleSaveNombre} style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', padding: '4px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
+              Guardar
+            </button>
+          ) : (
+            <button onClick={() => setEditing(true)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '4px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
+              ✏️ Editar
+            </button>
+          )}
+          <button onClick={onEliminar} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#fca5a5', padding: '4px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
+            🗑️
+          </button>
+          <span style={{ color: '#64748b', fontSize: '18px', lineHeight: 1 }}>{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {/* Documentos del accionista */}
+      {expanded && (
+        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '12px' }}>
+          {docs.map(d => {
+            const cfg = ESTADO_CONFIG[d.estado?.toUpperCase()] || ESTADO_CONFIG.FALTANTE
+            return (
+              <div key={d.clave} style={{ border: `1px solid ${cfg.border}`, borderRadius: '12px', padding: '14px', background: `linear-gradient(135deg, rgba(24,24,27,0.9) 0%, ${cfg.bg} 100%)`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '20px' }}>{d.icono}</span>
+                  <span style={{ ...cardStyles.badge, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, fontSize: '11px' }}>{cfg.icon} {cfg.label}</span>
+                </div>
+                <p style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '13px', margin: 0 }}>{d.nombre}</p>
+                {d.nombre_archivo && <p style={{ color: '#64748b', fontSize: '11px', margin: 0, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {d.nombre_archivo}</p>}
+                <button
+                  onClick={() => onUpload(d.clave)}
+                  style={{
+                    ...cardStyles.uploadBtn, padding: '6px', fontSize: '12px', marginTop: 'auto',
+                    background: d.estado === 'RECHAZADO' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : d.estado === 'pendiente' ? 'linear-gradient(135deg, #e11d48, #be123c)' : 'rgba(255,255,255,0.1)',
+                    border: (d.estado !== 'pendiente' && d.estado !== 'RECHAZADO') ? '1px solid rgba(255,255,255,0.2)' : 'none',
+                  }}
+                >
+                  {d.estado === 'RECHAZADO' ? 'Resubir' : d.estado === 'pendiente' ? 'Subir' : 'Reemplazar'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )

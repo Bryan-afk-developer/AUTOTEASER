@@ -89,6 +89,7 @@ async def subir_documento(
     tipo_documento: str = Form(...),
     file: UploadFile = File(...),
     authorization: str = Header(None),
+    accionista_id: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = None,
 ):
     """
@@ -314,9 +315,14 @@ async def subir_documento(
         logger.warning(f"No se pudo generar URL firmada: {e}")
         storage_url = ""
 
-    # 7. Verificar a qué tabla pertenece (Representante o Empresa)
+    # 7. Verificar a qué tabla pertenece (Accionista, Representante o Empresa)
     claves_rep = {doc["clave"] for doc in DOCUMENTOS_REPRESENTANTE}
-    table_name = "documentos_representante" if tipo_documento in claves_rep else "documentos_expediente"
+    if accionista_id:
+        table_name = "documentos_accionista"
+    elif tipo_documento in claves_rep or tipo_documento.startswith("ine_accionista") or tipo_documento.startswith("csf_accionista") or tipo_documento.startswith("comprobante_domicilio_accionista") or tipo_documento.startswith("buro_accionista"):
+        table_name = "documentos_representante"
+    else:
+        table_name = "documentos_expediente"
 
     ahora = datetime.now(timezone.utc).isoformat()
     existing = sb.table(table_name).select("id").eq("empresa_id", empresa_id).eq("tipo_documento", tipo_documento).execute()
@@ -327,10 +333,22 @@ async def subir_documento(
         "nombre_archivo": original_filename,
         "storage_path": storage_path,
         "estado": "PENDIENTE",
-        "comentario_admin": None,  # Limpia comentarios previos al re-subir
+        "comentario_admin": None,
         "subido_en": ahora,
         "revisado_en": None,
     }
+
+    # Si es documento de accionista, agregar accionista_id y no incluir revisado_en (no está en esa tabla)
+    if accionista_id:
+        doc_data = {
+            "accionista_id": accionista_id,
+            "empresa_id": empresa_id,
+            "tipo_documento": tipo_documento,
+            "nombre_archivo": original_filename,
+            "storage_path": storage_path,
+            "estado": "PENDIENTE",
+            "subido_en": ahora,
+        }
     
     if cuenta_bancaria_id:
         doc_data["cuenta_bancaria_id"] = cuenta_bancaria_id

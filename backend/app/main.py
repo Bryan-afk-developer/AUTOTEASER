@@ -39,6 +39,7 @@ from portal.shared.supabase_db import init_supabase
 from portal.Cliente import auth as portal_auth
 from portal.Cliente import upload as portal_upload
 from portal.Cliente import expedientes as portal_expedientes
+from portal.Cliente import accionistas as portal_accionistas
 from portal.Admin import dashboard as portal_dashboard
 from portal.Admin import revision as portal_revision
 
@@ -81,6 +82,7 @@ app.add_middleware(
 app.include_router(portal_auth.router,         prefix="/api/portal/cliente", tags=["Portal Cliente"])
 app.include_router(portal_upload.router,       prefix="/api/portal/cliente", tags=["Portal Cliente"])
 app.include_router(portal_expedientes.router,  prefix="/api/portal/cliente", tags=["Portal Cliente"])
+app.include_router(portal_accionistas.router,  prefix="/api/portal/cliente", tags=["Portal Cliente"])
 app.include_router(portal_dashboard.router,    prefix="/api/portal/admin",   tags=["Portal Admin"])
 app.include_router(portal_revision.router,     prefix="/api/portal/admin",   tags=["Portal Admin"])
 app.include_router(caf_router)

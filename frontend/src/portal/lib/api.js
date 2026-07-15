@@ -209,6 +209,26 @@ export const api = {
   // Admin - Google Drive
   initDrive: (empresaId) => request('POST', `/api/portal/admin/empresas/${empresaId}/drive/init`),
   syncDrive: (empresaId) => request('POST', `/api/portal/admin/empresas/${empresaId}/drive/sync`),
+
+  // Accionistas
+  getAccionistas: () => request('GET', '/api/portal/cliente/accionistas'),
+
+  crearAccionista: (nombre = null) =>
+    request('POST', '/api/portal/cliente/accionistas', { nombre }),
+
+  actualizarAccionista: (accionistaId, nombre) =>
+    request('PUT', `/api/portal/cliente/accionistas/${accionistaId}`, { nombre }),
+
+  eliminarAccionista: (accionistaId) =>
+    request('DELETE', `/api/portal/cliente/accionistas/${accionistaId}`),
+
+  subirDocumentoAccionista: (accionistaId, tipoDocumento, file) => {
+    const formData = new FormData()
+    formData.append('tipo_documento', tipoDocumento)
+    formData.append('accionista_id', accionistaId)
+    formData.append('file', file)
+    return request('POST', '/api/portal/cliente/subir-documento', formData, true)
+  },
 }
 
 export default api
