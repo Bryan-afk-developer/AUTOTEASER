@@ -1,76 +1,308 @@
 {
     "sheet_name": "Bancos",
-    "months_order": ["nov", "dic", "ene", "feb", "mar", "abr", "may"],
+    "months_order": [
+        "dic",
+        "ene",
+        "feb",
+        "mar",
+        "abr",
+        "may",
+        "jun"
+    ],
     "blocks": [
         {
             "base": "B2",
-            "depositos": { "nov": "C4", "dic": "C5", "ene": "C6", "feb": "C7", "mar": "C8", "abr": "C9", "may": "C10" },
-            "saldo_promedio": { "nov": "D4", "dic": "D5", "ene": "D6", "feb": "D7", "mar": "D8", "abr": "D9", "may": "D10" }
+            "depositos": {
+                "dic": "C4",
+                "ene": "C5",
+                "feb": "C6",
+                "mar": "C7",
+                "abr": "C8",
+                "may": "C9",
+                "jun": "C10"
+            },
+            "saldo_promedio": {
+                "dic": "D4",
+                "ene": "D5",
+                "feb": "D6",
+                "mar": "D7",
+                "abr": "D8",
+                "may": "D9",
+                "jun": "D10"
+            }
         },
         {
             "base": "G2",
-            "depositos": { "nov": "H4", "dic": "H5", "ene": "H6", "feb": "H7", "mar": "H8", "abr": "H9", "may": "H10" },
-            "saldo_promedio": { "nov": "I4", "dic": "I5", "ene": "I6", "feb": "I7", "mar": "I8", "abr": "I9", "may": "I10" }
+            "depositos": {
+                "dic": "H4",
+                "ene": "H5",
+                "feb": "H6",
+                "mar": "H7",
+                "abr": "H8",
+                "may": "H9",
+                "jun": "H10"
+            },
+            "saldo_promedio": {
+                "dic": "I4",
+                "ene": "I5",
+                "feb": "I6",
+                "mar": "I7",
+                "abr": "I8",
+                "may": "I9",
+                "jun": "I10"
+            }
         },
         {
             "base": "L2",
-            "depositos": { "nov": "M4", "dic": "M5", "ene": "M6", "feb": "M7", "mar": "M8", "abr": "M9", "may": "M10" },
-            "saldo_promedio": { "nov": "N4", "dic": "N5", "ene": "N6", "feb": "N7", "mar": "N8", "abr": "N9", "may": "N10" }
+            "depositos": {
+                "dic": "M4",
+                "ene": "M5",
+                "feb": "M6",
+                "mar": "M7",
+                "abr": "M8",
+                "may": "M9",
+                "jun": "M10"
+            },
+            "saldo_promedio": {
+                "dic": "N4",
+                "ene": "N5",
+                "feb": "N6",
+                "mar": "N7",
+                "abr": "N8",
+                "may": "N9",
+                "jun": "N10"
+            }
         },
         {
             "base": "Q2",
-            "depositos": { "nov": "R4", "dic": "R5", "ene": "R6", "feb": "R7", "mar": "R8", "abr": "R9", "may": "R10" },
-            "saldo_promedio": { "nov": "S4", "dic": "S5", "ene": "S6", "feb": "S7", "mar": "S8", "abr": "S9", "may": "S10" }
+            "depositos": {
+                "dic": "R4",
+                "ene": "R5",
+                "feb": "R6",
+                "mar": "R7",
+                "abr": "R8",
+                "may": "R9",
+                "jun": "R10"
+            },
+            "saldo_promedio": {
+                "dic": "S4",
+                "ene": "S5",
+                "feb": "S6",
+                "mar": "S7",
+                "abr": "S8",
+                "may": "S9",
+                "jun": "S10"
+            }
         },
         {
             "base": "U2",
-            "depositos": { "nov": "V4", "dic": "V5", "ene": "V6", "feb": "V7", "mar": "V8", "abr": "V9", "may": "V10" },
-            "saldo_promedio": { "nov": "W4", "dic": "W5", "ene": "W6", "feb": "W7", "mar": "W8", "abr": "W9", "may": "W10" }
+            "depositos": {
+                "dic": "V4",
+                "ene": "V5",
+                "feb": "V6",
+                "mar": "V7",
+                "abr": "V8",
+                "may": "V9",
+                "jun": "V10"
+            },
+            "saldo_promedio": {
+                "dic": "W4",
+                "ene": "W5",
+                "feb": "W6",
+                "mar": "W7",
+                "abr": "W8",
+                "may": "W9",
+                "jun": "W10"
+            }
         },
         {
             "base": "Z2",
-            "depositos": { "nov": "AA4", "dic": "AA5", "ene": "AA6", "feb": "AA7", "mar": "AA8", "abr": "AA9", "may": "AA10" },
-            "saldo_promedio": { "nov": "AB4", "dic": "AB5", "ene": "AB6", "feb": "AB7", "mar": "AB8", "abr": "AB9", "may": "AB10" }
+            "depositos": {
+                "dic": "AA4",
+                "ene": "AA5",
+                "feb": "AA6",
+                "mar": "AA7",
+                "abr": "AA8",
+                "may": "AA9",
+                "jun": "AA10"
+            },
+            "saldo_promedio": {
+                "dic": "AB4",
+                "ene": "AB5",
+                "feb": "AB6",
+                "mar": "AB7",
+                "abr": "AB8",
+                "may": "AB9",
+                "jun": "AB10"
+            }
         },
         {
             "base": "AE2",
-            "depositos": { "nov": "AF4", "dic": "AF5", "ene": "AF6", "feb": "AF7", "mar": "AF8", "abr": "AF9", "may": "AF10" },
-            "saldo_promedio": { "nov": "AG4", "dic": "AG5", "ene": "AG6", "feb": "AG7", "mar": "AG8", "abr": "AG9", "may": "AG10" }
+            "depositos": {
+                "dic": "AF4",
+                "ene": "AF5",
+                "feb": "AF6",
+                "mar": "AF7",
+                "abr": "AF8",
+                "may": "AF9",
+                "jun": "AF10"
+            },
+            "saldo_promedio": {
+                "dic": "AG4",
+                "ene": "AG5",
+                "feb": "AG6",
+                "mar": "AG7",
+                "abr": "AG8",
+                "may": "AG9",
+                "jun": "AG10"
+            }
         },
         {
             "base": "AJ2",
-            "depositos": { "nov": "AK4", "dic": "AK5", "ene": "AK6", "feb": "AK7", "mar": "AK8", "abr": "AK9", "may": "AK10" },
-            "saldo_promedio": { "nov": "AL4", "dic": "AL5", "ene": "AL6", "feb": "AL7", "mar": "AL8", "abr": "AL9", "may": "AL10" }
+            "depositos": {
+                "dic": "AK4",
+                "ene": "AK5",
+                "feb": "AK6",
+                "mar": "AK7",
+                "abr": "AK8",
+                "may": "AK9",
+                "jun": "AK10"
+            },
+            "saldo_promedio": {
+                "dic": "AL4",
+                "ene": "AL5",
+                "feb": "AL6",
+                "mar": "AL7",
+                "abr": "AL8",
+                "may": "AL9",
+                "jun": "AL10"
+            }
         },
         {
             "base": "AO2",
-            "depositos": { "nov": "AP4", "dic": "AP5", "ene": "AP6", "feb": "AP7", "mar": "AP8", "abr": "AP9", "may": "AP10" },
-            "saldo_promedio": { "nov": "AQ4", "dic": "AQ5", "ene": "AQ6", "feb": "AQ7", "mar": "AQ8", "abr": "AQ9", "may": "AQ10" }
+            "depositos": {
+                "dic": "AP4",
+                "ene": "AP5",
+                "feb": "AP6",
+                "mar": "AP7",
+                "abr": "AP8",
+                "may": "AP9",
+                "jun": "AP10"
+            },
+            "saldo_promedio": {
+                "dic": "AQ4",
+                "ene": "AQ5",
+                "feb": "AQ6",
+                "mar": "AQ7",
+                "abr": "AQ8",
+                "may": "AQ9",
+                "jun": "AQ10"
+            }
         },
         {
             "base": "AT2",
-            "depositos": { "nov": "AU4", "dic": "AU5", "ene": "AU6", "feb": "AU7", "mar": "AU8", "abr": "AU9", "may": "AU10" },
-            "saldo_promedio": { "nov": "AV4", "dic": "AV5", "ene": "AV6", "feb": "AV7", "mar": "AV8", "abr": "AV9", "may": "AV10" }
+            "depositos": {
+                "dic": "AU4",
+                "ene": "AU5",
+                "feb": "AU6",
+                "mar": "AU7",
+                "abr": "AU8",
+                "may": "AU9",
+                "jun": "AU10"
+            },
+            "saldo_promedio": {
+                "dic": "AV4",
+                "ene": "AV5",
+                "feb": "AV6",
+                "mar": "AV7",
+                "abr": "AV8",
+                "may": "AV9",
+                "jun": "AV10"
+            }
         },
         {
             "base": "AY2",
-            "depositos": { "nov": "AZ4", "dic": "AZ5", "ene": "AZ6", "feb": "AZ7", "mar": "AZ8", "abr": "AZ9", "may": "AZ10" },
-            "saldo_promedio": { "nov": "BA4", "dic": "BA5", "ene": "BA6", "feb": "BA7", "mar": "BA8", "abr": "BA9", "may": "BA10" }
+            "depositos": {
+                "dic": "AZ4",
+                "ene": "AZ5",
+                "feb": "AZ6",
+                "mar": "AZ7",
+                "abr": "AZ8",
+                "may": "AZ9",
+                "jun": "AZ10"
+            },
+            "saldo_promedio": {
+                "dic": "BA4",
+                "ene": "BA5",
+                "feb": "BA6",
+                "mar": "BA7",
+                "abr": "BA8",
+                "may": "BA9",
+                "jun": "BA10"
+            }
         },
         {
             "base": "BD2",
-            "depositos": { "nov": "BE4", "dic": "BE5", "ene": "BE6", "feb": "BE7", "mar": "BE8", "abr": "BE9", "may": "BE10" },
-            "saldo_promedio": { "nov": "BF4", "dic": "BF5", "ene": "BF6", "feb": "BF7", "mar": "BF8", "abr": "BF9", "may": "BF10" }
+            "depositos": {
+                "dic": "BE4",
+                "ene": "BE5",
+                "feb": "BE6",
+                "mar": "BE7",
+                "abr": "BE8",
+                "may": "BE9",
+                "jun": "BE10"
+            },
+            "saldo_promedio": {
+                "dic": "BF4",
+                "ene": "BF5",
+                "feb": "BF6",
+                "mar": "BF7",
+                "abr": "BF8",
+                "may": "BF9",
+                "jun": "BF10"
+            }
         },
         {
             "base": "BI2",
-            "depositos": { "nov": "BJ4", "dic": "BJ5", "ene": "BJ6", "feb": "BJ7", "mar": "BJ8", "abr": "BJ9", "may": "BJ10" },
-            "saldo_promedio": { "nov": "BK4", "dic": "BK5", "ene": "BK6", "feb": "BK7", "mar": "BK8", "abr": "BK9", "may": "BK10" }
+            "depositos": {
+                "dic": "BJ4",
+                "ene": "BJ5",
+                "feb": "BJ6",
+                "mar": "BJ7",
+                "abr": "BJ8",
+                "may": "BJ9",
+                "jun": "BJ10"
+            },
+            "saldo_promedio": {
+                "dic": "BK4",
+                "ene": "BK5",
+                "feb": "BK6",
+                "mar": "BK7",
+                "abr": "BK8",
+                "may": "BK9",
+                "jun": "BK10"
+            }
         },
         {
             "base": "BN2",
-            "depositos": { "nov": "BO4", "dic": "BO5", "ene": "BO6", "feb": "BO7", "mar": "BO8", "abr": "BO9", "may": "BO10" },
-            "saldo_promedio": { "nov": "BP4", "dic": "BP5", "ene": "BP6", "feb": "BP7", "mar": "BP8", "abr": "BP9", "may": "BP10" }
+            "depositos": {
+                "dic": "BO4",
+                "ene": "BO5",
+                "feb": "BO6",
+                "mar": "BO7",
+                "abr": "BO8",
+                "may": "BO9",
+                "jun": "BO10"
+            },
+            "saldo_promedio": {
+                "dic": "BP4",
+                "ene": "BP5",
+                "feb": "BP6",
+                "mar": "BP7",
+                "abr": "BP8",
+                "may": "BP9",
+                "jun": "BP10"
+            }
         }
     ]
 }

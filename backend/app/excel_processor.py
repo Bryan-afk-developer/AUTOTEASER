@@ -54,7 +54,7 @@ def _compute_month_slots() -> list[dict]:
     from dateutil.relativedelta import relativedelta
 
     today = date.today()
-    start = today - relativedelta(months=2)  # 2 months back from today
+    start = today - relativedelta(months=1)  # 1 month back from today
     slots = []
     for i in range(7):
         target = start - relativedelta(months=i)
