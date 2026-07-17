@@ -60,7 +60,7 @@ def find_or_create_folder(service, folder_name, parent_id=None):
 
 def get_shared_parent_folder(service, target_folder_name="AutoTeaser"):
     # Si hay un ID de carpeta configurado de manera explícita (el que pidió el usuario), usarlo directamente
-    target_id = os.getenv("DRIVE_PARENT_ID", "1X_i_12e01QTEslvT3NvCkW6JMKKFCMVf")
+    target_id = os.getenv("DRIVE_PARENT_ID", "1N0-ZxMPLLTUn4lZOW0YGrNCf8D4reuOz")
     if target_id:
         logger.info(f"Usando ID de carpeta padre fijo configurado manualmente: {target_id}")
         return target_id
