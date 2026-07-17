@@ -470,6 +470,44 @@ function App() {
               )}
             </AnimatePresence>
           </motion.button>
+
+          {/* Expediente UltraRojo */}
+          <motion.button
+            whileHover={{ x: 4 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => alert('No disponible')}
+            title="Expediente UltraRojo"
+            className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-1
+              ${sidebarOpen ? 'justify-between' : 'justify-center'}
+              text-text-muted hover:text-rose-600 hover:bg-white/5 border border-transparent`}
+          >
+            <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
+              <span className={`text-base transition-colors text-rose-800 group-hover:text-rose-600`}>🩸</span>
+              <AnimatePresence>
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap`}>Expediente UltraRojo</motion.span>}
+              </AnimatePresence>
+            </div>
+          </motion.button>
+
+          {/* Diagnóstico */}
+          <motion.button
+            whileHover={{ x: 4 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setActiveSection('diagnostico')}
+            title="Diagnóstico"
+            className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-1
+              ${sidebarOpen ? 'justify-between' : 'justify-center'}
+              ${activeSection === 'diagnostico'
+                ? 'bg-gradient-to-r from-blue-500/10 to-transparent border border-blue-500/20 shadow-[inset_4px_0_0_rgba(59,130,246,1)]'
+                : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
+          >
+            <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
+              <span className={`text-base transition-colors ${activeSection === 'diagnostico' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'text-text-muted group-hover:text-blue-400'}`}>🩺</span>
+              <AnimatePresence>
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'diagnostico' ? 'text-blue-300 font-bold' : ''}`}>Diagnóstico</motion.span>}
+              </AnimatePresence>
+            </div>
+          </motion.button>
         </nav>
 
         <div className={`border-t border-white/5 flex flex-col gap-1 bg-[#050505]/50 transition-all overflow-hidden
@@ -792,6 +830,18 @@ function App() {
         {activeSection === 'portal' && (
           <div className="flex-1 overflow-auto bg-background">
             <PortalApp />
+          </div>
+        )}
+
+        {/* ── Section: Diagnostico ── */}
+        {activeSection === 'diagnostico' && (
+          <div className="flex-1 overflow-auto bg-background p-8">
+            <div className="max-w-4xl mx-auto bg-surface border border-border rounded-2xl p-8 shadow-2xl">
+              <h2 className="text-2xl font-bold text-blue-400 mb-4 flex items-center gap-3">
+                <span className="text-3xl">🩺</span> Diagnóstico
+              </h2>
+              <p className="text-text-muted">Módulo de diagnóstico en construcción...</p>
+            </div>
           </div>
         )}
 
