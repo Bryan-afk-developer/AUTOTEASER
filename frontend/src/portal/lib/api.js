@@ -229,6 +229,29 @@ export const api = {
     formData.append('file', file)
     return request('POST', '/api/portal/cliente/subir-documento', formData, true)
   },
+
+  // Sub Empresas
+  getSubEmpresas: () => request('GET', '/api/portal/cliente/sub-empresas'),
+
+  crearSubEmpresa: (nombre = null, rol = 'EMPRESA AVAL') =>
+    request('POST', '/api/portal/cliente/sub-empresas', { nombre, rol }),
+
+  actualizarSubEmpresa: (subEmpresaId, nombre, rol) =>
+    request('PUT', `/api/portal/cliente/sub-empresas/${subEmpresaId}`, { nombre, rol }),
+
+  eliminarSubEmpresa: (subEmpresaId) =>
+    request('DELETE', `/api/portal/cliente/sub-empresas/${subEmpresaId}`),
+    
+  actualizarEmpresaRol: (rol) =>
+    request('PUT', `/api/portal/cliente/expediente/rol`, { rol }),
+
+  subirDocumentoSubEmpresa: (subEmpresaId, tipoDocumento, file) => {
+    const formData = new FormData()
+    formData.append('tipo_documento', tipoDocumento)
+    formData.append('sub_empresa_id', subEmpresaId)
+    formData.append('file', file)
+    return request('POST', '/api/portal/cliente/subir-documento', formData, true)
+  },
 }
 
 export default api

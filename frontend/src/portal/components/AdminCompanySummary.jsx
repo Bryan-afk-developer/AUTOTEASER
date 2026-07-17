@@ -10,7 +10,7 @@ import AiSummarySlideover from './AiSummarySlideover'
 
 const mopsCache = {}
 
-export default function AdminCompanySummary({ empresa, documentos, actaPrincipal }) {
+export default function AdminCompanySummary({ empresa, documentos, actaPrincipal, alertaNombresMismatch }) {
   const [isAiSummaryOpen, setIsAiSummaryOpen] = useState(false)
   const [mopData, setMopData] = useState(null)
   const [loadingMop, setLoadingMop] = useState(true)
@@ -229,24 +229,32 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
   const csfEmpresaDoc = documentos?.find(d => d.tipo_documento === 'csf_empresa')
   const hasCSFEmpresa = csfEmpresaDoc && csfEmpresaDoc.estado !== 'FALTANTE'
   let csfEmpresaName = 'No disponible'
-  if (hasCSFEmpresa && csfEmpresaDoc?.nombre_archivo) {
-    const match = csfEmpresaDoc.nombre_archivo.match(/1\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
-    if (match && match[1]) {
-      csfEmpresaName = match[1]
-    } else {
-      csfEmpresaName = csfEmpresaDoc.nombre_archivo
+  if (hasCSFEmpresa) {
+    if (csfEmpresaDoc?.extracted_data?.location) {
+      csfEmpresaName = csfEmpresaDoc.extracted_data.location
+    } else if (csfEmpresaDoc?.nombre_archivo) {
+      const match = csfEmpresaDoc.nombre_archivo.match(/1\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+      if (match && match[1]) {
+        csfEmpresaName = match[1]
+      } else {
+        csfEmpresaName = csfEmpresaDoc.nombre_archivo
+      }
     }
   }
 
   const csfRepDoc = documentos?.find(d => d.tipo_documento === 'csf_representante')
   const hasCSF = csfRepDoc && csfRepDoc.estado !== 'FALTANTE'
   let csfRepName = 'No disponible'
-  if (hasCSF && csfRepDoc?.nombre_archivo) {
-    const match = csfRepDoc.nombre_archivo.match(/3\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
-    if (match && match[1]) {
-      csfRepName = match[1]
-    } else {
-      csfRepName = csfRepDoc.nombre_archivo
+  if (hasCSF) {
+    if (csfRepDoc?.extracted_data?.location) {
+      csfRepName = csfRepDoc.extracted_data.location
+    } else if (csfRepDoc?.nombre_archivo) {
+      const match = csfRepDoc.nombre_archivo.match(/3\. CSF - (.*?)(?:\.[a-zA-Z0-9]+)?$/i)
+      if (match && match[1]) {
+        csfRepName = match[1]
+      } else {
+        csfRepName = csfRepDoc.nombre_archivo
+      }
     }
   }
 
@@ -484,6 +492,17 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
         </div>
 
         <div className="p-5 space-y-5">
+
+          {alertaNombresMismatch && (
+            <div className="p-3 mb-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+              <div className="font-bold flex items-center gap-1.5 mb-1">
+                <AlertTriangle className="w-4 h-4" /> Alerta de Nombres
+              </div>
+              <p className="opacity-90">
+                El nombre del INE y la CSF no coinciden. Se está usando el nombre de la CSF para las carpetas y documentos vinculados.
+              </p>
+            </div>
+          )}
           
           {/* MOP de Buró (Representante) */}
           <div className="group">

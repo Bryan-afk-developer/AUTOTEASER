@@ -24,6 +24,8 @@ DOCUMENTOS_ACCIONISTA = [
     {"clave": "csf_accionista",   "nombre": "Constancia de Situación Fiscal", "icono": "🏛️"},
     {"clave": "comprobante_domicilio_accionista", "nombre": "Comprobante de Domicilio", "icono": "🏠"},
     {"clave": "buro_accionista",  "nombre": "Buró de Crédito", "icono": "📊"},
+    {"clave": "acta_matrimonio_accionista", "nombre": "Acta de Matrimonio", "icono": "💍"},
+    {"clave": "buro_score_accionista", "nombre": "Buró de Crédito Score", "icono": "📈"},
 ]
 
 

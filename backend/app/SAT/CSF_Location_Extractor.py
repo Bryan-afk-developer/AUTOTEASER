@@ -54,16 +54,28 @@ def extract_csf_info(file_bytes: bytes, filename: str) -> dict:
         # Persona física: combinamos Nombre(s) + Primer Apellido + Segundo Apellido
         if not result["nombre"]:
             nombre_match = re.search(r'Nombre \(s\)[:\s]*([^\n]+)', text, re.IGNORECASE)
-            ap1_match = re.search(r'Primer Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
-            ap2_match = re.search(r'Segundo Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
-            
+            ap1_match   = re.search(r'Primer Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
+            ap2_match   = re.search(r'Segundo Apellido[:\s]*([^\n]+)', text, re.IGNORECASE)
+
+            logger.info(f"[CSF] nombre_match={nombre_match and nombre_match.group(1)}")
+            logger.info(f"[CSF] ap1_match={ap1_match and ap1_match.group(1)}")
+            logger.info(f"[CSF] ap2_match={ap2_match and ap2_match.group(1)}")
+
             partes = []
             if ap1_match: partes.append(ap1_match.group(1).strip())
             if ap2_match: partes.append(ap2_match.group(1).strip())
             if nombre_match: partes.append(nombre_match.group(1).strip())
-            
+
             if partes:
                 result["nombre"] = " ".join(p for p in partes if p).upper()
+
+        # Fallback: buscar patrón RFC y tomar el nombre que viene debajo
+        if not result["nombre"]:
+            rfc_line_match = re.search(r'RFC[:\s]*[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}\s*\n([^\n]+)', text)
+            if rfc_line_match:
+                result["nombre"] = rfc_line_match.group(1).strip().upper()
+
+        logger.info(f"[CSF] nombre extraido: {result.get('nombre')}")
 
         # ── Extraer Fecha de Emisión ──
         # Buscar patrón "Fecha de emisión: DD/MM/AAAA" o "DD de mes de AAAA"
@@ -82,14 +94,57 @@ def extract_csf_info(file_bytes: bytes, filename: str) -> dict:
                 d, m, y = fecha_match2.group(1), fecha_match2.group(2), fecha_match2.group(3)
                 result["fecha"] = f"{y}.{m}.{d}"
 
+        if not result["fecha"]:
+            # Formato “DD de mes de AAAA”
+            meses = {'enero':'01','febrero':'02','marzo':'03','abril':'04','mayo':'05','junio':'06',
+                     'julio':'07','agosto':'08','septiembre':'09','octubre':'10','noviembre':'11','diciembre':'12'}
+            fecha_match3 = re.search(r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})', text, re.IGNORECASE)
+            if fecha_match3:
+                d = fecha_match3.group(1).zfill(2)
+                m = meses.get(fecha_match3.group(2).lower(), '00')
+                y = fecha_match3.group(3)
+                result["fecha"] = f"{y}.{m}.{d}"
+
+        logger.info(f"[CSF] fecha extraida: {result.get('fecha')}")
+
         # ── Legacy: también guardamos la ubicación por si algo la usa ──
         domicilio_section = _extract_domicilio_section(text)
         if domicilio_section:
+            tipo_vial = _extract_field(domicilio_section, r'Tipo de Vialidad[:\s]*([^\n]+)')
+            nom_vial = _extract_multiline_field(domicilio_section, r'Nombre de la Vialidad[:\s]*([^\n]+)', r'N[úu]mero Exterior')
+            no_ext = _extract_field(domicilio_section, r'N[úu]mero Exterior[:\s]*([^\n]+)')
+            no_int = _extract_field(domicilio_section, r'N[úu]mero Interior[:\s]*([^\n]+)')
+            colonia = _extract_multiline_field(domicilio_section, r'Nombre de la Colonia[:\s]*([^\n]+)', r'Nombre de la Localidad')
             cp = _extract_field(domicilio_section, r'C[óo]digo Postal[:\s]*(\d{5})')
             municipio = _extract_multiline_field(domicilio_section, r'Nombre del Municipio o Demarcaci[óo]n Territorial[:\s]*([^\n]+)', r'Nombre de la Entidad')
             estado = _extract_field(domicilio_section, r'Nombre de la Entidad Federativa[:\s]*([^\n]+)')
-            if municipio and estado:
-                result["location"] = f"{municipio}, {estado}, {cp}"
+            
+            partes_calle = []
+            calle_str = f"{tipo_vial} {nom_vial}".strip()
+            if calle_str:
+                # Capitalizar si está todo en mayúsculas para mejor lectura
+                partes_calle.append(calle_str.title() if calle_str.isupper() else calle_str)
+            if no_ext:
+                partes_calle.append(f"No. {no_ext}")
+            if no_int:
+                partes_calle.append(f"Int. {no_int}")
+            
+            direccion_base = " ".join(partes_calle)
+            
+            detalles = []
+            if direccion_base:
+                detalles.append(direccion_base)
+            if colonia:
+                detalles.append(f"Colonia {colonia.title() if colonia.isupper() else colonia}")
+            if cp:
+                detalles.append(f"C.P. {cp}")
+            if municipio:
+                detalles.append(municipio.title() if municipio.isupper() else municipio)
+            if estado:
+                detalles.append(estado.title() if estado.isupper() else estado)
+            
+            if detalles:
+                result["location"] = ", ".join(detalles) + "."
 
         return result
         

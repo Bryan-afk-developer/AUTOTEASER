@@ -125,8 +125,18 @@ async def export_to_caf(empresa_id: str):
     if not eeff_docs:
         raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos (grupo 'financieros') para exportar")
 
-    # 2. Limpiar documentos actuales de AutoCAF para no mezclarlos
+    # 2. Limpiar documentos actuales de AutoCAF y sus archivos para no mezclarlos
     caf_docs.clear()
+    for f in UPLOAD_DIR.glob("*"):
+        try:
+            f.unlink()
+        except:
+            pass
+    for f in OUTPUT_DIR.glob("*"):
+        try:
+            f.unlink()
+        except:
+            pass
 
     count = 0
     import json as _json
@@ -409,6 +419,14 @@ async def get_page_image(doc_id: str, page_num: int):
 @router.delete("/documents/{doc_id}")
 async def delete_doc(doc_id: str):
     if doc_id in caf_docs:
+        doc_info = caf_docs[doc_id]
+        pdf_path = Path(doc_info["path"])
+        meta_path = pdf_path.with_suffix(".json")
+        try:
+            if pdf_path.exists(): pdf_path.unlink()
+            if meta_path.exists(): meta_path.unlink()
+        except:
+            pass
         del caf_docs[doc_id]
     return {"success": True}
 

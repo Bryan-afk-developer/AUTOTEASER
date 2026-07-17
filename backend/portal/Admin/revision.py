@@ -36,17 +36,23 @@ async def get_documento_detail(doc_id: str):
 
     # Obtener documento con info de empresa
     table_name = "documentos_expediente"
-    doc_resp = sb.table(table_name).select("*, empresas(nombre, rfc)").eq("id", doc_id).single().execute()
+    doc_resp = sb.table(table_name).select("*, empresas(nombre, rfc)").eq("id", doc_id).execute()
+    doc = doc_resp.data[0] if doc_resp.data else None
     
-    if not doc_resp.data:
+    if not doc:
         # Intentar en la tabla de representantes
         table_name = "documentos_representante"
-        doc_resp = sb.table(table_name).select("*, empresas(nombre, rfc)").eq("id", doc_id).single().execute()
+        doc_resp = sb.table(table_name).select("*, empresas(nombre, rfc)").eq("id", doc_id).execute()
+        doc = doc_resp.data[0] if doc_resp.data else None
         
-    if not doc_resp.data:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc:
+        # Intentar en la tabla de accionistas
+        table_name = "documentos_accionista"
+        doc_resp = sb.table(table_name).select("*, empresas(nombre, rfc)").eq("id", doc_id).execute()
+        doc = doc_resp.data[0] if doc_resp.data else None
 
-    doc = doc_resp.data
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
     empresa_info = doc.pop("empresas", {}) or {}
 
     # Generar URL firmada para visualización (1 hora)
@@ -98,16 +104,21 @@ async def revisar_documento(
 
     # Verificar que el documento existe
     table_name = "documentos_expediente"
-    doc_resp = sb.table(table_name).select("id, estado, tipo_documento, empresa_id").eq("id", doc_id).single().execute()
+    doc_resp = sb.table(table_name).select("id, estado, tipo_documento, empresa_id").eq("id", doc_id).execute()
+    doc_actual = doc_resp.data[0] if doc_resp.data else None
     
-    if not doc_resp.data:
+    if not doc_actual:
         table_name = "documentos_representante"
-        doc_resp = sb.table(table_name).select("id, estado, tipo_documento, empresa_id").eq("id", doc_id).single().execute()
+        doc_resp = sb.table(table_name).select("id, estado, tipo_documento, empresa_id").eq("id", doc_id).execute()
+        doc_actual = doc_resp.data[0] if doc_resp.data else None
 
-    if not doc_resp.data:
+    if not doc_actual:
+        table_name = "documentos_accionista"
+        doc_resp = sb.table(table_name).select("id, estado, tipo_documento, empresa_id").eq("id", doc_id).execute()
+        doc_actual = doc_resp.data[0] if doc_resp.data else None
+
+    if not doc_actual:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-
-    doc_actual = doc_resp.data
     if doc_actual["estado"] not in ["PENDIENTE"]:
         logger.warning(f"Revisando documento con estado {doc_actual['estado']} (no PENDIENTE)")
 

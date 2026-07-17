@@ -98,13 +98,14 @@ def get_shared_parent_folder(service, target_folder_name="AutoTeaser"):
     logger.info(f"Usando primera carpeta compartida encontrada: {files[0]['name']}")
     return files[0]['id']
 
-def create_empresa_structure(service, empresa_nombre, parent_id):
+def create_empresa_structure(service, empresa_nombre, parent_id, accionistas=None, rep_name=None):
     """
     Crea la estructura de carpetas de la empresa en Google Drive:
 
     [PM] (empresa_nombre)
-    ├── 1. Representante Legal
-    └── 2. EMPRESA
+    ├── 1.1 REPRESENTANTE LEGAL (o su nombre real)
+    ├── 1.X ACCIONISTAS
+    └── 2. {empresa_nombre}
         ├── 1. ACTAS
         ├── 2. ESTADOS FINANCIEROS
         ├── 3. ESTADOS DE CUENTA
@@ -114,14 +115,27 @@ def create_empresa_structure(service, empresa_nombre, parent_id):
         ├── 5. DECLARACIONES
         └── 6. GENERALES
     """
+    if accionistas is None:
+        accionistas = []
+        
     empresa_folder = find_or_create_folder(service, empresa_nombre, parent_id)
     empresa_id = empresa_folder['id']
 
-    # 1. Representante Legal (al nivel de la empresa)
-    rep_folder = find_or_create_folder(service, "1. Representante Legal", empresa_id)
+    # 1.1 Representante Legal (al nivel de la empresa)
+    rep_folder_name = f"1.1 {rep_name.upper()}" if rep_name else "1.1 REPRESENTANTE LEGAL"
+    rep_folder = find_or_create_folder(service, rep_folder_name, empresa_id)
+
+    # 1.X Accionistas
+    acc_folders = {}
+    for acc in accionistas:
+        acc_name = acc.get("nombre") or f"Accionista {acc['orden']}"
+        idx = acc['orden'] + 1
+        folder_name = f"1.{idx} {acc_name.upper()}"
+        f_obj = find_or_create_folder(service, folder_name, empresa_id)
+        acc_folders[acc['id']] = f_obj['id']
 
     # 2. EMPRESA (carpeta contenedora de todo lo de la empresa)
-    empresa_sub = find_or_create_folder(service, "2. EMPRESA", empresa_id)
+    empresa_sub = find_or_create_folder(service, f"2. {empresa_nombre}", empresa_id)
     empresa_sub_id = empresa_sub['id']
 
     # Subcarpetas dentro de 2. EMPRESA
@@ -135,6 +149,7 @@ def create_empresa_structure(service, empresa_nombre, parent_id):
     estructura = {
         "root":         empresa_folder,
         "representante": rep_folder['id'],
+        "accionistas":  acc_folders,
         "empresa_sub":  empresa_sub_id,
         "legal":        actas_folder['id'],
         "financieros":  financieros_folder['id'],

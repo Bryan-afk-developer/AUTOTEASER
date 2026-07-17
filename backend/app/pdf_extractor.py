@@ -136,3 +136,84 @@ def extract_text(pdf_path: str | Path) -> dict:
         "pages": pages_text,
         "page_count": len(pages_text),
     }
+
+def extraer_nombre_csf(pdf_source: Path | bytes) -> str | None:
+    """Extrae el nombre del representante desde una Constancia de Situación Fiscal (Persona Física)."""
+    try:
+        if isinstance(pdf_source, bytes):
+            doc = fitz.open(stream=pdf_source, filetype="pdf")
+        else:
+            doc = fitz.open(pdf_source)
+            
+        full_text = ""
+        for page in doc:
+            full_text += page.get_text()
+            
+        import re
+        
+        def find_field(field_name: str) -> str:
+            # Intentar buscar en la misma línea: "Campo: Valor"
+            match = re.search(rf"{field_name}:?\s+([^\n]+)", full_text, re.IGNORECASE)
+            if match and match.group(1).strip() and match.group(1).strip().upper() != "PRIMER APELLIDO":
+                # Ensure we don't accidentally capture the next label if it's empty
+                return match.group(1).strip()
+            
+            # Si no, buscar en la línea siguiente (PyMuPDF a veces separa la llave y el valor por salto de línea)
+            match = re.search(rf"{field_name}:?\s*\n+([^\n]+)", full_text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+            return ""
+
+        n = find_field(r"Nombre\s*\(s\)")
+        a1 = find_field(r"Primer Apellido")
+        a2 = find_field(r"Segundo Apellido")
+        
+        if n or a1 or a2:
+            return f"{n} {a1} {a2}".strip().replace("  ", " ")
+            
+    except Exception as e:
+        logger.error(f"Error extraeyendo nombre de CSF: {e}")
+        
+    return None
+
+def extraer_nombre_ine(pdf_source: Path | bytes) -> str | None:
+    """Extrae el nombre del representante desde un INE usando Document AI."""
+    try:
+        pages_text = extract_with_documentai(pdf_source)
+        full_text = "\n".join(pages_text)
+        
+        import json, re
+        
+        # 1. Intentar buscar en los campos JSON extraídos por el Form Parser
+        for pt in pages_text:
+            if pt.strip().startswith("{"):
+                try:
+                    data = json.loads(pt)
+                    for k, v in data.items():
+                        if "NOMBRE" in k.upper():
+                            val = str(v).strip().replace("\n", " ")
+                            if val and len(val) > 2:
+                                return val
+                except:
+                    pass
+                    
+        # 2. Si no, buscar en el texto OCR crudo (Fallback manual)
+        lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+        for i, line in enumerate(lines):
+            if line.upper() == "NOMBRE":
+                # En un INE, el orden suele ser:
+                # NOMBRE
+                # APELLIDO PATERNO
+                # APELLIDO MATERNO
+                # NOMBRE(S)
+                if i + 3 < len(lines):
+                    ap1 = lines[i+1]
+                    ap2 = lines[i+2]
+                    nom = lines[i+3]
+                    # Solo retornar si no parecen etiquetas
+                    if "DOMICILIO" not in ap1.upper() and "FOLIO" not in nom.upper():
+                        return f"{nom} {ap1} {ap2}".strip()
+    except Exception as e:
+        logger.error(f"Error extraeyendo nombre de INE: {e}")
+        
+    return None

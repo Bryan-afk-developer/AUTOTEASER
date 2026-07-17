@@ -824,12 +824,170 @@ function DeclaracionesView({ declaraciones, declaracionesCompleto, onSuccess, on
 // MAIN DASHBOARD — 2 secciones: Empresa + Representante Legal
 // ══════════════════════════════════════════════════════════════════════════════
 
+function SubEmpresaUploadModal({ subEmpresaId, tipo, nombreDoc, onClose, onSuccess }) {
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleUpload = async () => {
+    if (!file) return
+    setUploading(true)
+    setError('')
+    try {
+      await api.subirDocumentoSubEmpresa(subEmpresaId, tipo, file)
+      onSuccess()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h3 style={modalStyles.title}>📄 Subir Documento</h3>
+          <button onClick={onClose} style={modalStyles.closeBtn}>✕</button>
+        </div>
+        <p style={modalStyles.desc}>Sube el documento requerido para {nombreDoc}</p>
+        
+        <input type="file" onChange={e => setFile(e.target.files[0])} style={{margin: '20px 0', color: 'white'}} />
+        {error && <p style={{color: 'red', fontSize: '12px'}}>{error}</p>}
+        
+        <div style={modalStyles.footer} className="mt-6">
+          <button style={modalStyles.buttonSecondary} onClick={onClose} disabled={uploading}>Cancelar</button>
+          <button style={{...modalStyles.buttonPrimary, opacity: (!file || uploading) ? 0.5 : 1}} onClick={handleUpload} disabled={!file || uploading}>
+            {uploading ? 'Subiendo...' : 'Subir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SubEmpresaCard({ subEmpresa, index, onUpload, onEliminar, onRename, onSuccess }) {
+  const [expanded, setExpanded] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [nombreEdit, setNombreEdit] = useState(subEmpresa.nombre || '')
+  const [rolEdit, setRolEdit] = useState(subEmpresa.rol || 'EMPRESA DEL GRUPO')
+
+  const docs = subEmpresa.documentos || []
+  const aprobados = docs.filter(d => d.estado === 'APROBADO').length
+  const subidos = docs.filter(d => d.estado !== 'FALTANTE' && d.estado !== 'pendiente').length
+
+  const handleSave = async () => {
+    if (nombreEdit.trim() || rolEdit) { await onRename(nombreEdit.trim(), rolEdit) }
+    setEditing(false)
+  }
+
+  return (
+    <div style={{ border: '1px solid rgba(139,92,246,0.25)', borderRadius: '16px', overflow: 'hidden', background: 'rgba(15,23,42,0.7)' }}>
+      <div
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', cursor: 'pointer', background: 'rgba(139,92,246,0.04)' }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: '#a78bfa', fontWeight: 800, fontSize: '16px' }}>1.{index}</span>
+          {editing ? (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                value={nombreEdit}
+                onChange={e => setNombreEdit(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                onKeyDown={e => { if (e.key === 'Enter') { handleSave(); e.stopPropagation() } }}
+                autoFocus
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(139,92,246,0.4)', color: '#f8fafc', padding: '4px 10px', borderRadius: '8px', fontSize: '15px', fontWeight: 700, minWidth: '150px' }}
+              />
+              <select 
+                value={rolEdit} 
+                onChange={e => setRolEdit(e.target.value)} 
+                onClick={e => e.stopPropagation()}
+                style={{ background: '#1e293b', color: '#f8fafc', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '8px', padding: '4px' }}>
+                <option value="EMPRESA AVAL">AVAL</option>
+                <option value="EMPRESA DEL GRUPO">GRUPO</option>
+              </select>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ color: '#f8fafc', margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                {subEmpresa.nombre || `Sub Empresa ${index}`}
+              </h3>
+              <span style={{ fontSize: '10px', background: 'rgba(139,92,246,0.2)', color: '#c4b5fd', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                {subEmpresa.rol}
+              </span>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 600 }}>{subidos} / {docs.length}</span>
+              <span style={{ color: '#64748b', fontSize: '12px' }}>subidos</span>
+            </div>
+            <span style={{ color: '#475569', fontSize: '12px' }}>|</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 600 }}>{aprobados} / {docs.length}</span>
+              <span style={{ color: '#64748b', fontSize: '12px' }}>aprobados</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {editing ? (
+              <button onClick={(e) => { e.stopPropagation(); handleSave() }} style={{ background: 'none', border: 'none', color: '#34d399', cursor: 'pointer', padding: '4px' }}>✓</button>
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); setEditing(true) }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}>✎</button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onEliminar() }}
+              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', opacity: 0.7 }}
+              title="Eliminar"
+            >✕</button>
+            <span style={{ color: '#94a3b8', transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+          </div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px', background: 'rgba(0,0,0,0.15)' }}>
+          {subEmpresa.documentos_requeridos.map(req => {
+            const docData = docs.find(d => d.clave === req.clave) || { ...req, estado: 'pendiente' }
+            const cfg = ESTADO_CONFIG[docData.estado?.toUpperCase()] || ESTADO_CONFIG.FALTANTE
+            return (
+              <div key={docData.clave} style={{ border: `1px solid ${cfg.border}`, borderRadius: '12px', padding: '14px', background: `linear-gradient(135deg, rgba(24,24,27,0.9) 0%, ${cfg.bg} 100%)`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '20px' }}>{docData.icono}</span>
+                  <span style={{ ...cardStyles.badge, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, fontSize: '11px' }}>{cfg.icon} {cfg.label}</span>
+                </div>
+                <p style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '13px', margin: 0 }}>{docData.nombre}</p>
+                {docData.nombre_archivo && <p style={{ color: '#64748b', fontSize: '11px', margin: 0, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {docData.nombre_archivo}</p>}
+                <button
+                  onClick={() => onUpload(docData.clave)}
+                  style={{
+                    ...cardStyles.uploadBtn, padding: '6px', fontSize: '12px', marginTop: 'auto',
+                    background: docData.estado === 'RECHAZADO' ? 'linear-gradient(135deg, #ef4444, #dc2626)' : docData.estado === 'pendiente' ? 'linear-gradient(135deg, #e11d48, #be123c)' : 'rgba(255,255,255,0.1)',
+                    border: (docData.estado !== 'pendiente' && docData.estado !== 'RECHAZADO') ? '1px solid rgba(255,255,255,0.2)' : 'none',
+                  }}
+                >
+                  {docData.estado === 'RECHAZADO' ? 'Resubir' : docData.estado === 'pendiente' ? 'Subir' : 'Reemplazar'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
   const [expediente, setExpediente] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [uploadDoc, setUploadDoc] = useState(null)
   const [showFinancierosModal, setShowFinancierosModal] = useState(false)
+  const [editingEmpresaRol, setEditingEmpresaRol] = useState(false)
+  const [rolEdit, setRolEdit] = useState('EMPRESA AVAL')
   
   const [activeView, setActiveView] = useState(() => {
     const isActas = window.location.pathname.endsWith('/actas')
@@ -853,6 +1011,9 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
     try {
       const data = await api.getExpediente()
       setExpediente(data)
+      if (data?.empresa_rol) {
+        setRolEdit(data.empresa_rol)
+      }
     } catch (err) {
       if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized')) {
         onLogout()
@@ -866,7 +1027,50 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
 
   useEffect(() => { fetchExpediente() }, [fetchExpediente])
 
-  // ── Accionistas ──
+  // 🏢 Sub Empresas 🏢
+  const [subEmpresas, setSubEmpresas] = useState([])
+  const [subEmpresaLoading, setSubEmpresaLoading] = useState(false)
+  const [subEmpresaUpload, setSubEmpresaUpload] = useState(null)
+  const [showSubEmpresaModal, setShowSubEmpresaModal] = useState(false)
+  const [newSubRol, setNewSubRol] = useState('EMPRESA DEL GRUPO')
+  const [newSubName, setNewSubName] = useState('')
+
+  const fetchSubEmpresas = useCallback(async () => {
+    try {
+      const data = await api.getSubEmpresas()
+      setSubEmpresas(data.sub_empresas || [])
+    } catch (e) {
+      console.error('Error cargando sub empresas:', e)
+    }
+  }, [])
+
+  useEffect(() => { fetchSubEmpresas() }, [fetchSubEmpresas])
+
+  const handleCrearSubEmpresa = async () => {
+    setSubEmpresaLoading(true)
+    try {
+      await api.crearSubEmpresa(newSubName, newSubRol)
+      await fetchSubEmpresas()
+      setShowSubEmpresaModal(false)
+      setNewSubName('')
+    } catch (e) {
+      alert('Error al crear sub empresa: ' + e.message)
+    } finally {
+      setSubEmpresaLoading(false)
+    }
+  }
+
+  const handleEliminarSubEmpresa = async (id) => {
+    if (!confirm('¿Eliminar esta sub-empresa y todos sus documentos?')) return
+    try {
+      await api.eliminarSubEmpresa(id)
+      await fetchSubEmpresas()
+    } catch (e) {
+      alert('Error: ' + e.message)
+    }
+  }
+
+  // 🧑‍💼 Accionistas 🧑‍💼──
   const [accionistas, setAccionistas] = useState([])
   const [accionistaLoading, setAccionistaLoading] = useState(false)
   const [accionistaUpload, setAccionistaUpload] = useState(null) // { accionista_id, tipo, nombre }
@@ -919,6 +1123,16 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
 
   const hasEmpresaDocs = docsLegal.length > 0 || docsEdos.length > 0 ||
     docsFinancieros.length > 0 || docsDeclaraciones.length > 0 || docsVigentes.length > 0
+
+  const handleSaveEmpresaRol = async () => {
+    try {
+      await api.actualizarEmpresaRol(rolEdit)
+      setEditingEmpresaRol(false)
+      fetchExpediente()
+    } catch (err) {
+      alert("Error guardando el rol: " + err.message)
+    }
+  }
 
   const handleUploadFromModal = (doc) => {
     setShowFinancierosModal(false)
@@ -1092,7 +1306,31 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
         {/* ══════════════════════════════════════════════════════════════════ */}
         {!loading && !error && hasEmpresaDocs && (
           <div style={dashStyles.section}>
-            <h2 style={dashStyles.sectionTitle}>🏢 Documentos de la Empresa</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h2 style={{ ...dashStyles.sectionTitle, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}>🏢 Documentos de la Empresa</h2>
+                {editingEmpresaRol ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <select 
+                      value={rolEdit} 
+                      onChange={e => setRolEdit(e.target.value)}
+                      style={{ background: '#1e293b', color: '#f8fafc', border: '1px solid rgba(225,29,72,0.4)', borderRadius: '8px', padding: '4px' }}>
+                      <option value="EMPRESA AVAL">AVAL</option>
+                      <option value="EMPRESA DEL GRUPO">GRUPO</option>
+                    </select>
+                    <button onClick={handleSaveEmpresaRol} style={{ background: 'none', border: 'none', color: '#34d399', cursor: 'pointer', padding: '4px' }}>✓</button>
+                    <button onClick={() => setEditingEmpresaRol(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}>✕</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '10px', background: 'rgba(225,29,72,0.2)', color: '#fda4af', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
+                      {expediente?.empresa_rol || 'EMPRESA AVAL'}
+                    </span>
+                    <button onClick={() => setEditingEmpresaRol(true)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}>✎</button>
+                  </div>
+                )}
+              </div>
+            </div>
             <div style={dashStyles.grid}>
               {/* Documentos legales — tarjetas individuales */}
               {docsLegal.map(doc => (
@@ -1253,6 +1491,48 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* SECCIÓN: SUB EMPRESAS (AVAL / GRUPO)                             */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {!loading && !error && (
+          <div style={dashStyles.section}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '10px', borderBottom: '1px solid rgba(139,92,246,0.2)' }}>
+              <h2 style={{ ...dashStyles.sectionTitle, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}>
+                🏢 Estructura Corporativa
+              </h2>
+              <button
+                onClick={() => setShowSubEmpresaModal(true)}
+                disabled={subEmpresaLoading}
+                style={{ background: 'rgba(139,92,246,0.15)', color: '#c4b5fd', border: '1px solid rgba(139,92,246,0.3)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.25)'; e.currentTarget.style.color = '#fff' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; e.currentTarget.style.color = '#c4b5fd' }}
+              >
+                {subEmpresaLoading ? 'Creando...' : '+ Añadir Empresa Relacionada'}
+              </button>
+            </div>
+
+            {subEmpresas.length === 0 ? (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '32px', borderRadius: '16px', textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Aún no has añadido sub-empresas. Presiona el botón para agregar un Aval o Empresa del Grupo.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {subEmpresas.map((sub, idx) => (
+                  <SubEmpresaCard
+                    key={sub.id}
+                    subEmpresa={sub}
+                    index={idx + 1}
+                    onUpload={(tipo) => setSubEmpresaUpload({ sub_empresa_id: sub.id, tipo, nombre: sub.nombre })}
+                    onEliminar={() => handleEliminarSubEmpresa(sub.id)}
+                    onRename={async (nombre, rol) => { await api.actualizarSubEmpresa(sub.id, nombre, rol); fetchSubEmpresas() }}
+                    onSuccess={fetchSubEmpresas}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
         {/* SECCIÓN: ACCIONISTAS                                             */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {!loading && !error && (
@@ -1311,6 +1591,47 @@ export default function ClienteDashboard({ user, onLogout, isInternalMode }) {
         />
       )}
 
+      {subEmpresaUpload && (
+        <SubEmpresaUploadModal
+          subEmpresaId={subEmpresaUpload.sub_empresa_id}
+          tipo={subEmpresaUpload.tipo}
+          nombreDoc={subEmpresaUpload.nombre}
+          onClose={() => setSubEmpresaUpload(null)}
+          onSuccess={fetchSubEmpresas}
+        />
+      )}
+      
+      {showSubEmpresaModal && (
+        <div style={modalStyles.overlay} onClick={() => setShowSubEmpresaModal(false)}>
+          <div style={modalStyles.modal} onClick={e => e.stopPropagation()}>
+            <div style={modalStyles.header}>
+              <h3 style={modalStyles.title}>🏢 Añadir Empresa Relacionada</h3>
+              <button onClick={() => setShowSubEmpresaModal(false)} style={modalStyles.closeBtn}>✕</button>
+            </div>
+            
+            <div style={{marginTop: 16}}>
+              <label style={{display: 'block', color: '#cbd5e1', fontSize: 13, marginBottom: 4}}>Nombre (opcional)</label>
+              <input value={newSubName} onChange={e => setNewSubName(e.target.value)} placeholder="Ej: Mi Aval SA" style={{width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: 'white'}} />
+            </div>
+            
+            <div style={{marginTop: 16}}>
+              <label style={{display: 'block', color: '#cbd5e1', fontSize: 13, marginBottom: 4}}>Rol de la Empresa</label>
+              <select value={newSubRol} onChange={e => setNewSubRol(e.target.value)} style={{width: '100%', padding: '8px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: 'white'}}>
+                <option value="EMPRESA AVAL">Empresa Aval</option>
+                <option value="EMPRESA DEL GRUPO">Empresa del Grupo</option>
+              </select>
+            </div>
+            
+            <div style={modalStyles.footer} className="mt-8">
+              <button style={modalStyles.buttonSecondary} onClick={() => setShowSubEmpresaModal(false)} disabled={subEmpresaLoading}>Cancelar</button>
+              <button style={modalStyles.buttonPrimary} onClick={handleCrearSubEmpresa} disabled={subEmpresaLoading}>
+                {subEmpresaLoading ? 'Guardando...' : 'Crear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {accionistaUpload && (
         <AccionistaUploadModal
           accionista_id={accionistaUpload.accionista_id}
@@ -1353,6 +1674,8 @@ function AccionistaUploadModal({ accionista_id, tipo, nombre, onClose, onSuccess
     csf_accionista: 'Constancia de Situación Fiscal',
     comprobante_domicilio_accionista: 'Comprobante de Domicilio',
     buro_accionista: 'Buró de Crédito',
+    acta_matrimonio_accionista: 'Acta de Matrimonio',
+    buro_score_accionista: 'Buró de Crédito Score',
   }
 
   return (
@@ -1408,6 +1731,7 @@ function AccionistaCard({ accionista, index, onUpload, onEliminar, onRename, onS
 
   const docs = accionista.documentos || []
   const aprobados = docs.filter(d => d.estado === 'APROBADO').length
+  const subidos = docs.filter(d => d.estado !== 'FALTANTE' && d.estado !== 'pendiente').length
 
   const handleSaveNombre = async () => {
     if (nombreEdit.trim()) { await onRename(nombreEdit.trim()) }
@@ -1433,26 +1757,38 @@ function AccionistaCard({ accionista, index, onUpload, onEliminar, onRename, onS
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(251,191,36,0.4)', color: '#f8fafc', padding: '4px 10px', borderRadius: '8px', fontSize: '15px', fontWeight: 700, minWidth: '220px' }}
             />
           ) : (
-            <span style={{ color: '#f8fafc', fontWeight: 700, fontSize: '15px' }}>{accionista.nombre}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ color: '#f8fafc', margin: 0, fontSize: '15px', fontWeight: 700, letterSpacing: '0.5px' }}>
+                {accionista.nombre}
+              </h3>
+            </div>
           )}
-          <span style={{ fontSize: '12px', color: '#64748b', background: 'rgba(255,255,255,0.04)', padding: '3px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            {aprobados}/{docs.length} docs
-          </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={e => e.stopPropagation()}>
-          {editing ? (
-            <button onClick={handleSaveNombre} style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80', padding: '4px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
-              Guardar
-            </button>
-          ) : (
-            <button onClick={() => setEditing(true)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '4px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
-              ✏️ Editar
-            </button>
-          )}
-          <button onClick={onEliminar} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#fca5a5', padding: '4px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
-            🗑️
-          </button>
-          <span style={{ color: '#64748b', fontSize: '18px', lineHeight: 1 }}>{expanded ? '▲' : '▼'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 600 }}>{subidos} / {docs.length}</span>
+              <span style={{ color: '#64748b', fontSize: '12px' }}>subidos</span>
+            </div>
+            <span style={{ color: '#475569', fontSize: '12px' }}>|</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 600 }}>{aprobados} / {docs.length}</span>
+              <span style={{ color: '#64748b', fontSize: '12px' }}>aprobados</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {editing ? (
+              <button onClick={(e) => { e.stopPropagation(); handleSaveNombre() }} style={{ background: 'none', border: 'none', color: '#34d399', cursor: 'pointer', padding: '4px' }}>✓</button>
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); setEditing(true) }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}>✎</button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onEliminar() }}
+              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', opacity: 0.7 }}
+              title="Eliminar"
+            >✕</button>
+            <span style={{ color: '#94a3b8', transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+          </div>
         </div>
       </div>
 

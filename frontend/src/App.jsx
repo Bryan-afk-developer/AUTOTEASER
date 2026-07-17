@@ -6,6 +6,7 @@ import AdminDashboard from './portal/pages/AdminDashboard'
 import LoginPage from './portal/pages/LoginPage'
 import api from './portal/lib/api'
 import CafApp from './caf/CafApp'
+import CafDashboard from './caf/pages/CafDashboard'
 import {
   UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2,
   AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, Menu,
@@ -777,6 +778,11 @@ function App() {
               </div>
             )}
           </main>
+        )}
+
+        {/* ── Section: AutoCAF ── */}
+        {activeSection === 'caf' && (
+          <CafDashboard />
         )}
 
         {/* ── Section: Portal Admin ── */}

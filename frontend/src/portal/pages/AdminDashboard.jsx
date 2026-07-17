@@ -721,6 +721,7 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
   const [empresas, setEmpresas] = useState([])
   const [selectedEmpresa, setSelectedEmpresa] = useState(null)
   const [documentos, setDocumentos] = useState([])
+  const [alertaNombresMismatch, setAlertaNombresMismatch] = useState(false)
   const [actaPrincipal, setActaPrincipal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -774,6 +775,7 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
     try {
       const data = await api.getEmpresaDocumentos(empresaId)
       setDocumentos(data.documentos || [])
+      setAlertaNombresMismatch(data.alerta_nombres_mismatch || false)
       // setActaPrincipal(data.acta_principal || null) // Removed as we use doc.ai_summary directly
     } catch (err) {
       setError(err.message)
@@ -1160,6 +1162,8 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
   const docsVigentes = documentos.filter(d => d.grupo === 'vigentes')
   const docsRep = documentos.filter(d => d.grupo === 'representante')
   const docsOtros = documentos.filter(d => d.grupo === 'otros')
+  const docsAccionistas = documentos.filter(d => d.grupo === 'accionistas')
+  const docsSubEmpresas = documentos.filter(d => d.grupo === 'sub_empresas')
 
   const banks = {}
   docsEdosCuenta.forEach(d => {
@@ -1168,11 +1172,29 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
     banks[b].push(d)
   })
 
+  const accionistas = {}
+  docsAccionistas.forEach(d => {
+    const a = d.nombre_carpeta || 'Accionista Desconocido'
+    if (!accionistas[a]) accionistas[a] = []
+    accionistas[a].push(d)
+  })
+
+  const subEmpresas = {}
+  docsSubEmpresas.forEach(d => {
+    const s = d.nombre_carpeta || 'Empresa Desconocida'
+    if (!subEmpresas[s]) subEmpresas[s] = []
+    subEmpresas[s].push(d)
+  })
+
   return (
     <main className="max-w-[1600px] w-full mx-auto px-6 py-8 flex flex-col xl:flex-row gap-8 flex-1 animate-fade-in items-start">
       
       {/* Sidebar de Resumen (Izquierda) */}
-      <AdminCompanySummary empresa={selectedEmpresa} documentos={documentos} />
+      <AdminCompanySummary 
+        empresa={selectedEmpresa} 
+        documentos={documentos} 
+        alertaNombresMismatch={alertaNombresMismatch} 
+      />
 
       {/* Contenido Principal (Derecha) */}
       <div className="flex-1 space-y-6 min-w-0 w-full">
@@ -1277,6 +1299,16 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
       ) : (
         <div className="space-y-2">
           {renderTable(docsRep, '1. Representante Legal')}
+          {Object.entries(accionistas).map(([accName, items], index) => (
+            <div key={accName}>
+              {renderTable(items, `1.${index + 1} Accionista — ${accName}`)}
+            </div>
+          ))}
+          {Object.entries(subEmpresas).map(([subName, items], index) => (
+            <div key={subName}>
+              {renderTable(items, `1.${Object.keys(accionistas).length + index + 2} Sub Empresa — ${subName}`)}
+            </div>
+          ))}
           {renderTable(docsLegales, '2.1. Actas / Legales')}
           {renderTable(docsFinancieros, '2.2. Estados Financieros')}
           {Object.entries(banks).map(([bank, items]) => (

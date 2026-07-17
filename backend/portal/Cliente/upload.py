@@ -90,6 +90,7 @@ async def subir_documento(
     file: UploadFile = File(...),
     authorization: str = Header(None),
     accionista_id: Optional[str] = Form(None),
+    sub_empresa_id: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = None,
 ):
     """
@@ -116,11 +117,29 @@ async def subir_documento(
         )
 
     # 3. Obtener empresa del usuario
-    empresa_resp = sb.table("empresas").select("id, nombre").eq("id", user_info["empresa_id"]).single().execute()
+    empresa_resp = sb.table("empresas").select("id, nombre, representante_legal").eq("id", user_info["empresa_id"]).single().execute()
     if not empresa_resp.data:
         raise HTTPException(status_code=404, detail="Empresa no encontrada para este usuario")
     empresa_id = empresa_resp.data["id"]
     empresa_nombre = empresa_resp.data.get("nombre", "Empresa_Desconocida")
+    rep_name_db = empresa_resp.data.get("representante_legal")
+    
+    person_name = rep_name_db if rep_name_db else "REPRESENTANTE LEGAL"
+    if accionista_id and accionista_id != "undefined" and accionista_id != "null":
+        try:
+            acc_resp = sb.table("accionistas").select("nombre").eq("id", accionista_id).execute()
+            if acc_resp.data:
+                person_name = acc_resp.data[0].get("nombre") or "ACCIONISTA"
+        except Exception as e:
+            print(f"Error al obtener accionista: {e}")
+            
+    if sub_empresa_id and sub_empresa_id != "undefined" and sub_empresa_id != "null":
+        try:
+            sub_resp = sb.table("sub_empresas").select("nombre, rol").eq("id", sub_empresa_id).execute()
+            if sub_resp.data:
+                person_name = sub_resp.data[0].get("nombre") or "SUB EMPRESA"
+        except Exception as e:
+            print(f"Error al obtener sub_empresa: {e}")
 
     # 4. Determinar si es de banco y su path
     nombre_carpeta = None
@@ -144,6 +163,62 @@ async def subir_documento(
         name = re.sub(r'[^a-zA-Z0-9\.]', '_', name)
         # Colapsar guiones bajos múltiples
         return re.sub(r'_+', '_', name)
+
+    def _normalize_name(name: str) -> str:
+        if not name: return ""
+        name = unicodedata.normalize('NFKD', name).encode('ASCII', 'ignore').decode('ASCII')
+        name = re.sub(r'[^a-zA-Z0-9\s]', '', name)
+        name = re.sub(r'\s+', ' ', name)
+        return name.strip().upper()
+
+    def resolve_and_update_name(extracted_name: str, doc_source: str):
+        if not extracted_name:
+            return
+            
+        is_rep = "representante" in tipo_documento
+        table_docs = "documentos_accionista" if accionista_id else "documentos_representante"
+        table_person = "accionistas" if accionista_id else "empresas"
+        id_col = "id" if accionista_id else "id"
+        id_val = accionista_id if accionista_id else empresa_id
+        name_col = "nombre" if accionista_id else "representante_legal"
+        
+        other_doc_type = "csf_representante" if (doc_source == "ine" and is_rep) else \
+                         "csf_accionista" if (doc_source == "ine" and not is_rep) else \
+                         "ine_representante" if (doc_source == "csf" and is_rep) else \
+                         "ine_accionista"
+                         
+        query = sb.table(table_docs).select("extracted_data").eq("tipo_documento", other_doc_type)
+        if accionista_id:
+            query = query.eq("accionista_id", accionista_id)
+        else:
+            query = query.eq("empresa_id", empresa_id)
+            
+        try:
+            other_resp = query.execute()
+        except Exception as query_e:
+            logger.warning(f"Error querying extracted_data (maybe missing column): {query_e}")
+            other_resp = None
+        
+        final_name = extracted_name
+        
+        if other_resp and other_resp.data and len(other_resp.data) > 0:
+            other_ext_data = other_resp.data[0].get("extracted_data") or {}
+            other_name = other_ext_data.get("nombre_extraido", "")
+            
+            if other_name:
+                norm_new = _normalize_name(extracted_name)
+                norm_other = _normalize_name(other_name)
+                
+                if norm_new != norm_other:
+                    # Discrepancia! La CSF manda.
+                    final_name = other_name if doc_source == "ine" else extracted_name
+                else:
+                    final_name = extracted_name
+
+        try:
+            sb.table(table_person).update({name_col: final_name}).eq(id_col, id_val).execute()
+        except Exception as e:
+            logger.error(f"Error actualizando nombre en BD: {e}")
 
     def _extract_date_from_pdf(file_bytes: bytes) -> str:
         """Extrae la fecha más reciente de un PDF en formato AAAA.MM.DD."""
@@ -173,22 +248,29 @@ async def subir_documento(
         return ""
 
     original_filename = file.filename
-    if tipo_documento == "ine_representante":
+    if tipo_documento == "ine_representante" or tipo_documento.startswith("ine_accionista"):
         try:
             extracted_name = extract_name_from_ine(file_bytes=content, filename=file.filename)
             if extracted_name and extracted_name not in ["Nombre no detectado", "Error al leer documento"]:
+                extracted_ine_data = {"nombre_extraido": extracted_name}
                 ext = ""
                 if "." in file.filename:
                     ext = "." + file.filename.split(".")[-1]
                 original_filename = f"1. INE - {extracted_name}{ext}"
+                
+                resolve_and_update_name(extracted_name, "ine")
         except Exception as e:
             logger.error(f"Error extrayendo nombre de INE durante subida: {e}")
             
-    elif tipo_documento in ["comprobante_domicilio_representante", "comprobante_domicilio_empresa"]:
+    elif tipo_documento in ["comprobante_domicilio_representante", "comprobante_domicilio_empresa", "comprobante_domicilio_accionista"]:
         try:
             fecha_cd = _extract_date_from_pdf(content) if file.filename.lower().endswith('.pdf') else ""
-            entity = "PF" if "representante" in tipo_documento else "PM"
-            prefix = "2. CD" if "representante" in tipo_documento else "2. CD"
+            if "empresa" in tipo_documento:
+                entity = "PM"
+            else:
+                entity = person_name.upper()
+                
+            prefix = "2. CD" if "empresa" in tipo_documento else "3. CD"
             ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
             if fecha_cd:
                 original_filename = f"{prefix} - {entity} - {fecha_cd}{ext}"
@@ -197,35 +279,62 @@ async def subir_documento(
         except Exception as e:
             logger.error(f"Error generando nombre de CD durante subida: {e}")
 
-    elif tipo_documento in ["csf_empresa", "csf_representante"]:
+    elif tipo_documento in ["csf_empresa", "csf_representante", "csf_accionista"]:
         try:
             from app.SAT.CSF_Location_Extractor import extract_csf_info
             csf_info = extract_csf_info(file_bytes=content, filename=file.filename)
             fecha_csf = csf_info.get("fecha") or ""
             ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
 
-            if "representante" in tipo_documento:
-                # Persona Física: usar nombre real extraído
-                nombre = (csf_info.get("nombre") or "").strip()
-                nombre_safe = re.sub(r'[<>:"/\\|?*]', '', nombre).strip()
+            if "representante" in tipo_documento or "accionista" in tipo_documento:
+                # Persona Física: usar nombre real extraído de la CSF
+                nombre = (csf_info.get("nombre") or person_name).strip()
+                nombre_safe = re.sub(r'[<>:"/\\|?*]', '', nombre).strip().upper()
                 if nombre_safe and fecha_csf:
                     original_filename = f"2. CSF - {nombre_safe} - {fecha_csf}{ext}"
                 elif nombre_safe:
                     original_filename = f"2. CSF - {nombre_safe}{ext}"
                 elif fecha_csf:
-                    original_filename = f"2. CSF - PF - {fecha_csf}{ext}"
+                    original_filename = f"2. CSF - {person_name.upper()} - {fecha_csf}{ext}"
                 else:
-                    original_filename = f"2. CSF - PF{ext}"
+                    original_filename = f"2. CSF - {person_name.upper()}{ext}"
+                    
+                if csf_info.get("nombre"):
+                    resolve_and_update_name(csf_info.get("nombre"), "csf")
+                    
+            elif "sub_empresa" in tipo_documento:
+                # Sub Empresa: usar el nombre extraido de la CSF o el de la BD
+                nombre = (csf_info.get("nombre") or person_name).strip()
+                nombre_safe = re.sub(r'[<>:"/\\|?*]', '', nombre).strip().upper()
+                if nombre_safe and fecha_csf:
+                    original_filename = f"1. CSF - {nombre_safe} - {fecha_csf}{ext}"
+                else:
+                    original_filename = f"1. CSF - {nombre_safe}{ext}"
+                
+                # Actualizar el nombre en la BD si se detecta
+                if csf_info.get("nombre"):
+                    try:
+                        sb.table("sub_empresas").update({"nombre": csf_info.get("nombre")}).eq("id", sub_empresa_id).execute()
+                    except Exception as db_e:
+                        logger.error(f"Error actualizando nombre de sub_empresa: {db_e}")
             else:
-                # Persona Moral: usar label "PM" + fecha
+                # Persona Moral: usar el nombre de la empresa + fecha
+                emp_name_safe = re.sub(r'[<>:"/\\|?*]', '', empresa_nombre).strip().upper()
                 if fecha_csf:
-                    original_filename = f"1. CSF - PM - {fecha_csf}{ext}"
+                    original_filename = f"1. CSF - {emp_name_safe} - {fecha_csf}{ext}"
                 else:
-                    original_filename = f"1. CSF - PM{ext}"
+                    original_filename = f"1. CSF - {emp_name_safe}{ext}"
 
-            # Extract RFC for DB
-            if csf_info.get("rfc"):
-                extracted_csf_rfc = csf_info.get("rfc")
+            # Guardar datos extraídos
+            extracted_csf_data = {
+                "rfc": csf_info.get("rfc"),
+                "location": csf_info.get("location"),
+                "nombre_extraido": csf_info.get("nombre")
+            }
+            if "representante" in tipo_documento or "accionista" in tipo_documento:
+                resolve_and_update_name(csf_info.get("nombre"), "csf")
+
+
         except Exception as e:
             logger.error(f"Error extrayendo información de CSF durante subida: {e}")
 
@@ -279,7 +388,25 @@ async def subir_documento(
             extracted_acta_summary = ai_data
             logger.info(f"Acta procesada y renombrada a: {original_filename}")
         except Exception as e:
-            logger.error(f"Error procesando acta con IA durante subida: {e}")
+            logger.error(f"Error procesando acta_constitutiva: {e}")
+
+    elif tipo_documento in ["acta_nacimiento_representante", "acta_matrimonio_representante", "acta_nacimiento_accionista", "acta_matrimonio_accionista"]:
+        ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+        if "nacimiento" in tipo_documento:
+            original_filename = f"4. ACTA NACIMIENTO - {person_name.upper()}{ext}"
+        else:
+            original_filename = f"5. ACTA MATRIMONIO - {person_name.upper()}{ext}"
+
+    elif tipo_documento in ["buro_score_representante", "buro_score_accionista"]:
+        try:
+            fecha_bc = _extract_date_from_pdf(content) if file.filename.lower().endswith('.pdf') else ""
+            ext = "." + file.filename.split(".")[-1] if "." in file.filename else ""
+            if fecha_bc:
+                original_filename = f"BC - {person_name.upper()} - {fecha_bc[:7]}{ext}"  # AAAA.MM
+            else:
+                original_filename = f"BC - {person_name.upper()}{ext}"
+        except Exception as e:
+            logger.error(f"Error generando nombre de Buro durante subida: {e}")
 
     safe_filename = sanitize_filename(original_filename)
     file_id = str(uuid.uuid4())[:8]
@@ -319,6 +446,8 @@ async def subir_documento(
     claves_rep = {doc["clave"] for doc in DOCUMENTOS_REPRESENTANTE}
     if accionista_id:
         table_name = "documentos_accionista"
+    elif sub_empresa_id:
+        table_name = "documentos_sub_empresa"
     elif tipo_documento in claves_rep or tipo_documento.startswith("ine_accionista") or tipo_documento.startswith("csf_accionista") or tipo_documento.startswith("comprobante_domicilio_accionista") or tipo_documento.startswith("buro_accionista"):
         table_name = "documentos_representante"
     else:
@@ -342,6 +471,16 @@ async def subir_documento(
     if accionista_id:
         doc_data = {
             "accionista_id": accionista_id,
+            "empresa_id": empresa_id,
+            "tipo_documento": tipo_documento,
+            "nombre_archivo": original_filename,
+            "storage_path": storage_path,
+            "estado": "PENDIENTE",
+            "subido_en": ahora,
+        }
+    elif sub_empresa_id:
+        doc_data = {
+            "sub_empresa_id": sub_empresa_id,
             "empresa_id": empresa_id,
             "tipo_documento": tipo_documento,
             "nombre_archivo": original_filename,
@@ -376,23 +515,33 @@ async def subir_documento(
         except Exception as e:
             logger.warning(f"No se pudo leer Opinión de Cumplimiento: {e}")
 
-    # --- Extracción de RFC para Constancia de Situación Fiscal ---
-    if "extracted_csf_rfc" in locals() and extracted_csf_rfc:
-        doc_data["extracted_data"] = {"rfc": extracted_csf_rfc}
-        logger.info(f"RFC guardado exitosamente: {extracted_csf_rfc}")
+    # --- Extracción de Datos para Constancia de Situación Fiscal ---
+    if "extracted_csf_data" in locals() and (extracted_csf_data.get("rfc") or extracted_csf_data.get("nombre_extraido")):
+        if table_name in ["documentos_expediente", "documentos_representante", "documentos_accionista"]:
+            doc_data["extracted_data"] = extracted_csf_data
+            logger.info(f"Datos CSF guardados exitosamente: {extracted_csf_data}")
+        else:
+            logger.info(f"Datos CSF no guardados por no existir columna en {table_name}")
+
+    if "extracted_ine_data" in locals() and extracted_ine_data.get("nombre_extraido"):
+        if table_name in ["documentos_representante", "documentos_accionista"]:
+            doc_data["extracted_data"] = extracted_ine_data
+            logger.info(f"Datos INE guardados exitosamente: {extracted_ine_data}")
 
     # --- Resumen IA para Actas Constitutivas ---
     if "extracted_acta_summary" in locals() and extracted_acta_summary:
-        doc_data["ai_summary"] = extracted_acta_summary
-        logger.info("Resumen de IA de Acta guardado exitosamente.")
+        if table_name == "documentos_expediente":
+            doc_data["ai_summary"] = extracted_acta_summary
+            logger.info("Resumen de IA de Acta guardado exitosamente.")
 
     # --- Extracción de Buro de Crédito (MOPs y Score) ---
-    if "buro_credito" in tipo_documento or "buro_representante" in tipo_documento:
+    if "buro_credito" in tipo_documento or "buro_representante" in tipo_documento or "buro_accionista" in tipo_documento:
         try:
             from app.Buro_Credito.mop_extractor import extraer_mops_de_bytes
             extracted_mops = extraer_mops_de_bytes(content)
-            doc_data["extracted_data"] = extracted_mops
-            logger.info("MOPs extraídos exitosamente durante la subida.")
+            if table_name == "documentos_expediente" or table_name == "documentos_representante":
+                doc_data["extracted_data"] = extracted_mops
+                logger.info("MOPs extraídos exitosamente durante la subida.")
         except Exception as e:
             logger.error(f"Error extrayendo MOPs en upload: {e}")
             

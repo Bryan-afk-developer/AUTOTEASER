@@ -366,7 +366,7 @@ async def get_expediente(authorization: str = Header(None)):
     # Obtener empresa del usuario
     empresa_resp = (
         sb.table("empresas")
-        .select("id, nombre")
+        .select("*")
         .eq("id", user_info["empresa_id"])
         .single()
         .execute()
@@ -589,6 +589,7 @@ async def get_expediente(authorization: str = Header(None)):
     return {
         "empresa_id": empresa_id,
         "nombre_empresa": empresa["nombre"],
+        "empresa_rol": empresa.get("rol", "EMPRESA AVAL"),
         "bancos": bancos,
         "documentos": resultado,
         "declaraciones_sat": declaraciones_sat,
@@ -714,3 +715,23 @@ async def procesar_acta_principal(clave: str, authorization: str = Header(None))
         raise HTTPException(500, "Error guardando el resumen en Base de Datos.")
             
     return summary_payload
+
+class EmpresaRolUpdate(BaseModel):
+    rol: str
+
+@router.put("/expediente/rol")
+async def update_empresa_rol(payload: EmpresaRolUpdate, authorization: str = Header(None)):
+    user_info = get_user_from_token(authorization)
+    sb = get_supabase_admin()
+    
+    if payload.rol not in ["EMPRESA AVAL", "EMPRESA DEL GRUPO"]:
+        raise HTTPException(status_code=400, detail="Rol inválido")
+        
+    try:
+        res = sb.table("empresas").update({"rol": payload.rol}).eq("id", user_info["empresa_id"]).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        return {"message": "ok", "rol": res.data[0].get("rol")}
+    except Exception as e:
+        logger.error(f"Error actualizando rol: {e}")
+        raise HTTPException(status_code=500, detail="El backend intentó actualizar la columna 'rol', pero parece que no existe en la base de datos. Por favor ejecuta el SQL proporcionado para agregarla.")
