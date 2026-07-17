@@ -99,7 +99,7 @@ export default function CafApp() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => window.location.href = '/'}
+            onClick={() => window.location.href = '/?section=portal'}
             title="Expediente Rojo"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}

@@ -11,6 +11,38 @@ from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
+def parse_amount(value: str):
+    import re
+    if not value:
+        return value
+    s = str(value).strip()
+    
+    negative = s.startswith('(') and s.endswith(')')
+    if negative:
+        s = s[1:-1]
+        
+    s = re.sub(r'[$€£\s]', '', s)
+    if not s:
+        return value
+        
+    last_dot = s.rfind('.')
+    last_comma = s.rfind(',')
+    
+    if last_dot > last_comma:
+        s = s.replace(',', '')
+    elif last_comma > last_dot:
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    else:
+        s = s.replace(',', '.')
+        
+    try:
+        result = float(s)
+        return -result if negative else result
+    except ValueError:
+        return value
+
+
 # ── Styles ────────────────────────────────────────────────────────────────────
 HEADER_FONT   = Font(bold=True, color="FFFFFF")
 HEADER_FILL   = PatternFill("solid", fgColor="4CAF50")
@@ -349,10 +381,13 @@ def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int,
     a.alignment = Alignment(horizontal="left", indent=2)
 
     b = ws[f"B{row_num}"]
-    b.value = monto
+    parsed_monto = parse_amount(monto)
+    b.value = parsed_monto
     b.fill = fill
     b.alignment = Alignment(horizontal="right")
     b.border = THIN
+    if isinstance(parsed_monto, (int, float)):
+        b.number_format = '#,##0.00'
     if monto and '(' in str(monto) and ')' in str(monto):
         b.font = Font(color="FF0000")
 
@@ -366,11 +401,6 @@ def _write_nota_data_row(ws, row_num: int, concept: str, monto: str, p_num: int,
     ws[f"D{row_num}"].border = THIN
     img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
 
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
-    e.border = THIN
 
     ws.row_dimensions[row_num].height = max(20, img_height)
 
@@ -484,11 +514,6 @@ def _write_data_row(ws, row_num: int, concept: str, monto: str, p_num: int, ev_b
     ws[f"D{row_num}"].border = THIN
     img_height = _write_evidence_image(ws, "D", row_num, ev_b64)
 
-    e = ws[f"E{row_num}"]
-    e.fill = INPUT_FILL
-    e.alignment = Alignment(horizontal="right", vertical="center")
-    e.number_format = '#,##0.00'
-    e.border = THIN
 
     ws.row_dimensions[row_num].height = max(20, img_height)
 
@@ -530,7 +555,6 @@ def inject_dictaminado_sheets(doc, wb, mapa):
             "B": ("Monto Extraído", 18),
             "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
-            "E": ("Input / Ajuste", 18),
         }
         for col, (title, width) in col_headers.items():
             cell = ws[f"{col}1"]

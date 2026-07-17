@@ -13,6 +13,38 @@ from app.CAF.Dictaminados.excel_builder_dictaminado import inject_dictaminado_sh
 
 logger = logging.getLogger(__name__)
 
+def parse_amount(value: str):
+    import re
+    if not value:
+        return value
+    s = str(value).strip()
+    
+    negative = s.startswith('(') and s.endswith(')')
+    if negative:
+        s = s[1:-1]
+        
+    s = re.sub(r'[$€£\s]', '', s)
+    if not s:
+        return value
+        
+    last_dot = s.rfind('.')
+    last_comma = s.rfind(',')
+    
+    if last_dot > last_comma:
+        s = s.replace(',', '')
+    elif last_comma > last_dot:
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    else:
+        s = s.replace(',', '.')
+        
+    try:
+        result = float(s)
+        return -result if negative else result
+    except ValueError:
+        return value
+
+
 TEMPLATE_PATH = Path("templates/CAF - BRIGHTEC - 2026.02 - plantilla-balance (1).xlsx")
 MAPA_PATH = Path("templates/mapa.json")
 
@@ -206,15 +238,14 @@ def build_caf_excel(docs_data: list) -> bytes:
 
         ws = wb.create_sheet(title=sheet_name)
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         # HEADERS
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         headers = {
-            "A": ("Cuenta Extra├¡da", 28),
-            "B": ("Monto Extra├¡do", 18),
-            "C": ("P├ígina", 8),
+            "A": ("Cuenta Extraída", 28),
+            "B": ("Monto Extraído", 18),
+            "C": ("Página", 8),
             "D": ("Evidencia Visual", 55),
-            "E": ("Input / Ajuste", 18),
         }
         for col, (title, width) in headers.items():
             cell = ws[f"{col}1"]
@@ -225,7 +256,7 @@ def build_caf_excel(docs_data: list) -> bytes:
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # Separador + Headers del mapa estructurado (m├ís a la derecha)
+        # Separador + Headers del mapa estructurado (más a la derecha)
         ws.column_dimensions["F"].width = 3  # separador
         for col, (title, width) in {"G": ("Concepto", 32), "H": ("Importe (Input)", 18)}.items():
             cell = ws[f"{col}1"]
@@ -236,9 +267,9 @@ def build_caf_excel(docs_data: list) -> bytes:
             cell.border = THIN
             ws.column_dimensions[col].width = width
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # COLUMNAS A-E: Datos extra├¡dos del PDF (una fila por dato)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # COLUMNAS A-E: Datos extraídos del PDF (una fila por dato)
+        # ──────────────────────────────────────────────────────────
         page_layouts = doc.get("page_layouts", {})
         if not page_layouts and "extracted_data" in doc:
             page_layouts = doc["extracted_data"].get("page_layouts", {})
@@ -265,14 +296,14 @@ def build_caf_excel(docs_data: list) -> bytes:
                         if not row:
                             continue
 
-                        # ÔöÇÔöÇ Extraer la imagen de evidencia de la fila completa ÔöÇÔöÇ
+                        # ── Extraer la imagen de evidencia de la fila completa ──
                         evidence_b64 = None
                         for cell_data in row:
                             if cell_data and cell_data.get("evidence_b64"):
                                 evidence_b64 = cell_data["evidence_b64"]
                                 break
 
-                        # ÔöÇÔöÇ Decidir estrategia seg├║n layout ÔöÇÔöÇ
+                        # ── Decidir estrategia según layout ──
                         if layout_type == "two_column":
                             l_pairs, r_pairs = _extract_pairs_two_column(row, page_width, regions)
                             for c, m in l_pairs: page_left_pairs.append((c, m, evidence_b64))
@@ -285,11 +316,11 @@ def build_caf_excel(docs_data: list) -> bytes:
                                 elif cell.get("is_amount"): amount_text = cell.get("text", "")
                             page_single_pairs.append((concept_text, amount_text, evidence_b64))
                         else:
-                            # single_column o auto ÔåÆ lineal
+                            # single_column o auto → lineal
                             pairs = _extract_pairs_single_column(row)
                             for c, m in pairs: page_single_pairs.append((c, m, evidence_b64))
 
-                # Unir orfandades antes de escribir (si el OCR separ├│ conceptos y montos en filas distintas)
+                # Unir orfandades antes de escribir (si el OCR separó conceptos y montos en filas distintas)
                 def _cleanup_orphan_pairs(pairs_list):
                     cleaned = []
                     pending_concepts = []
@@ -317,7 +348,7 @@ def build_caf_excel(docs_data: list) -> bytes:
                 else:
                     all_page_pairs = _cleanup_orphan_pairs(page_single_pairs)
 
-                # ÔöÇÔöÇ Escribir cada par como fila en Excel ÔöÇÔöÇ
+                # ── Escribir cada par como fila en Excel ──
                 for concepto, monto, evidence_b64 in all_page_pairs:
                             if not concepto and not monto:
                                 continue
@@ -332,13 +363,16 @@ def build_caf_excel(docs_data: list) -> bytes:
 
                             # Col B: Monto
                             b = ws[f"B{data_row}"]
-                            b.value = monto
+                            parsed_monto = parse_amount(monto)
+                            b.value = parsed_monto
                             b.alignment = Alignment(vertical="center", horizontal="right")
                             b.border = THIN
+                            if isinstance(parsed_monto, (int, float)):
+                                b.number_format = '#,##0.00'
 
-                            # Col C: P├ígina
+                            # Col C: Página
                             c = ws[f"C{data_row}"]
-                            c.value = f"P├íg {p_num}"
+                            c.value = f"Pág {p_num}"
                             c.alignment = Alignment(vertical="center", horizontal="center")
                             c.border = THIN
 
@@ -364,20 +398,14 @@ def build_caf_excel(docs_data: list) -> bytes:
                                 except Exception as e:
                                     logger.error(f"Error insertando imagen de evidencia: {e}")
 
-                            # Col E: Input / Ajuste
-                            e = ws[f"E{data_row}"]
-                            e.fill = INPUT_FILL
-                            e.alignment = Alignment(horizontal="right", vertical="center")
-                            e.number_format = '#,##0.00'
-                            e.border = THIN
 
                             ws.row_dimensions[data_row].height = max(20, img_height)
                             data_row += 1
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         # COLUMNAS G-H: Inputs estructurados del mapa.json
         # (enlazados a la plantilla de Balance / Edo de resultados)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
         input_row = 2
         section_rows = {}  # Track where each section header and its items are
 
@@ -387,9 +415,9 @@ def build_caf_excel(docs_data: list) -> bytes:
 
             concepts = mapa[tpl_sheet][year]
 
-            # Encabezado de secci├│n principal
+            # Encabezado de sección principal
             hdr = ws[f"G{input_row}"]
-            hdr.value = f"ÔöÇÔöÇ {tpl_sheet.upper()} ÔöÇÔöÇ"
+            hdr.value = f"── {tpl_sheet.upper()} ──"
             hdr.font = Font(bold=True, color="FFFFFF", size=11)
             hdr.fill = HEADER_FILL
             hdr.alignment = Alignment(horizontal="center", vertical="center")
@@ -445,7 +473,7 @@ def build_caf_excel(docs_data: list) -> bytes:
                 h.number_format = '#,##0.00'
                 h.border = THIN
 
-                # F├│rmula en la plantilla
+                # Fórmula en la plantilla
                 if tpl_sheet in wb.sheetnames and target_cell:
                     wb[tpl_sheet][target_cell] = f"='{sheet_name}'!H{input_row}"
 
@@ -461,9 +489,9 @@ def build_caf_excel(docs_data: list) -> bytes:
 
             input_row += 1
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # INYECTAR F├ôRMULAS DE SUMA EN HEADERS DE SECCI├ôN (Col H)
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # INYECTAR FÓRMULAS DE SUMA EN HEADERS DE SECCIÓN (Col H)
+        # ──────────────────────────────────────────────────────────
         SUM_FONT = Font(bold=True, color="FFFFFF", size=10)
         COMPROBACION_FILL = PatternFill("solid", fgColor="1565C0")
         COMPROBACION_FONT = Font(bold=True, color="FFFFFF", size=11)
@@ -480,14 +508,14 @@ def build_caf_excel(docs_data: list) -> bytes:
             h_cell.number_format = '#,##0.00'
             h_cell.alignment = Alignment(horizontal="right", vertical="center")
 
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
-        # COLUMNA J-K: BLOQUE DE COMPROBACI├ôN CONTABLE
-        # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+        # ──────────────────────────────────────────────────────────
+        # COLUMNA J-K: BLOQUE DE COMPROBACIÓN CONTABLE
+        # ──────────────────────────────────────────────────────────
         ws.column_dimensions["I"].width = 3  # separador
         ws.column_dimensions["J"].width = 26
         ws.column_dimensions["K"].width = 20
 
-        # J1: Header "COMPROBACI├ôN"
+        # J1: Header "COMPROBACIÓN"
         j1 = ws["J1"]
         j1.value = "COMPROBACION"
         j1.font = COMPROBACION_FONT
@@ -538,6 +566,68 @@ def build_caf_excel(docs_data: list) -> bytes:
         ws["K6"].font = Font(bold=True, size=11)
         ws["K6"].alignment = Alignment(horizontal="center", vertical="center")
         ws["K6"].border = THIN
+
+        # ──────────────────────────────────────────────────────────
+        # COLUMNA J-K: COMPROBACIÓN EDO RESULTADOS VS BALANCE
+        # ──────────────────────────────────────────────────────────
+        # J8: Header "COMPROBACIÓN RESULTADOS"
+        j8 = ws["J8"]
+        j8.value = "COMPROBACION RESULTADOS"
+        j8.font = COMPROBACION_FONT
+        j8.fill = COMPROBACION_FILL
+        j8.alignment = Alignment(horizontal="center", vertical="center")
+        j8.border = THIN
+        k8 = ws["K8"]
+        k8.fill = COMPROBACION_FILL
+        k8.border = THIN
+        ws.merge_cells("J8:K8")
+
+        # Determine the template column for this year to compare
+        tpl_col = "B"
+        if "Balance" in mapa and year in mapa["Balance"]:
+            tpl_col = mapa["Balance"][year].get("utilidad_ejercicio", "B78")[0]
+
+        ver_res_rows = [
+            ("Utilidad (Balance)", f"='Balance'!{tpl_col}78"),
+            ("Utilidad (Edo Res)", f"='Edo de resultados'!{tpl_col}25"),
+            ("Diferencia", "=K10-K9")
+        ]
+
+        for i, (label, formula) in enumerate(ver_res_rows, start=9):
+            j = ws[f"J{i}"]
+            j.value = label
+            j.font = Font(bold=True, size=10)
+            j.alignment = Alignment(horizontal="left", vertical="center")
+            j.border = THIN
+            j.fill = RESULT_FILL
+
+            k = ws[f"K{i}"]
+            k.value = formula
+            k.font = RESULT_FONT
+            k.number_format = '#,##0.00'
+            k.alignment = Alignment(horizontal="right", vertical="center")
+            k.border = THIN
+            k.fill = RESULT_FILL
+
+        ws["J12"].value = "Resultado:"
+        ws["J12"].font = Font(bold=True, size=10)
+        ws["J12"].alignment = Alignment(horizontal="left", vertical="center")
+        ws["J12"].border = THIN
+        ws["K12"].value = '=IF(ABS(K11)<0.01,"SI CUADRA","NO CUADRA")'
+        ws["K12"].font = Font(bold=True, size=11)
+        ws["K12"].alignment = Alignment(horizontal="center", vertical="center")
+        ws["K12"].border = THIN
+
+    # Reemplazar nombre de la empresa "BRIGHTEC" en la plantilla
+    if docs_data and "Balance" in wb.sheetnames:
+        raw_filename = docs_data[0].get("filename", "EMPRESA")
+        # Clean filename: remove extension, remove years, trim, upper
+        clean_name = re.sub(r'(?i)\.pdf$', '', raw_filename)
+        clean_name = re.sub(r'\b(20[1-2]\d)\b', '', clean_name)
+        clean_name = clean_name.replace("_", " ").replace("-", " ").strip().upper()
+        if not clean_name:
+            clean_name = "EMPRESA SIN NOMBRE"
+        wb["Balance"]["D1"].value = clean_name
 
     buf = io.BytesIO()
     wb.save(buf)

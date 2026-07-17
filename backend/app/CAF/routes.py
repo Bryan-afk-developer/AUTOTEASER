@@ -120,10 +120,10 @@ async def export_to_caf(empresa_id: str):
     if not docs_resp.data:
         raise HTTPException(status_code=404, detail="No hay documentos para exportar")
 
-    # Los estados financieros pertenecen al grupo 'financieros' (clave empieza con 'financiero_eeff_')
-    eeff_docs = [d for d in docs_resp.data if d.get("grupo") == "financieros" and d.get("storage_path")]
+    # Los estados financieros tienen "financiero" o "eeff" en tipo_documento
+    eeff_docs = [d for d in docs_resp.data if ("financiero" in str(d.get("tipo_documento", "")).lower() or "eeff" in str(d.get("tipo_documento", "")).lower()) and d.get("storage_path")]
     if not eeff_docs:
-        raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos (grupo 'financieros') para exportar")
+        raise HTTPException(status_code=404, detail="No se encontraron Estados Financieros subidos para exportar")
 
     # 2. Limpiar documentos actuales de AutoCAF y sus archivos para no mezclarlos
     caf_docs.clear()
@@ -161,11 +161,11 @@ async def export_to_caf(empresa_id: str):
             thumbnails = []
             for i in range(page_count):
                 page = pdf[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                pix = page.get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
+                img_b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
                 thumbnails.append({
                     "page_num": i,
-                    "image": f"data:image/png;base64,{img_b64}"
+                    "image": f"data:image/jpeg;base64,{img_b64}"
                 })
             pdf.close()
 
@@ -210,12 +210,12 @@ async def upload_pdf(file: UploadFile = File(...)):
         thumbnails = []
         for i in range(page_count):
             page = doc[i]
-            # High resolution for thumbnails
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+            # Low resolution for fast thumbnails
+            pix = page.get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
+            img_b64 = base64.b64encode(pix.tobytes("jpeg")).decode("utf-8")
             thumbnails.append({
                 "page_num": i,
-                "image": f"data:image/png;base64,{img_b64}"
+                "image": f"data:image/jpeg;base64,{img_b64}"
             })
             
         doc.close()

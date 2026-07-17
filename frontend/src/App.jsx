@@ -26,11 +26,14 @@ function App() {
   // ── Portal routing: si la URL empieza con /portal, mostrar el portal ──
   // Ya no retornamos temprano para no perder el Sidebar. Se manejará con activeSection.
 
-  const initialSection = (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) 
-    ? 'portal' 
-    : (typeof window !== 'undefined' && window.location.pathname.startsWith('/CAF'))
-      ? 'caf'
-      : 'teaser';
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const initialSection = urlParams?.get('section') || (
+    (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) 
+      ? 'portal' 
+      : (typeof window !== 'undefined' && window.location.pathname.startsWith('/CAF'))
+        ? 'caf'
+        : 'teaser'
+  );
 
   const [activeSection, setActiveSection] = useState(initialSection)
   const [isOnline, setIsOnline] = useState(false)
