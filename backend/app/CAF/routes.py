@@ -78,6 +78,7 @@ class ProcessRequest(BaseModel):
     page_layouts: dict = {}  # e.g., {"0": "single_column", "1": "two_column"}
     use_ocr: bool = True
     doc_type: str = "financiero"
+    manual_year: str = None
 
 class GenerateBatchExcelRequest(BaseModel):
     doc_ids: List[str]
@@ -260,6 +261,9 @@ async def process_pdf(doc_id: str, request: ProcessRequest):
             result = extract_dictaminado(doc_info["path"], request.pages, request.page_layouts)
         else:
             result = extract_tables_from_pages(doc_info["path"], request.pages, request.page_layouts, request.use_ocr)
+            
+        if request.manual_year:
+            result["year"] = request.manual_year
             
         logger.info(f"CAF: Extraction done in {time.time()-t0:.2f}s")
         

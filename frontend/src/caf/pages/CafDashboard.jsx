@@ -185,7 +185,7 @@ export default function CafDashboard() {
       try {
         const docType = doc.docType || 'financiero';
         const useOcr = docType === 'dictaminado' ? true : (doc.useOcr !== false);
-        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr, doc_type: docType })
+        await axios.post(`${API_BASE}/api/caf/process/${doc.doc_id}`, { pages: doc.selectedPages, page_layouts: doc.pageLayouts, use_ocr: useOcr, doc_type: docType, manual_year: doc.manualYear })
         const previewRes = await axios.get(`${API_BASE}/api/caf/preview/${doc.doc_id}`)
         
         setDocuments(prev => prev.map(d => {
@@ -313,6 +313,13 @@ export default function CafDashboard() {
                       />
                       <span>Usar OCR</span>
                     </label>
+                    <input 
+                      type="number"
+                      placeholder="Año"
+                      value={doc.manualYear || ''}
+                      onChange={(e) => setDocuments(docs => docs.map(d => d.doc_id === doc.doc_id ? { ...d, manualYear: e.target.value } : d))}
+                      className="bg-surface border border-border rounded text-xs px-2 py-1 text-white outline-none focus:ring-1 focus:ring-primary-500 w-16 text-center"
+                    />
                     <button onClick={() => removeDocument(doc.doc_id)} className="p-1.5 rounded-lg hover:bg-white/10 text-text-muted hover:text-rose-400 transition-colors">
                       <X className="w-4 h-4" />
                     </button>
