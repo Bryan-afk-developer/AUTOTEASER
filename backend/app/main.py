@@ -382,7 +382,7 @@ async def preview_batch_endpoint(req: BatchFillRequest):
         raise HTTPException(400, "No se especificaron documentos (doc_ids)")
 
     mapping = _load_mapping(req.template_name)
-    months_order = mapping.get("months_order", ["nov", "dic", "ene", "feb", "mar", "abr", "may"]) if mapping else []
+    months_order = mapping.get("months_order", ["nov", "dic", "ene", "feb", "mar", "abr", "may", "jun"]) if mapping else []
 
     # Group data by account
     accounts = defaultdict(dict)

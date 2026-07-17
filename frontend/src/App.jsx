@@ -15,7 +15,7 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-const MONTH_LABELS = { nov: 'Nov', dic: 'Dic', ene: 'Ene', feb: 'Feb', mar: 'Mar', abr: 'Abr', may: 'May' }
+const MONTH_LABELS = { nov: 'Nov', dic: 'Dic', ene: 'Ene', feb: 'Feb', mar: 'Mar', abr: 'Abr', may: 'May', jun: 'Jun' }
 
 function fmt(n) {
   if (n == null) return '—'
