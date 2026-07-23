@@ -7,10 +7,13 @@ import LoginPage from './portal/pages/LoginPage'
 import api from './portal/lib/api'
 import CafApp from './caf/CafApp'
 import CafDashboard from './caf/pages/CafDashboard'
+import DiagnosticoDashboard from './diagnostico/DiagnosticoDashboard'
+import UltraRojoDashboard from './portal/pages/UltraRojoDashboard'
 import {
   UploadCloud, CheckCircle2, XCircle, FileText, Loader2, Trash2,
   AlertTriangle, Download, Eye, EyeOff, FileSpreadsheet, X, Menu,
-  Layers, Plus, Calendar, Database, Sparkles, Settings, ChevronLeft, ChevronRight
+  Layers, Plus, Calendar, Database, Sparkles, Settings, ChevronLeft, ChevronRight,
+  FolderOpen, Droplet, FileSearch
 } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -28,11 +31,15 @@ function App() {
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const initialSection = urlParams?.get('section') || (
-    (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) 
+    (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/portal')) 
       ? 'portal' 
-      : (typeof window !== 'undefined' && window.location.pathname.startsWith('/CAF'))
-        ? 'caf'
-        : 'teaser'
+      : (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/ultrarojo'))
+        ? 'ultrarojo'
+        : (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/caf'))
+          ? 'caf'
+          : (typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/diagnostico'))
+            ? 'diagnostico'
+            : 'teaser'
   );
 
   const [activeSection, setActiveSection] = useState(initialSection)
@@ -383,7 +390,7 @@ function App() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setActiveSection('teaser')}
+            onClick={() => window.location.href = '/'}
             title="AutoTeaser"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
@@ -392,7 +399,7 @@ function App() {
                 : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
             <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
-              <span className={`text-base transition-colors ${activeSection === 'teaser' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}>⚡</span>
+              <span className={`transition-colors ${activeSection === 'teaser' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}><FileSpreadsheet className="w-5 h-5" /></span>
               <AnimatePresence>
                 {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'teaser' ? 'text-primary-300 font-bold' : ''}`}>AutoTeaser</motion.span>}
               </AnimatePresence>
@@ -419,7 +426,7 @@ function App() {
                 : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
             <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
-              <span className={`text-base transition-colors ${activeSection === 'caf' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}>📊</span>
+              <span className={`transition-colors ${activeSection === 'caf' ? 'text-primary-400' : 'text-text-muted group-hover:text-primary-400'}`}><FileSpreadsheet className="w-5 h-5" /></span>
               <AnimatePresence>
                 {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'caf' ? 'text-primary-300 font-bold' : ''}`}>AutoCAF</motion.span>}
               </AnimatePresence>
@@ -448,7 +455,7 @@ function App() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setActiveSection('portal')}
+            onClick={() => window.location.href = '/portal'}
             title="Expediente Rojo"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
@@ -457,7 +464,7 @@ function App() {
                 : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
             <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
-              <span className={`text-base transition-colors ${activeSection === 'portal' ? 'text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-text-muted group-hover:text-rose-400'}`}>🔴</span>
+              <span className={`transition-colors ${activeSection === 'portal' ? 'text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.8)]' : 'text-text-muted group-hover:text-rose-400'}`}><FolderOpen className="w-5 h-5" /></span>
               <AnimatePresence>
                 {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'portal' ? 'text-rose-300 font-bold' : ''}`}>Expediente Rojo</motion.span>}
               </AnimatePresence>
@@ -475,16 +482,18 @@ function App() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => alert('No disponible')}
+            onClick={() => window.location.href = '/ultrarojo'}
             title="Expediente UltraRojo"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-1
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
-              text-text-muted hover:text-rose-600 hover:bg-white/5 border border-transparent`}
+              ${activeSection === 'ultrarojo'
+                ? 'bg-gradient-to-r from-rose-700/20 to-transparent border border-rose-600/30 shadow-[inset_4px_0_0_rgba(225,29,72,1)]'
+                : 'text-text-muted hover:text-rose-400 hover:bg-white/5 border border-transparent'}`}
           >
             <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
-              <span className={`text-base transition-colors text-rose-800 group-hover:text-rose-600`}>🩸</span>
+              <span className={`transition-colors ${activeSection === 'ultrarojo' ? 'text-rose-500 drop-shadow-[0_0_8px_rgba(225,29,72,0.8)]' : 'text-rose-800 group-hover:text-rose-500'}`}><Droplet className="w-5 h-5" /></span>
               <AnimatePresence>
-                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap`}>Expediente UltraRojo</motion.span>}
+                {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'ultrarojo' ? 'text-rose-400 font-bold' : ''}`}>Expediente UltraRojo</motion.span>}
               </AnimatePresence>
             </div>
           </motion.button>
@@ -493,7 +502,7 @@ function App() {
           <motion.button
             whileHover={{ x: 4 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setActiveSection('diagnostico')}
+            onClick={() => window.location.href = '/Diagnostico'}
             title="Diagnóstico"
             className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden group mt-1
               ${sidebarOpen ? 'justify-between' : 'justify-center'}
@@ -502,7 +511,7 @@ function App() {
                 : 'text-text-muted hover:text-text-main hover:bg-white/5 border border-transparent'}`}
           >
             <div className={`flex items-center ${sidebarOpen ? 'gap-3 ml-1' : ''}`}>
-              <span className={`text-base transition-colors ${activeSection === 'diagnostico' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'text-text-muted group-hover:text-blue-400'}`}>🩺</span>
+              <span className={`transition-colors ${activeSection === 'diagnostico' ? 'text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'text-text-muted group-hover:text-blue-400'}`}><FileSearch className="w-5 h-5" /></span>
               <AnimatePresence>
                 {sidebarOpen && <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 'auto' }} exit={{ opacity: 0, width: 0 }} className={`whitespace-nowrap ${activeSection === 'diagnostico' ? 'text-blue-300 font-bold' : ''}`}>Diagnóstico</motion.span>}
               </AnimatePresence>
@@ -542,16 +551,17 @@ function App() {
             <h1 className="text-base font-bold tracking-tight">
               {activeSection === 'teaser' && (<>Auto<span className="text-primary-500">Teaser</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados de cuenta</span></>)}
               {activeSection === 'caf' && (<>Auto<span className="text-primary-500">CAF</span> <span className="text-xs font-normal text-text-muted ml-2">/ Estados Financieros</span></>)}
-              {activeSection === 'portal' && (<>🔴 <span className="text-primary-400">Expediente Rojo</span> <span className="text-xs font-normal text-text-muted ml-2">/ Panel de Revisión</span></>)}
+              {activeSection === 'portal' && (<><span className="inline-flex items-center gap-2"><FolderOpen className="w-5 h-5 text-rose-400" /> <span className="text-primary-400">Expediente Rojo</span></span> <span className="text-xs font-normal text-text-muted ml-2">/ Panel de Revisión</span></>)}
+              {activeSection === 'ultrarojo' && (<><span className="inline-flex items-center gap-2"><Droplet className="w-5 h-5 text-rose-500" /> <span className="text-rose-500">Expediente UltraRojo</span></span> <span className="text-xs font-normal text-text-muted ml-2">/ Portal Maestro</span></>)}
             </h1>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Mobile View Switcher */}
             <div className="flex md:hidden bg-surface p-1 rounded-xl border border-border">
-              <button onClick={() => setActiveSection('teaser')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'teaser' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Teaser</button>
-              <button onClick={() => setActiveSection('caf')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'caf' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>CAF</button>
-              <button onClick={() => setActiveSection('portal')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'portal' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Admin</button>
+              <button onClick={() => window.location.href = '/'} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'teaser' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Teaser</button>
+              <button onClick={() => window.location.href = '/caf'} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'caf' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>CAF</button>
+              <button onClick={() => window.location.href = '/portal'} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activeSection === 'portal' ? 'bg-primary-500 text-white' : 'text-text-muted'}`}>Admin</button>
             </div>
 
             <div className="hidden md:flex items-center gap-1.5 bg-surface px-3 py-1 rounded-full border border-border">
@@ -833,16 +843,16 @@ function App() {
           </div>
         )}
 
+        {/* ── Section: UltraRojo ── */}
+        {activeSection === 'ultrarojo' && (
+          <div className="flex-1 overflow-auto bg-[#0a0a0c]">
+            <UltraRojoDashboard />
+          </div>
+        )}
+
         {/* ── Section: Diagnostico ── */}
         {activeSection === 'diagnostico' && (
-          <div className="flex-1 overflow-auto bg-background p-8">
-            <div className="max-w-4xl mx-auto bg-surface border border-border rounded-2xl p-8 shadow-2xl">
-              <h2 className="text-2xl font-bold text-blue-400 mb-4 flex items-center gap-3">
-                <span className="text-3xl">🩺</span> Diagnóstico
-              </h2>
-              <p className="text-text-muted">Módulo de diagnóstico en construcción...</p>
-            </div>
-          </div>
+          <DiagnosticoDashboard />
         )}
 
 

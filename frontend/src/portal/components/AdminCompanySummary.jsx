@@ -10,7 +10,7 @@ import AiSummarySlideover from './AiSummarySlideover'
 
 const mopsCache = {}
 
-export default function AdminCompanySummary({ empresa, documentos, actaPrincipal, alertaNombresMismatch }) {
+export default function AdminCompanySummary({ empresa, documentos, actaPrincipal, alertaNombresMismatch, viewMode = 'both' }) {
   const [isAiSummaryOpen, setIsAiSummaryOpen] = useState(false)
   const [mopData, setMopData] = useState(null)
   const [loadingMop, setLoadingMop] = useState(true)
@@ -282,8 +282,9 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
     <div className="w-full xl:w-[26rem] flex-shrink-0 flex flex-col gap-6 animate-fade-in">
       
       {/* ── CARD: Resumen de Empresa ────────────────────────────── */}
-      <div className="bg-[#111113] border border-border rounded-2xl overflow-hidden shadow-xl">
-        <div className="px-5 py-4 border-b border-border bg-surface/50 flex items-center gap-3">
+      {(viewMode === 'both' || viewMode === 'empresa') && (
+        <div className="bg-[#15151a] border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+        <div className="px-5 py-4 border-b border-white/10 bg-white/5 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-400">
             <Building2 className="w-4 h-4" />
           </div>
@@ -476,10 +477,12 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
 
         </div>
       </div>
+      )}
 
       {/* ── CARD: Representante Legal ────────────────────────────── */}
-      <div className="bg-[#111113] border border-border rounded-2xl overflow-hidden shadow-xl">
-        <div className="px-5 py-4 border-b border-border bg-surface/50 flex items-center gap-3">
+      {(viewMode === 'both' || viewMode === 'representante') && (
+        <div className="bg-[#15151a] border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+        <div className="px-5 py-4 border-b border-white/10 bg-white/5 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -699,9 +702,12 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
 
         </div>
       </div>
+      )}
 
       {/* Acciones de Google Drive */}
-      <div className="bg-surface border border-border rounded-xl p-5 w-[320px] shadow-sm flex flex-col gap-4">
+      {viewMode === 'both' && (
+        <>
+          <div className="bg-[#15151a] border border-white/10 rounded-xl p-5 w-[320px] shadow-sm flex flex-col gap-4">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-8 h-8 rounded bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
             <svg className="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
@@ -768,6 +774,7 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
           </>
         )
       })()}
+      </>)}
 
     </div>
   )

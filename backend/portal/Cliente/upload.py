@@ -324,6 +324,12 @@ async def subir_documento(
                     original_filename = f"1. CSF - {emp_name_safe} - {fecha_csf}{ext}"
                 else:
                     original_filename = f"1. CSF - {emp_name_safe}{ext}"
+                    
+                if csf_info.get("rfc"):
+                    try:
+                        sb.table("empresas").update({"rfc": csf_info.get("rfc")}).eq("id", empresa_id).execute()
+                    except Exception as db_e:
+                        logger.error(f"Error actualizando RFC de empresa: {db_e}")
 
             # Guardar datos extraídos
             extracted_csf_data = {

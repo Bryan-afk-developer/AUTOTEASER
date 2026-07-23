@@ -979,14 +979,13 @@ async def get_buro_score(empresa_id: str, tipo_buro: str = "buro_score_represent
         .select("id, storage_path, nombre_archivo, estado, extracted_data")
         .eq("empresa_id", empresa_id)
         .eq("tipo_documento", tipo_buro)
-        .single()
         .execute()
     )
 
     if not doc_resp.data:
         raise HTTPException(status_code=404, detail="No se encontró el documento Mi Score")
 
-    doc = doc_resp.data
+    doc = doc_resp.data[0]
     storage_path = doc.get("storage_path")
 
     if not storage_path:

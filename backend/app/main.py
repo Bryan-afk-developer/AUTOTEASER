@@ -20,6 +20,7 @@ class GenerateConsolidatedRequest(BaseModel):
     template_name: str
 
 from app.CAF.routes import router as caf_router
+from diagnostico.routes import router as diagnostico_router
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -88,6 +89,7 @@ app.include_router(portal_sub_empresas.router, prefix="/api/portal/cliente", tag
 app.include_router(portal_dashboard.router,    prefix="/api/portal/admin",   tags=["Portal Admin"])
 app.include_router(portal_revision.router,     prefix="/api/portal/admin",   tags=["Portal Admin"])
 app.include_router(caf_router)
+app.include_router(diagnostico_router)
 
 # In-memory store
 documents = {}

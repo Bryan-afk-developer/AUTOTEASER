@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico Estratégico - [EMPRESA]</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gf: {
+                            primary: '#bc022a',
+                            dark: '#0c0c0c',
+                            gray: '#989898',
+                            bg: '#ffffff'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 400px;
+        }
+
+        @media print {
+            .no-print {
+                display: none;
+            }
+
+            body {
+                background: white;
+            }
+
+            .page-break {
+                page-break-before: always;
+            }
+
+            .shadow-lg {
+                box-shadow: none !important;
+                border: 1px solid #eee;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-white text-gf-dark overflow-x-hidden antialiased">
+
+    <!-- Header -->
+    <header class="bg-gf-dark text-white pt-12 pb-24 px-6 text-center border-b-4 border-gf-primary">
+        <div class="max-w-5xl mx-auto">
+            <!-- Reemplazar logo aquí -->
+            <img src="https://i0.wp.com/gestionfinanciera.org/wp-content/uploads/2025/01/logo02.png?w=300&ssl=1"
+                alt="Logo de la Firma" class="h-16 mx-auto mb-8">
+            <span
+                class="inline-block border border-gf-primary text-gf-primary text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-[0.2em] mb-4">Uso
+                Exclusivo de Alta Dirección - Estrictamente Confidencial</span>
+            <h1 class="text-4xl md:text-6xl font-bold mb-4 tracking-tight">Diagnóstico Estratégico y de Valor</h1>
+            <p class="text-xl md:text-2xl text-gf-gray font-light mb-12">Preparado para: <span
+                    class="text-white font-semibold underline decoration-gf-primary">[NOMBRE DE LA EMPRESA, S.A. DE
+                    C.V.]</span></p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-sm border-t border-white/10 pt-8 max-w-4xl mx-auto">
+                <div class="flex flex-col items-center">
+                    <span class="text-gf-primary font-bold uppercase tracking-wider mb-1">Giro de Negocio</span>
+                    <span class="text-white/80">[SECTOR / INDUSTRIA]</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-gf-primary font-bold uppercase tracking-wider mb-1">Análisis Basado en</span>
+                    <span class="text-white/80">[FUENTE DE DATOS / MES Y AÑO]</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-gf-primary font-bold uppercase tracking-wider mb-1">Elaborado por</span>
+                    <span class="text-white/80">[TU ÁREA O NOMBRE]</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 -mt-12 relative z-10">
+
+        <!-- Resumen Ejecutivo -->
+        <section class="bg-white rounded-xl shadow-2xl p-8 mb-12 border border-gray-100">
+            <div class="flex flex-col lg:flex-row gap-10">
+                <div class="lg:w-2/3">
+                    <h2 class="text-2xl font-bold mb-6 flex items-center border-b pb-2">
+                        <span class="w-2 h-8 bg-gf-primary mr-3"></span>
+                        Resumen de Situación Corporativa
+                    </h2>
+                    <p class="text-gray-700 leading-relaxed mb-4">
+                        El análisis técnico del cierre [AÑO] revela que <strong>[EMPRESA]</strong> ha logrado un
+                        posicionamiento envidiable en el sector de [SECTOR], con ventas anuales que han escalado hasta
+                        los <strong>$[XX.X] MDP</strong>. Esta expansión es testimonio de su capacidad operativa en
+                        proyectos críticos.
+                    </p>
+                    <p class="text-gray-700 leading-relaxed">
+                        Sin embargo, el modelo de negocio actual presenta una <strong>[DESCRIBIR INEFICIENCIA
+                            PRINCIPAL]</strong>: la empresa está financiando sus proyectos con recursos propios a plazos
+                        largos. El capital está "atrapado" en el balance, lo que genera un riesgo de asfixia operativa
+                        justo en el momento de mayor oportunidad comercial.
+                    </p>
+                </div>
+
+                <div class="lg:w-1/3">
+                    <div class="bg-red-50 border-l-4 border-gf-primary p-6 rounded-r-xl h-full shadow-sm">
+                        <div class="flex items-center mb-4 text-gf-primary">
+                            <span class="text-2xl mr-2">⚠️</span>
+                            <h3 class="font-bold text-lg leading-tight">Alerta Crítica de Liquidez</h3>
+                        </div>
+                        <p class="text-sm text-gray-800 leading-relaxed mb-4">
+                            Se detecta un saldo en Bancos de apenas <strong>$[X,XXX]</strong> frente a una cartera por
+                            cobrar de <strong>$[XX.X] MDP</strong>. La liquidez inmediata representa menos del
+                            <strong>[X.X]%</strong> de los activos circulantes.
+                        </p>
+                        <div
+                            class="text-[10px] font-bold text-gf-primary uppercase tracking-widest bg-white py-2 px-3 inline-block border border-red-200 w-full text-center">
+                            Intervención Urgente Sugerida</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- KPI Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <div
+                class="bg-gf-dark text-white p-6 rounded-xl hover:translate-y-[-4px] transition-all duration-300 shadow-lg border-b-4 border-gf-primary">
+                <p class="text-xs text-gf-gray uppercase font-bold tracking-widest mb-1">Ventas Cierre [AÑO]</p>
+                <p class="text-3xl font-extrabold">$[XX.X]<span class="text-sm font-normal text-gf-gray ml-1">MDP</span>
+                </p>
+                <div class="mt-4 flex items-center text-green-400 text-xs font-bold">
+                    <span>↑ [Tendencia o Estatus]</span>
+                </div>
+            </div>
+            <div
+                class="bg-white p-6 rounded-xl hover:translate-y-[-4px] transition-all duration-300 shadow-md border border-gray-100">
+                <p class="text-xs text-gf-gray uppercase font-bold tracking-widest mb-1">Cartera Atrapada (CxC)</p>
+                <p class="text-3xl font-extrabold text-gf-dark">$[XX.X]<span
+                        class="text-sm font-normal text-gf-gray ml-1">MDP</span></p>
+                <div class="mt-4 flex items-center text-gf-primary text-xs font-bold">
+                    <span>⚠️ [XX.X]% del Circulante</span>
+                </div>
+            </div>
+            <div
+                class="bg-white p-6 rounded-xl hover:translate-y-[-4px] transition-all duration-300 shadow-md border border-gray-100">
+                <p class="text-xs text-gf-gray uppercase font-bold tracking-widest mb-1">Capital Contable</p>
+                <p class="text-3xl font-extrabold text-gf-dark">$[XX.X]<span
+                        class="text-sm font-normal text-gf-gray ml-1">MDP</span></p>
+                <div class="mt-4 flex items-center text-gray-400 text-xs font-bold">
+                    <span>Respaldo de Balance</span>
+                </div>
+            </div>
+            <div
+                class="bg-white p-6 rounded-xl hover:translate-y-[-4px] transition-all duration-300 shadow-md border border-gray-100">
+                <p class="text-xs text-gf-gray uppercase font-bold tracking-widest mb-1">Leverage Actual</p>
+                <p class="text-3xl font-extrabold text-gf-dark">[XX.X]<span
+                        class="text-sm font-normal text-gf-gray ml-1">%</span></p>
+                <div class="mt-4 flex items-center text-green-500 text-xs font-bold">
+                    <span>[Estado del Apalancamiento]</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Visuals -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+            <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-50">
+                <h3 class="text-lg font-bold mb-2">Histórico de Ventas vs. Disponibilidad</h3>
+                <p class="text-xs text-gf-gray mb-6 italic">En Millones de Pesos (MDP)</p>
+                <div class="chart-container">
+                    <canvas id="revChart"></canvas>
+                </div>
+            </div>
+            <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-50">
+                <h3 class="text-lg font-bold mb-2">Anatomía del Activo Circulante</h3>
+                <p class="text-xs text-gf-gray mb-6 italic">Visualización del capital inmovilizado</p>
+                <div class="chart-container">
+                    <canvas id="structureChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interactive Simulator -->
+        <section class="bg-gray-50 rounded-2xl p-10 mb-12 border border-gray-200 shadow-inner">
+            <div class="flex flex-col md:flex-row items-center gap-10">
+                <div class="md:w-1/2">
+                    <h3 class="text-2xl font-bold mb-4">Simulador de Desbloqueo de Capital</h3>
+                    <p class="text-sm text-gray-600 mb-8 leading-relaxed">
+                        [EMPRESA] tiene <strong>$<span id="textTotalCxc">[XX.X]</span> MDP</strong> en facturas por
+                        cobrar. Mediante nuestro programa de <strong>Factoraje Sin Recurso</strong>, puede convertir
+                        este papel en efectivo de forma anticipada.
+                    </p>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-bold text-gf-dark uppercase">Porcentaje de Cartera a
+                                Liquidar:</span>
+                            <span id="sliderValue" class="text-xl font-black text-gf-primary">50%</span>
+                        </div>
+                        <input type="range" id="factorSlider" min="10" max="100" step="5" value="50"
+                            class="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-gf-primary">
+                        <div class="flex justify-between text-[10px] text-gf-gray font-bold uppercase">
+                            <span>Básico: 10%</span>
+                            <span>Total: 100%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="md:w-1/2 w-full">
+                    <div
+                        class="bg-gf-dark rounded-xl p-8 text-center border-t-8 border-gf-primary shadow-2xl transform hover:scale-105 transition-transform duration-500">
+                        <p class="text-gf-gray text-xs font-bold uppercase tracking-widest mb-2">Liquidez Neta
+                            Inyectable</p>
+                        <p id="totalLiquidity" class="text-4xl md:text-5xl font-black text-white">$0.0<span
+                                class="text-xl font-normal ml-2">MDP</span></p>
+                        <p class="text-[10px] text-gf-gray mt-6 italic">Cálculo basado en un aforo predeterminado en el
+                            sistema. Sin afectar líneas de crédito bancarias.</p>
+                        <div
+                            class="mt-6 bg-gf-primary text-white py-2 px-6 inline-block text-xs font-bold rounded uppercase cursor-pointer hover:bg-red-700 transition-colors">
+                            Solicitar Estructura</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Opportunity Cards -->
+        <h2 class="text-2xl font-bold mb-8 px-2 flex items-center">
+            <span class="text-gf-primary mr-3 text-3xl">🎯</span>
+            Diagnóstico de Áreas de Oportunidad
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+            <!-- Opportunity 1 -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 flex flex-col">
+                <div class="bg-gf-dark p-4 flex justify-between items-center border-b-2 border-gf-primary">
+                    <h4 class="text-white font-bold uppercase text-sm tracking-widest">[ÁREA DE OPORTUNIDAD 1]</h4>
+                    <span class="text-gf-primary font-black text-xs">#01</span>
+                </div>
+                <div class="p-6 flex-grow space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">Hallazgo CAF / Situación Actual</p>
+                        <p class="text-sm font-semibold">[Descripción breve del problema encontrado, ej. 90% del capital
+                            atorado en cuentas por cobrar...]</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">El Riesgo de Inacción</p>
+                        <p class="text-sm text-red-700">[Consecuencia negativa si no se resuelve, ej. Incapacidad para
+                            financiar nuevas obras...]</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg border-l-2 border-gf-primary">
+                        <p class="text-xs font-bold text-gf-dark mb-1">Solución: [Nombre de la Solución]</p>
+                        <p class="text-xs text-gray-600">[Descripción de cómo tu producto/servicio resuelve esto...]</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Opportunity 2 -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 flex flex-col">
+                <div class="bg-gf-dark p-4 flex justify-between items-center border-b-2 border-gf-primary">
+                    <h4 class="text-white font-bold uppercase text-sm tracking-widest">[ÁREA DE OPORTUNIDAD 2]</h4>
+                    <span class="text-gf-primary font-black text-xs">#02</span>
+                </div>
+                <div class="p-6 flex-grow space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">Hallazgo CAF / Situación Actual</p>
+                        <p class="text-sm font-semibold">[Descripción de maquinaria sin utilizar, exceso de inventario,
+                            etc...]</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">El Riesgo de Inacción</p>
+                        <p class="text-sm text-red-700">[Capital muerto, depreciación acelerada, pérdida de margen...]
+                        </p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg border-l-2 border-gf-primary">
+                        <p class="text-xs font-bold text-gf-dark mb-1">Solución: [Nombre de la Solución]</p>
+                        <p class="text-xs text-gray-600">[Venta de activos inactivos, sale & lease back,
+                            reestructura...]</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Opportunity 3 -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 flex flex-col">
+                <div class="bg-gf-dark p-4 flex justify-between items-center border-b-2 border-gf-primary">
+                    <h4 class="text-white font-bold uppercase text-sm tracking-widest">[ÁREA DE OPORTUNIDAD 3]</h4>
+                    <span class="text-gf-primary font-black text-xs">#03</span>
+                </div>
+                <div class="p-6 flex-grow space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">Hallazgo Financiero</p>
+                        <p class="text-sm font-semibold">[Deudas dispersas, tasas altas, pasivos laborales...]</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">El Riesgo de Inacción</p>
+                        <p class="text-sm text-red-700">[Erosión de utilidades, estrés financiero...]</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg border-l-2 border-gf-primary">
+                        <p class="text-xs font-bold text-gf-dark mb-1">Solución: [Nombre de la Solución]</p>
+                        <p class="text-xs text-gray-600">[Consolidación de deuda, factoraje a proveedores...]</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Opportunity 4 -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 flex flex-col">
+                <div class="bg-gf-dark p-4 flex justify-between items-center border-b-2 border-gf-primary">
+                    <h4 class="text-white font-bold uppercase text-sm tracking-widest">[ÁREA DE OPORTUNIDAD 4]</h4>
+                    <span class="text-gf-primary font-black text-xs">#04</span>
+                </div>
+                <div class="p-6 flex-grow space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">Hallazgo Operativo</p>
+                        <p class="text-sm font-semibold">[Desperdicio en cadena de suministro, pagos de contado
+                            ineficientes...]</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold text-gf-gray uppercase mb-1">El Riesgo de Inacción</p>
+                        <p class="text-sm text-red-700">[Costos de adquisición altos frente a competencia...]</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-lg border-l-2 border-gf-primary">
+                        <p class="text-xs font-bold text-gf-dark mb-1">Solución: [Nombre de la Solución]</p>
+                        <p class="text-xs text-gray-600">[Tarjetas corporativas, automatización de pagos...]</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-break"></div>
+
+        <!-- Implementation Roadmap -->
+        <h2 class="text-2xl font-bold mb-8 px-2 flex items-center">
+            <span class="text-gf-primary mr-3 text-3xl">📅</span>
+            Ruta de Implementación Propuesta
+        </h2>
+
+        <div class="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200 mb-20">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-left">
+                    <thead class="bg-gf-dark text-white text-xs uppercase tracking-widest">
+                        <tr>
+                            <th class="px-8 py-5 font-bold">Fase</th>
+                            <th class="px-8 py-5 font-bold">Acción Estratégica</th>
+                            <th class="px-8 py-5 font-bold">Entregable / Meta</th>
+                            <th class="px-8 py-5 font-bold">Tiempo Est.</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 text-sm">
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-8 py-6 font-bold text-gf-dark">01. Validación</td>
+                            <td class="px-8 py-6 text-gray-600">[Descripción de acción, ej. Afinación de montos...]</td>
+                            <td class="px-8 py-6">
+                                <span
+                                    class="px-3 py-1 bg-gray-100 border border-gray-200 rounded text-[10px] font-bold text-gf-dark">[Entregable
+                                    1]</span>
+                            </td>
+                            <td class="px-8 py-6 font-semibold">24 Horas</td>
+                        </tr>
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-8 py-6 font-bold text-gf-dark">02. Estructuración</td>
+                            <td class="px-8 py-6 text-gray-600">[Presentación a comité, evaluación de riesgos...]</td>
+                            <td class="px-8 py-6">
+                                <span
+                                    class="px-3 py-1 bg-gray-100 border border-gray-200 rounded text-[10px] font-bold text-gf-dark">[Entregable
+                                    2]</span>
+                            </td>
+                            <td class="px-8 py-6 font-semibold">3-5 Días</td>
+                        </tr>
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-8 py-6 font-bold text-gf-dark">03. Instrumentación</td>
+                            <td class="px-8 py-6 text-gray-600">[Firma de contratos marcos y aspectos legales...]</td>
+                            <td class="px-8 py-6">
+                                <span
+                                    class="px-3 py-1 bg-gray-100 border border-gray-200 rounded text-[10px] font-bold text-gf-dark">Contratos</span>
+                            </td>
+                            <td class="px-8 py-6 font-semibold">2-3 Días</td>
+                        </tr>
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-8 py-6 font-bold text-gf-dark text-gf-primary">04. Fondeo / Ejecución</td>
+                            <td class="px-8 py-6 text-gray-600">[Dispersión de recursos o arranque del proyecto...]</td>
+                            <td class="px-8 py-6">
+                                <span
+                                    class="px-3 py-1 bg-gf-primary text-white rounded text-[10px] font-bold shadow-md uppercase">Meta
+                                    Lograda</span>
+                            </td>
+                            <td class="px-8 py-6 font-bold text-gf-primary">48 Horas</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer
+        class="bg-gf-dark text-gf-gray py-12 px-6 mt-12 text-center text-[10px] uppercase tracking-widest border-t border-gf-primary">
+        <div class="max-w-4xl mx-auto space-y-4">
+            <p>© <span id="currentYear"></span> [NOMBRE DE TU EMPRESA CONSULTORA]</p>
+            <p class="max-w-2xl mx-auto leading-relaxed">
+                Este diagnóstico constituye un análisis estratégico basado en los archivos proporcionados por [NOMBRE DE
+                LA EMPRESA]. No representa una oferta vinculante sino una base técnica para la toma de decisiones
+                directivas.
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // ==========================================
+        // ⚙️ 1. CONFIGURACIÓN DE DATOS (Edita esto)
+        // ==========================================
+        const TEMPLATE_DATA = {
+            // Datos para la gráfica de Barras (Histórico de Ventas)
+            graficaVentas: {
+                etiquetas: ['2022', '2023', '2024', '2025 (Cierre)'], // Años o Periodos
+                ventasMDP: [112.4, 138.6, 152.1, 164.8],              // Montos de ventas
+                bancosMDP: [4.2, 3.1, 1.8, 0.6]                       // Disponibilidad de efectivo
+            },
+
+            // Datos para la gráfica de Dona (Anatomía del Activo)
+            graficaEstructura: {
+                etiquetas: ['Cuentas por Cobrar (CxC)', 'Bancos e Inversiones', 'Otros Circulantes'],
+                porcentajes: [91.4, 0.4, 8.2] // Los porcentajes deben sumar idealmente 100
+            },
+
+            // Datos para el Simulador
+            simulador: {
+                totalCxC: 58.2, // El monto total de las cuentas por cobrar en la empresa actual
+                aforo: 0.90     // Porcentaje que se presta/financia (ej. 0.90 = 90%)
+            }
+        };
+
+
+        // ==========================================
+        // 🛠️ 2. LÓGICA DEL CÓDIGO (No necesitas tocar)
+        // ==========================================
+
+        // Auto-update del año en el footer
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+        const chartColors = {
+            primary: '#bc022a',
+            dark: '#0c0c0c',
+            gray: '#989898',
+            lightGray: '#f3f4f6'
+        };
+
+        // Generar Colores dinámicos para barras basados en la configuración
+        const barColors = TEMPLATE_DATA.graficaVentas.ventasMDP.map((_, index, arr) =>
+            index === arr.length - 1 ? chartColors.primary : chartColors.dark
+        );
+
+        // Inicializar Gráfica de Ventas
+        const ctxRev = document.getElementById('revChart').getContext('2d');
+        new Chart(ctxRev, {
+            type: 'bar',
+            data: {
+                labels: TEMPLATE_DATA.graficaVentas.etiquetas,
+                datasets: [
+                    {
+                        label: 'Ventas MDP',
+                        data: TEMPLATE_DATA.graficaVentas.ventasMDP,
+                        backgroundColor: barColors,
+                        borderRadius: 6
+                    },
+                    {
+                        label: 'Efectivo Bancos (MDP)',
+                        data: TEMPLATE_DATA.graficaVentas.bancosMDP,
+                        backgroundColor: chartColors.gray,
+                        borderRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#eee' }, ticks: { font: { size: 10 } } },
+                    x: { grid: { display: false }, ticks: { font: { weight: 'bold', size: 11 } } }
+                }
+            }
+        });
+
+        // Inicializar Gráfica Estructura (Dona)
+        const ctxStruct = document.getElementById('structureChart').getContext('2d');
+        new Chart(ctxStruct, {
+            type: 'doughnut',
+            data: {
+                labels: TEMPLATE_DATA.graficaEstructura.etiquetas,
+                datasets: [{
+                    data: TEMPLATE_DATA.graficaEstructura.porcentajes,
+                    backgroundColor: [chartColors.primary, chartColors.dark, chartColors.gray],
+                    borderWidth: 6,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 15, font: { size: 10 } }
+                    }
+                }
+            }
+        });
+
+        // Lógica del Simulador Interactivo
+        const slider = document.getElementById('factorSlider');
+        const sliderValueDisplay = document.getElementById('sliderValue');
+        const totalLiquidityDisplay = document.getElementById('totalLiquidity');
+        const textTotalCxc = document.getElementById('textTotalCxc');
+
+        // Cargar variables de la Plantilla
+        const totalCxC = TEMPLATE_DATA.simulador.totalCxC;
+        const aforo = TEMPLATE_DATA.simulador.aforo;
+
+        // Actualizar texto en HTML del total de la cartera
+        textTotalCxc.innerText = totalCxC.toFixed(1);
+
+        // Función para actualizar cálculo
+        const updateLiquidity = (val) => {
+            sliderValueDisplay.innerText = val + '%';
+            const calculated = (totalCxC * (val / 100) * aforo).toFixed(1);
+            totalLiquidityDisplay.innerHTML = `$${calculated}<span class="text-xl font-normal ml-2">MDP</span>`;
+        };
+
+        // Escuchar cambios
+        slider.addEventListener('input', (e) => updateLiquidity(e.target.value));
+
+        // Llamada inicial para calcular el 50%
+        updateLiquidity(slider.value);
+    </script>
+</body>
+
+</html>
