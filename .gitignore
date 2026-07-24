@@ -18,3 +18,4 @@ oauth-client.json
 token.json
 backend/oauth-client.json
 backend/token.json
+backend/templates/diagnostico_*.html

@@ -22,6 +22,7 @@ from typing import List
 
 from portal.Cliente.auth import get_user_from_token
 from portal.shared.supabase_db import get_supabase_admin
+from app.SAT.pdf_verifier import is_sat_pdf_altered
 from portal.Cliente.expedientes import DOCUMENTOS_REPRESENTANTE, calcular_estados_de_cuenta
 from app.INE.extractor import extract_name_from_ine
 from app.Comprobante_Domicilio.extractor import extract_location_from_cd
@@ -1184,6 +1185,13 @@ async def subir_declaraciones_auto(
             no_detectados.append({"nombre": file.filename, "razon": "Error al guardar en la nube"})
             continue
 
+        # Verificar si hay alteraciones (fraude)
+        is_altered, fraude_reason = False, None
+        try:
+            is_altered, fraude_reason = is_sat_pdf_altered(content)
+        except Exception as e_verify:
+            logger.error(f"Error en verificacion anti-fraude auto: {e_verify}")
+
         doc_data = {
             "empresa_id": empresa_id,
             "tipo_documento": tipo_clave,
@@ -1193,6 +1201,8 @@ async def subir_declaraciones_auto(
             "comentario_admin": None,
             "subido_en": ahora,
             "revisado_en": None,
+            "alerta_fraude": is_altered,
+            "motivo_fraude": fraude_reason,
         }
 
         # Para declaraciones no hay límite, siempre se inserta como nuevo registro
@@ -1271,6 +1281,13 @@ async def subir_declaracion_manual(
         logger.error(f"Error uploading SAT manual file: {e}")
         raise HTTPException(status_code=500, detail="Error al guardar en la nube")
 
+    # Verificar si hay alteraciones (fraude)
+    is_altered, fraude_reason = False, None
+    try:
+        is_altered, fraude_reason = is_sat_pdf_altered(content)
+    except Exception as e_verify:
+        logger.error(f"Error en verificacion anti-fraude manual: {e_verify}")
+
     ahora = datetime.now(timezone.utc).isoformat()
     doc_data = {
         "empresa_id": empresa_id,
@@ -1281,6 +1298,8 @@ async def subir_declaracion_manual(
         "comentario_admin": None,
         "subido_en": ahora,
         "revisado_en": None,
+        "alerta_fraude": is_altered,
+        "motivo_fraude": fraude_reason,
     }
 
     existing = sb.table("documentos_expediente").select("id").eq("empresa_id", empresa_id).eq("tipo_documento", tipo_clave).execute()

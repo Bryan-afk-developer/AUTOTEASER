@@ -4,6 +4,7 @@ import { Building2, Plus, Search, FolderOpen, Loader2, X, AlertTriangle, Edit2, 
 import { api } from '../lib/api'
 import AdminCompanySummary from '../components/AdminCompanySummary'
 import PdfDrawer from '../components/PdfDrawer'
+import ClienteDashboard from './ClienteDashboard'
 
 export default function UltraRojoDashboard() {
   const [empresas, setEmpresas] = useState([])
@@ -22,6 +23,9 @@ export default function UltraRojoDashboard() {
   const [activeTab, setActiveTab] = useState('empresa') // 'empresa' | 'representante'
   const [collapsedFolders, setCollapsedFolders] = useState({})
   const [pdfViewerDoc, setPdfViewerDoc] = useState(null)
+  
+  // Cliente View State (for direct URL navigation to specific company docs)
+  const [clienteViewUser, setClienteViewUser] = useState(null)
 
   const toggleFolder = (cat) => {
     setCollapsedFolders(prev => ({ ...prev, [cat]: !prev[cat] }))
@@ -30,17 +34,37 @@ export default function UltraRojoDashboard() {
     try {
       setLoading(true)
       const data = await api.getEmpresas()
-      setEmpresas(data.empresas || [])
+      const list = data.empresas || []
+      setEmpresas(list)
       setError(null)
+      return list
     } catch (err) {
       setError(err.message)
+      return []
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchEmpresas()
+    const init = async () => {
+      const list = await fetchEmpresas()
+      // Detectar URL ej. /ultrarojo/5cd751e8-dc30-48d0-bcef-28bdadc83a3f
+      const pathParts = window.location.pathname.split('/').filter(Boolean)
+      if (pathParts.length >= 2 && pathParts[0].toLowerCase() === 'ultrarojo') {
+        const id = pathParts[1]
+        const emp = list.find(e => e.id.includes(id) || id.includes(e.id))
+        if (emp) {
+          api.setActiveEmpresa(emp.id)
+          setClienteViewUser({
+            empresa_id: emp.id,
+            nombre_empresa: emp.nombre,
+            rfc: emp.rfc
+          })
+        }
+      }
+    }
+    init()
   }, [])
 
   const handleCreate = async (e) => {
@@ -91,6 +115,19 @@ export default function UltraRojoDashboard() {
     emp.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
     (emp.rfc && emp.rfc.toLowerCase().includes(searchTerm.toLowerCase()))
   )
+
+  if (clienteViewUser) {
+    return (
+      <ClienteDashboard 
+        user={clienteViewUser} 
+        onLogout={() => {
+          window.history.pushState({}, '', '/ultrarojo')
+          setClienteViewUser(null)
+        }} 
+        isInternalMode={true} 
+      />
+    )
+  }
 
   if (selectedEmpresa) {
     const docs = expedienteData?.documentos?.filter(d => activeTab === 'empresa' ? d.grupo !== 'representante' : d.grupo === 'representante') || []
@@ -420,13 +457,15 @@ export default function UltraRojoDashboard() {
                             <FolderOpen className="w-4 h-4" />
                             Abrir
                           </button>
-                          <button 
-                            onClick={() => alert('Editar... (Próximamente)')}
-                            title="Editar Empresa"
-                            className="p-1.5 rounded-lg border border-transparent hover:border-white/10 hover:bg-white/5 text-text-muted hover:text-white transition-all"
+                          <a 
+                            href={`/ultrarojo/${emp.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Subir Documentos (Abrir en nueva pestaña)"
+                            className="p-1.5 rounded-lg border border-transparent hover:border-white/10 hover:bg-white/5 text-text-muted hover:text-white transition-all inline-block"
                           >
                             <Edit2 className="w-4 h-4" />
-                          </button>
+                          </a>
                           <button 
                             onClick={() => {
                               if(window.confirm('¿Estás seguro de eliminar esta empresa?')) {

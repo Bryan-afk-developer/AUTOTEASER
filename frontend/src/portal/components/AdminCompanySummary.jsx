@@ -299,7 +299,7 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
           <div className="group">
             <div className="flex items-center gap-2 mb-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-text-muted" />
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">MOP de Buró</span>
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">MOP de Buró {mopData?.rfc ? `- ${mopData.rfc}` : ''}</span>
             </div>
             <div className="flex items-center gap-3">
               {loadingMop ? (
@@ -511,7 +511,7 @@ export default function AdminCompanySummary({ empresa, documentos, actaPrincipal
           <div className="group">
             <div className="flex items-center gap-2 mb-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-text-muted" />
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Buró de Crédito</span>
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Buró de Crédito {mopRepData?.rfc ? `- ${mopRepData.rfc}` : ''}</span>
             </div>
             <div className="flex items-center gap-3">
               {/* MOP Block */}

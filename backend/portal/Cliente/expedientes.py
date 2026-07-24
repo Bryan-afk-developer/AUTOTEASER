@@ -430,8 +430,22 @@ async def get_expediente(authorization: str = Header(None)):
             if storage_path:
                 url_documento = signed_urls_map.get(storage_path)
 
+            tipo_real = doc_subido.get("tipo_documento", clave)
+            raw_name = doc_subido.get("nombre_archivo")
+            final_title = doc_req["nombre"]
+            if raw_name:
+                from portal.Admin.dashboard import format_generales_filename
+                is_rep = "representante" in tipo_real or doc_subido.get("_tabla") == "representante"
+                person_name = "REPRESENTANTE LEGAL" if is_rep else ("ACCIONISTA" if tipo_real.endswith("_accionista") else "")
+                formatted_name = format_generales_filename(tipo_real, raw_name, is_rep, person_name)
+                final_title = formatted_name if formatted_name else raw_name
+                # Remove extension for cleaner UI title if it has one
+                if final_title.lower().endswith(".pdf") or final_title.lower().endswith(".zip") or final_title.lower().endswith(".xml"):
+                    final_title = final_title.rsplit(".", 1)[0]
+
             entry = {
                 **doc_req,
+                "nombre": final_title,
                 "estado": estado,
                 "documento_id": doc_subido["id"],
                 "nombre_archivo": doc_subido.get("nombre_archivo"),
@@ -474,16 +488,28 @@ async def get_expediente(authorization: str = Header(None)):
             if storage_path:
                 url_documento = signed_urls_map.get(storage_path)
 
+            raw_name = doc_subido.get("nombre_archivo") or ""
+            is_rep = "representante" in tipo or doc_subido.get("_tabla") == "representante"
+            person_name = "REPRESENTANTE LEGAL" if is_rep else ("ACCIONISTA" if tipo.endswith("_accionista") else "")
+            
+            from portal.Admin.dashboard import format_generales_filename
+            formatted_name = format_generales_filename(tipo, raw_name, is_rep, person_name)
+            final_title = formatted_name if formatted_name else raw_name
+            if not final_title: final_title = "Otro Documento"
+            
+            if final_title.lower().endswith(".pdf") or final_title.lower().endswith(".zip") or final_title.lower().endswith(".xml"):
+                final_title = final_title.rsplit(".", 1)[0]
+
             entry = {
                 "clave": tipo,
-                "nombre": doc_subido.get("nombre_archivo", "Otro Documento"),
+                "nombre": final_title,
                 "descripcion": "Estados Financieros" if tipo.startswith("financiero_eeff_") else "Documento adicional subido por el cliente",
                 "categoria": "financiero" if tipo.startswith("financiero_eeff_") else "legal",
                 "icono": "📊" if tipo.startswith("financiero_eeff_") else "📁",
                 "grupo": "financieros" if tipo.startswith("financiero_eeff_") else "otros",
                 "estado": estado,
                 "documento_id": doc_subido["id"],
-                "nombre_archivo": doc_subido.get("nombre_archivo"),
+                "nombre_archivo": raw_name,
                 "subido_en": doc_subido.get("subido_en"),
                 "revisado_en": doc_subido.get("revisado_en"),
                 "comentario_admin": doc_subido.get("comentario_admin"),

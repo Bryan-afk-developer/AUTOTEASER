@@ -916,8 +916,17 @@ export default function AdminDashboard({ onOpenClientDashboard }) {
                   return (
                     <tr key={doc.id || doc.tipo_documento} className="hover:bg-surface/20 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-text-main text-[13px] leading-tight">
+                        <div className="font-semibold text-text-main text-[13px] leading-tight flex items-center gap-2">
                           {doc.nombre_esperado || doc.tipo_documento}
+                          {doc.alerta_fraude && (
+                            <span 
+                              className="flex items-center gap-1 bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold" 
+                              title={doc.motivo_fraude || 'Posible alteración detectada'}
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              Fraude
+                            </span>
+                          )}
                         </div>
                         {doc.nombre_carpeta && (
                           <div className="text-[10px] text-primary-400 font-bold mt-1 uppercase tracking-widest bg-primary-500/10 border border-primary-500/20 px-2 py-0.5 rounded inline-block">

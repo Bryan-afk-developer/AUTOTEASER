@@ -75,6 +75,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el código HTML dentro de un bloque ```html
 <gestion_de_archivos_de_entrada>
 - Archivos Excel (CAF / Teaser): Extrae los datos financieros duros (Ventas históricas, cuentas por cobrar/pagar, deudas, tasas, activos fijos). Puebla las gráficas de Chart.js y los KPIs con los números reales encontrados.
 - Observaciones del Equipo: Si el equipo comercial provee notas o comentarios sobre el cliente, úsalos para personalizar la sección "Áreas de Oportunidad" con los dolores reales del cliente.
+- 🚨 REGLA CRÍTICA DE DATOS FINANCIEROS 🚨: DEBES usar EXACTAMENTE los montos, valores y porcentajes que aparecen en los archivos de Excel. NO inventes, NO aproximes, y NO alteres los números bajo ninguna circunstancia.
 </gestion_de_archivos_de_entrada>
 
 <reglas_estrictas>
@@ -162,8 +163,7 @@ async def generar_diagnostico(
         "- Usa los colores de Gestión Financiera: Rojo Primario (#bc022a), Gris (#989898), y fondos oscuros.\n"
         "- Incluye secciones para: Resumen Ejecutivo, Indicadores Clave (KPIs) como Tarjetas visuales, y Áreas de Oportunidad.\n"
         "- Inventa gráficos o datos si es necesario para ilustrar el reporte, y dale formato profesional.\n\n"
-        "🚨 MUY IMPORTANTE 🚨: Para evitar que tu respuesta se corte por el límite de tokens, DEBES devolver el código HTML COMPLETAMENTE MINIFICADO. "
-        "No incluyas saltos de línea (\\n), ni indentación, ni espacios innecesarios. Todo en una sola línea.\n"
+        "🚨 MUY IMPORTANTE 🚨: Para que las gráficas de Chart.js funcionen correctamente, NO minifiques el HTML al extremo ni remuevas los saltos de línea dentro de las etiquetas <script>.\n"
         "Devuelve ÚNICAMENTE el código HTML, nada más."
     )
 
@@ -220,7 +220,7 @@ async def chat_diagnostico(
     html_actual: str = Form(...),
     prompt_usuario: str = Form(...),
     modelo_ia: str = Form("gemini-3.1-pro"),
-    imagen: UploadFile = File(None)
+    imagenes: list[UploadFile] = File(None)
 ):
     """
     Corrige o actualiza el reporte HTML generado previamente basado en las instrucciones del usuario.
@@ -231,8 +231,8 @@ async def chat_diagnostico(
         f"INSTRUCCIONES DEL USUARIO PARA CORREGIR EL REPORTE:\n"
         f"<instrucciones>\n{prompt_usuario}\n</instrucciones>\n\n"
         f"Por favor, modifica el HTML según las instrucciones del usuario. "
-        f"🚨 MUY IMPORTANTE 🚨: Para evitar que tu respuesta se corte por el límite de tokens, DEBES devolver el código HTML COMPLETAMENTE MINIFICADO. "
-        f"No incluyas saltos de línea (\\n), ni indentación, ni espacios innecesarios. Todo en una sola línea.\n"
+        f"🚨 REGLA CRÍTICA DE DATOS 🚨: MANTÉN INTACTOS TODOS LOS DATOS FINANCIEROS Y NÚMEROS ORIGINALES. BAJO NINGUNA CIRCUNSTANCIA MODIFIQUES LOS VALORES NUMÉRICOS, MONTOS O PORCENTAJES DEL REPORTE AL MENOS QUE EL USUARIO LO PIDA EXPLÍCITAMENTE.\n"
+        f"Para que las gráficas de Chart.js funcionen, NO minifiques el HTML ni remuevas los saltos de línea.\n"
         f"Devuelve ÚNICAMENTE el código HTML completo modificado, sin explicaciones."
     )
 
@@ -241,9 +241,10 @@ async def chat_diagnostico(
         
         # Preparar payload multimodal
         content_payload = [user_message]
-        if imagen:
-            image_bytes = await imagen.read()
-            content_payload.append(Part.from_data(data=image_bytes, mime_type=imagen.content_type))
+        if imagenes:
+            for img in imagenes:
+                image_bytes = await img.read()
+                content_payload.append(Part.from_data(data=image_bytes, mime_type=img.content_type))
             
         # Seleccionar modelo
         model_id = "gemini-2.5-pro" if "3.1" in modelo_ia else "gemini-2.5-flash"

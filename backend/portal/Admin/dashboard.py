@@ -87,6 +87,15 @@ def format_generales_filename(tipo: str, original_name: str, is_rep: bool = Fals
             if date_str: return f"4. FIEL - PM{date_str}{ext}"
             return f"FIEL{ext}"
             
+    elif "buro" in tipo:
+        if not date_str:
+            from datetime import datetime
+            date_str = f" - {datetime.now().strftime('%Y.%m.%d')}"
+        if is_individual:
+            return f"BC{name_suffix}{date_str}{ext}"
+        else:
+            return f"BC - EMPRESA{date_str}{ext}"
+            
     return original_name
 
 logger = logging.getLogger(__name__)

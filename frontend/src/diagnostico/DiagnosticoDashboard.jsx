@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import * as XLSX from 'xlsx'
 import {
   UploadCloud, FileSpreadsheet, Eye, X, ChevronRight,
-  Loader2, Download, MessageSquarePlus, Sparkles, CheckCircle2, AlertTriangle
+  Loader2, Download, MessageSquarePlus, Sparkles, CheckCircle2, AlertTriangle, ImagePlus
 } from 'lucide-react'
 import axios from 'axios'
 
@@ -33,6 +33,30 @@ export default function DiagnosticoDashboard() {
   const [chatHistory, setChatHistory] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [chatImages, setChatImages] = useState([])
+
+  const chatFileRef = useRef(null)
+
+  const handleChatPaste = (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const newImages = []
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        newImages.push(items[i].getAsFile())
+      }
+    }
+    if (newImages.length > 0) {
+      setChatImages(prev => [...prev, ...newImages])
+    }
+  }
+
+  const handleChatFileSelect = (e) => {
+    if (e.target.files?.length) {
+      setChatImages(prev => [...prev, ...Array.from(e.target.files)])
+    }
+    if (chatFileRef.current) chatFileRef.current.value = ''
+  }
 
   const teaserRef = useRef(null)
   const cafRef = useRef(null)
@@ -156,6 +180,10 @@ export default function DiagnosticoDashboard() {
       fd.append('html_actual', chatData.html)
       fd.append('prompt_usuario', userMsg)
       fd.append('modelo_ia', chatData.modelo)
+      chatImages.forEach(img => {
+        fd.append('imagenes', img)
+      })
+      setChatImages([])
 
       const res = await axios.post(`${API_BASE}/api/diagnostico/chat`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -198,11 +226,10 @@ export default function DiagnosticoDashboard() {
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="text-[10px] font-black uppercase tracking-widest text-text-muted bg-white/5 px-3 py-1.5 rounded-full border border-white/10 outline-none appearance-none cursor-pointer hover:bg-white/10 hover:text-white transition-colors text-center"
+                className="text-[10px] font-black uppercase tracking-widest text-text-muted bg-white/5 px-3 py-1.5 rounded-full border border-white/10 outline-none appearance-none cursor-not-allowed text-center"
+                disabled
               >
-                <option value="gemini-3.1-pro" className="bg-[#15151a]">Gemini 3.1 Pro (Recomendado)</option>
-                <option value="gemini-3.5-flash" className="bg-[#15151a]">Gemini 3.5 Flash (Rápido)</option>
-                <option value="todos" className="bg-[#15151a] text-amber-400 font-bold">💥 Test: Todos los Modelos</option>
+                <option value="gemini-3.1-pro" className="bg-[#15151a]">Gemini 3.1 Pro</option>
               </select>
             </div>
           </div>
@@ -564,16 +591,40 @@ export default function DiagnosticoDashboard() {
             </div>
             
             <div className="p-4 border-t border-white/10 bg-[#050505]/50 shrink-0">
-              <form onSubmit={(e) => { e.preventDefault(); handleChatSubmit(); }} className="flex gap-2">
+              {chatImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {chatImages.map((img, idx) => (
+                    <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-white/20 group">
+                      <img src={URL.createObjectURL(img)} alt="preview" className="w-full h-full object-cover" />
+                      <button type="button" onClick={() => setChatImages(prev => prev.filter((_, i) => i !== idx))} className="absolute inset-0 bg-black/60 hidden group-hover:flex items-center justify-center text-white backdrop-blur-sm transition-all">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <form onSubmit={(e) => { e.preventDefault(); handleChatSubmit(); }} className="flex gap-2 items-center">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  multiple 
+                  ref={chatFileRef} 
+                  onChange={handleChatFileSelect} 
+                  className="hidden" 
+                />
+                <button type="button" onClick={() => chatFileRef.current?.click()} className="p-3 text-text-muted hover:text-amber-400 bg-white/5 border border-white/10 rounded-xl transition-colors shrink-0">
+                  <ImagePlus className="w-5 h-5" />
+                </button>
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ej: Cambia el título a Análisis Q3..."
+                  onPaste={handleChatPaste}
+                  placeholder="Ej: Cambia el título... (Ctrl+V para imagen)"
                   disabled={chatLoading}
                   className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-text-main placeholder:text-text-muted focus:outline-none focus:border-amber-500/50 transition-colors disabled:opacity-50"
                 />
-                <button type="submit" disabled={chatLoading || !chatInput.trim()} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button type="submit" disabled={chatLoading || (!chatInput.trim() && chatImages.length === 0)} className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   Enviar
                 </button>
               </form>
